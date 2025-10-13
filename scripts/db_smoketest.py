@@ -11,8 +11,8 @@ DB_HOST = os.getenv("DB_HOST")
 DB_PORT = os.getenv("DB_PORT")
 DB_NAME = os.getenv("DB_NAME")
 
-# Default to mysqlclient; switch to "mysql+pymysql" if using PyMySQL.
-DRIVER = os.getenv("DB_DRIVER", "mysql+mysqlclient")  # or "mysql+pymysql"
+# Default to PyMySQL; override with DB_DRIVER if you prefer mysqlclient.
+DRIVER = os.getenv("DB_DRIVER", "mysql+pymysql")
 url = f"{DRIVER}://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 engine = create_engine(url, echo=os.getenv("SQLALCHEMY_ECHO", "false") == "true", future=True)
