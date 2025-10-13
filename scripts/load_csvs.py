@@ -78,7 +78,7 @@ def upsert_account(cur, owner_type, owner_id, acct):
     cur.execute("""
         SELECT id FROM account
         WHERE owner_type=%s AND owner_id=%s AND type=%s AND name<=>%s
-    """, (owner_type, owner_id, acct["name"]))
+    """, (owner_type, owner_id, acct["type"], acct["name"] or None))
     r = cur.fetchone()
     if r:
         return r["id"]
