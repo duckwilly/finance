@@ -1,10 +1,85 @@
 #!/usr/bin/env python3
-import os, sys, csv
-from pathlib import Path
+import csv
+import logging
+import os
+import sys
+import time
 from contextlib import contextmanager
+from pathlib import Path
+from typing import Dict, Iterator, Optional, Sequence, Tuple
+
 import pymysql
 
 SEED_DIR = Path("data/seed")
+
+logger = logging.getLogger(__name__)
+
+
+class ProgressTracker:
+    """Light-weight terminal progress bar with optional totals."""
+
+    def __init__(
+        self,
+        label: str,
+        *,
+        total: Optional[int] = None,
+        unit: str = "rows",
+        width: int = 30,
+        min_interval: float = 0.5,
+    ) -> None:
+        self.label = label
+        self.total = total
+        self.unit = unit
+        self.width = width
+        self.min_interval = min_interval
+        self.start = time.time()
+        self.last_print = 0.0
+        self.current = 0
+        self._last_line_length = 0
+        self._active = False
+
+    def advance(self, step: int = 1) -> None:
+        self.current += step
+        self._display()
+
+    def pause(self) -> None:
+        if self._active:
+            print()
+            self._active = False
+            self._last_line_length = 0
+
+    def finish(self) -> None:
+        self._display(force=True, final=True)
+
+    def _display(self, force: bool = False, final: bool = False) -> None:
+        now = time.time()
+        if not force and now - self.last_print < self.min_interval and not final:
+            return
+
+        elapsed = max(now - self.start, 1e-9)
+        rate = self.current / elapsed
+
+        if self.total:
+            pct = min(self.current / self.total, 1.0) if self.total else 0.0
+            filled = int(self.width * pct)
+            bar = "#" * filled + "-" * (self.width - filled)
+            msg = (
+                f"{self.label}: [{bar}] {self.current:,}/{self.total:,} "
+                f"({pct * 100:5.1f}%) {rate:,.0f} {self.unit}/s"
+            )
+        else:
+            msg = f"{self.label}: {self.current:,} {self.unit} ({rate:,.0f} {self.unit}/s)"
+
+        padding = " " * max(0, self._last_line_length - len(msg))
+        print(f"\r{msg}{padding}", end="", flush=True)
+        self._last_line_length = len(msg)
+        self.last_print = now
+        self._active = True
+
+        if final:
+            print()
+            self._active = False
+            self._last_line_length = 0
 
 ALLOWED_ACCOUNT_TYPES = {"checking", "savings", "brokerage", "operating"}
 ALLOWED_DIRECTIONS = {"DEBIT", "CREDIT"}
@@ -34,12 +109,33 @@ def conn():
     finally:
         c.close()
 
-def read_rows(name):
+def read_rows(name: str) -> Sequence[dict]:
     path = SEED_DIR / name
     if not path.exists():
         return []
     with path.open(newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f))
+
+
+def stream_rows(name: str) -> Iterator[dict]:
+    path = SEED_DIR / name
+    if not path.exists():
+        return
+    with path.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            yield row
+
+
+def count_rows(name: str) -> int:
+    path = SEED_DIR / name
+    if not path.exists():
+        return 0
+    with path.open(encoding="utf-8") as f:
+        header = next(f, None)
+        if header is None:
+            return 0
+        return sum(1 for _ in f)
 
 def upsert_user(cur, name, email):
     # Unique by email (schema has UNIQUE email)
@@ -66,16 +162,29 @@ def get_section_id(cur, section_name):
         raise ValueError(f"Unknown section: {section_name}")
     return r["id"]
 
+CATEGORY_CACHE: Dict[Tuple[int, str], int] = {}
+
+
 def get_or_create_category(cur, section_id, category_name):
     if not category_name:
         return None
-    cur.execute("SELECT id FROM category WHERE section_id=%s AND name=%s",
-                (section_id, category_name))
+    key = (section_id, category_name)
+    cached = CATEGORY_CACHE.get(key)
+    if cached:
+        return cached
+    cur.execute(
+        "SELECT id FROM category WHERE section_id=%s AND name=%s",
+        (section_id, category_name),
+    )
     r = cur.fetchone()
     if r:
+        CATEGORY_CACHE[key] = r["id"]
         return r["id"]
-    cur.execute("INSERT INTO category(section_id, name) VALUES (%s,%s)",
-                (section_id, category_name))
+    cur.execute(
+        "INSERT INTO category(section_id, name) VALUES (%s,%s)",
+        (section_id, category_name),
+    )
+    CATEGORY_CACHE[key] = cur.lastrowid
     return cur.lastrowid
 
 def upsert_account(cur, owner_type, owner_id, acct):
@@ -108,19 +217,33 @@ def ensure_membership(cur, party_type, party_id, account_id, role):
     """, (party_type, party_id, account_id, role))
     return cur.lastrowid
 
+COUNTERPARTY_CACHE: Dict[Tuple[str, str, str], int] = {}
+
+
 def get_or_create_counterparty(cur, name, account_ref, bic, country_code=None):
     key = (name or "", account_ref or "", bic or "")
-    cur.execute("""
+    cached = COUNTERPARTY_CACHE.get(key)
+    if cached:
+        return cached
+    cur.execute(
+        """
         SELECT id FROM counterparty
         WHERE name=%s AND account_ref<=>%s AND bic<=>%s
-    """, key)
+    """,
+        key,
+    )
     r = cur.fetchone()
     if r:
+        COUNTERPARTY_CACHE[key] = r["id"]
         return r["id"]
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO counterparty(name, account_ref, bic, country_code)
         VALUES (%s,%s,%s,%s)
-    """, (name or "", account_ref or None, bic or None, country_code))
+    """,
+        (name or "", account_ref or None, bic or None, country_code),
+    )
+    COUNTERPARTY_CACHE[key] = cur.lastrowid
     return cur.lastrowid
 
 def upsert_instrument(cur, symbol, mic, name, typ, currency, isin):
@@ -274,94 +397,176 @@ def load_instruments_prices_fx():
     return inst_map
 
 def load_transactions(acct_map):
-    txns = read_rows("transactions.csv")
-    if not txns:
-        return
+    total_rows = count_rows("transactions.csv")
+    if total_rows == 0:
+        logger.info("No transactions.csv found — skipping transaction load.")
+        return 0
+
+    logger.info("Loading %s transactions from CSV", total_rows)
 
     with conn() as c:
         cur = c.cursor()
 
-        # cache sections by name
+        # cache sections by name and pre-fill category cache
         cur.execute("SELECT id, name FROM section")
         sec_map = {row["name"]: row["id"] for row in cur.fetchall()}
 
-        # keep track of inserted txns per transfer_ref for linking
-        transfer_bucket = {}
+        CATEGORY_CACHE.clear()
+        COUNTERPARTY_CACHE.clear()
+        cur.execute("SELECT id, section_id, name FROM category")
+        for row in cur.fetchall():
+            CATEGORY_CACHE[(row["section_id"], row["name"])] = row["id"]
 
-        for t in txns:
+        progress = ProgressTracker("Inserting transactions", total=total_rows)
+
+        transfer_refs = set()
+        processed = 0
+        batch_size = 5000
+
+        for t in stream_rows("transactions.csv"):
+            processed += 1
             try:
                 account_id = acct_map[t["account_ext_id"]]
             except KeyError as exc:
+                progress.pause()
                 raise ValueError(
                     f"Transaction references unknown account ext_id '{t['account_ext_id']}'"
                 ) from exc
 
-            posted_at  = t["posted_at"]
-            txn_date   = t["txn_date"]
-            amount     = t["amount"]
-            currency   = t["currency"]
-            direction  = (t["direction"] or "").upper()
-            channel    = (t["channel"] or "").upper()
+            posted_at = t["posted_at"]
+            txn_date = t["txn_date"]
+            amount = t["amount"]
+            currency = t["currency"]
+            direction = (t["direction"] or "").upper()
+            channel = (t["channel"] or "").upper()
             description = t.get("description") or None
-            cp_name     = t.get("counterparty_name") or None
-            cp_acct     = t.get("counterparty_account") or None
-            cp_bic      = t.get("counterparty_bic") or None
+            cp_name = t.get("counterparty_name") or None
+            cp_acct = t.get("counterparty_account") or None
+            cp_bic = t.get("counterparty_bic") or None
             transfer_ref = t.get("transfer_ref") or None
-            ext_ref      = t.get("ext_reference") or None
+            ext_ref = t.get("ext_reference") or None
 
             if direction not in ALLOWED_DIRECTIONS:
+                progress.pause()
                 raise ValueError(
                     f"Unsupported transaction direction '{t['direction']}' for account {t['account_ext_id']}"
                 )
 
             if channel not in ALLOWED_CHANNELS:
+                progress.pause()
                 raise ValueError(
                     f"Unsupported transaction channel '{t['channel']}' for account {t['account_ext_id']}"
                 )
 
             section_name = t.get("section_name") or None
-            category_name= t.get("category_name") or None
+            category_name = t.get("category_name") or None
 
             if section_name and section_name not in sec_map:
+                progress.pause()
                 raise ValueError(f"Unknown section {section_name} (expected one of {list(sec_map)})")
-            section_id = sec_map.get(section_name) if section_name else sec_map["transfer"]  # fallback
+            section_id = sec_map.get(section_name) if section_name else sec_map["transfer"]
 
-            category_id = get_or_create_category(cur, section_id, category_name) if category_name else None
+            category_id = (
+                get_or_create_category(cur, section_id, category_name)
+                if category_name
+                else None
+            )
             counterparty_id = None
             if any([cp_name, cp_acct, cp_bic]):
                 counterparty_id = get_or_create_counterparty(cur, cp_name, cp_acct, cp_bic)
 
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO `transaction`(
                   account_id, posted_at, txn_date, amount, currency, direction,
                   section_id, category_id, channel, description,
                   counterparty_id, transfer_group_id, ext_reference
                 )
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """, (account_id, posted_at, txn_date, amount, currency, direction,
-                  section_id, category_id, channel, description,
-                  counterparty_id, transfer_ref, ext_ref))
-            txn_id = cur.lastrowid
+            """,
+                (
+                    account_id,
+                    posted_at,
+                    txn_date,
+                    amount,
+                    currency,
+                    direction,
+                    section_id,
+                    category_id,
+                    channel,
+                    description,
+                    counterparty_id,
+                    transfer_ref,
+                    ext_ref,
+                ),
+            )
 
             if transfer_ref:
-                transfer_bucket.setdefault(transfer_ref, []).append((txn_id, direction))
+                transfer_refs.add(transfer_ref)
 
-        # pair internal transfers
-        for ref, entries in transfer_bucket.items():
-            if len(entries) != 2:
-                # Soft warning; skip imperfect groups
-                print(f"[warn] transfer_ref {ref} has {len(entries)} entries (expected 2); skipping link.")
-                continue
-            # find debit/credit ids
-            debit_id = next((i for i,d in entries if d == "DEBIT"), None)
-            credit_id= next((i for i,d in entries if d == "CREDIT"), None)
-            if not debit_id or not credit_id:
-                print(f"[warn] transfer_ref {ref} missing debit/credit; skipping link.")
-                continue
-            cur.execute("""
-                INSERT IGNORE INTO transfer_link(debit_txn_id, credit_txn_id)
-                VALUES (%s,%s)
-            """, (debit_id, credit_id))
+            if processed % batch_size == 0:
+                progress.pause()
+                c.commit()
+                logger.info("Committed %s transactions", processed)
+
+            progress.advance()
+
+        progress.finish()
+
+        # ensure final batch is committed before creating transfer links
+        c.commit()
+
+        if transfer_refs:
+            logger.info("Linking %s transfer groups", len(transfer_refs))
+            refs_list = list(transfer_refs)
+            chunk_size = 1000
+
+            for i in range(0, len(refs_list), chunk_size):
+                chunk = refs_list[i : i + chunk_size]
+                placeholders = ",".join(["%s"] * len(chunk))
+                cur.execute(
+                    f"""
+                    INSERT IGNORE INTO transfer_link(debit_txn_id, credit_txn_id)
+                    SELECT d.id, c.id
+                    FROM `transaction` d
+                    JOIN `transaction` c
+                      ON d.transfer_group_id = c.transfer_group_id
+                     AND d.direction = 'DEBIT'
+                     AND c.direction = 'CREDIT'
+                    WHERE d.transfer_group_id IN ({placeholders})
+                """,
+                    chunk,
+                )
+
+            anomalies = []
+            for i in range(0, len(refs_list), chunk_size):
+                chunk = refs_list[i : i + chunk_size]
+                placeholders = ",".join(["%s"] * len(chunk))
+                cur.execute(
+                    f"""
+                    SELECT transfer_group_id AS ref,
+                           COUNT(*) AS cnt,
+                           SUM(direction='DEBIT') AS debits,
+                           SUM(direction='CREDIT') AS credits
+                    FROM `transaction`
+                    WHERE transfer_group_id IN ({placeholders})
+                    GROUP BY transfer_group_id
+                    HAVING cnt <> 2 OR debits <> 1 OR credits <> 1
+                """,
+                    chunk,
+                )
+                anomalies.extend(cur.fetchall())
+
+            for row in anomalies:
+                logger.warning(
+                    "transfer_ref %s has %s entries (%s debits/%s credits); skipping link.",
+                    row["ref"],
+                    row["cnt"],
+                    row["debits"],
+                    row["credits"],
+                )
+
+        return processed
 
 def load_trades_and_holdings(acct_map, inst_map):
     trades = read_rows("trades.csv")
@@ -430,23 +635,25 @@ def load_trades_and_holdings(acct_map, inst_map):
                 raise ValueError(f"Unknown side {side}")
 
 def main():
-    print("Loading users/orgs/accounts/memberships…")
+    logger.info("Loading users/orgs/accounts/memberships…")
     user_map, org_map, acct_map = load_users_orgs_accounts_and_memberships()
-    print("Loading instruments/prices/fx…")
+    logger.info("Loading instruments/prices/fx…")
     inst_map = load_instruments_prices_fx()
-    print("Loading transactions…")
-    load_transactions(acct_map)
-    print("Loading trades & updating holdings (WAC)…")
+    logger.info("Loading transactions…")
+    inserted = load_transactions(acct_map)
+    logger.info("Inserted %s transactions", inserted)
+    logger.info("Loading trades & updating holdings (WAC)…")
     load_trades_and_holdings(acct_map, inst_map)
-    print("Done.")
+    logger.info("Load complete.")
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     # Quick sanity for env
     missing = [k for k in ["DB_HOST","DB_PORT","DB_USER","DB_PASSWORD","DB_NAME"] if os.getenv(k) is None]
     if missing:
-        print(f"[note] Using defaults for: {', '.join(missing)} (override with env vars)")
+        logger.info("Using defaults for env vars: %s", ", ".join(missing))
     try:
         main()
     except Exception as e:
-        print("ERROR:", e)
+        logger.exception("Loader failed: %s", e)
         sys.exit(1)
