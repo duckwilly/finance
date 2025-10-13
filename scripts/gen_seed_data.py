@@ -5,16 +5,86 @@ from __future__ import annotations
 import argparse
 import csv
 import itertools
+import logging
 import os
 import random
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Iterable, Iterator, Sequence
+from typing import Iterable, Iterator, Optional, Sequence
 
 SEED_DIR = Path("data/seed")
 STREAM_DIR = Path("data/stream")
+
+logger = logging.getLogger(__name__)
+
+
+class ProgressTracker:
+    """Simple textual progress indicator for generation steps."""
+
+    def __init__(
+        self,
+        label: str,
+        *,
+        total: Optional[int] = None,
+        unit: str = "rows",
+        width: int = 30,
+        min_interval: float = 0.5,
+    ) -> None:
+        self.label = label
+        self.total = total
+        self.unit = unit
+        self.width = width
+        self.min_interval = min_interval
+        self.start = time.time()
+        self.last_print = 0.0
+        self.current = 0
+        self._last_line_length = 0
+        self._active = False
+
+    def advance(self, step: int = 1) -> None:
+        self.current += step
+        self._display()
+
+    def pause(self) -> None:
+        if self._active:
+            print()
+            self._active = False
+            self._last_line_length = 0
+
+    def finish(self) -> None:
+        self._display(force=True, final=True)
+
+    def _display(self, force: bool = False, final: bool = False) -> None:
+        now = time.time()
+        if not force and now - self.last_print < self.min_interval and not final:
+            return
+
+        elapsed = max(now - self.start, 1e-9)
+        rate = self.current / elapsed
+
+        if self.total:
+            pct = min(self.current / self.total, 1.0)
+            filled = int(self.width * pct)
+            bar = "#" * filled + "-" * (self.width - filled)
+            msg = (
+                f"{self.label}: [{bar}] {self.current:,}/{self.total:,} "
+                f"({pct * 100:5.1f}%) {rate:,.0f} {self.unit}/s"
+            )
+        else:
+            msg = f"{self.label}: {self.current:,} {self.unit} ({rate:,.0f} {self.unit}/s)"
+
+        padding = " " * max(0, self._last_line_length - len(msg))
+        print(f"\r{msg}{padding}", end="", flush=True)
+        self._last_line_length = len(msg)
+        self.last_print = now
+        self._active = True
+
+        if final:
+            print()
+            self._active = False
+            self._last_line_length = 0
 
 FIRST_NAMES = [
     "Liam",
@@ -773,12 +843,17 @@ def write_transactions(rows: Iterator[dict[str, object]]) -> int:
     count = 0
     path = SEED_DIR / "transactions.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
+    logger.info("Writing transactions to %s", path)
+    progress = ProgressTracker("Generating transactions", unit="rows", min_interval=0.2)
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=TXN_HEADERS)
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
             count += 1
+            progress.advance()
+    progress.finish()
+    logger.info("Generated %s transactions", count)
     return count
 
 
@@ -854,11 +929,15 @@ def live_stream(
                     writer.writerow(row)
                 f.flush()
                 os.fsync(f.fileno())
-                print(f"Streamed {len(rows)} live transactions for {simulated_day.isoformat()}")
+                logger.info(
+                    "Streamed %s live transactions for %s",
+                    len(rows),
+                    simulated_day.isoformat(),
+                )
                 simulated_day += timedelta(days=1)
                 time.sleep(interval)
         except KeyboardInterrupt:
-            print("Live stream stopped by user.")
+            logger.info("Live stream stopped by user.")
 
 
 def main() -> None:
@@ -871,6 +950,9 @@ def main() -> None:
     companies = build_companies(args.companies)
     individuals = build_individuals(args.individuals, companies)
 
+    logger.info(
+        "Generating dataset for %s individuals and %s companies", len(individuals), len(companies)
+    )
     write_core_tables(individuals, companies, args.currency)
 
     txn_ids = IdFactory("T-")
@@ -896,17 +978,23 @@ def main() -> None:
     total_transactions = write_transactions(txn_iter)
 
     trades, prices = generate_trades(individuals)
+    logger.info("Writing trade and market data CSVs")
     write_trades(trades, prices)
 
-    print(
-        f"Generated {len(individuals)} users, {len(companies)} organisations, {total_transactions} transactions"
+    logger.info(
+        "Generated %s users, %s organisations, %s transactions",
+        len(individuals),
+        len(companies),
+        total_transactions,
     )
-    print(
-        f"Breakdown — individual accounts: {stats['individual']:,} rows, corporate accounts: {stats['company']:,} rows"
+    logger.info(
+        "Breakdown — individual accounts: %s rows, corporate accounts: %s rows",
+        f"{stats['individual']:,}",
+        f"{stats['company']:,}",
     )
 
     if args.continuous:
-        print("Starting live stream. Press Ctrl+C to stop.")
+        logger.info("Starting live stream. Press Ctrl+C to stop.")
         live_stream(
             individuals=individuals,
             txn_ids=txn_ids,
@@ -917,4 +1005,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     main()
