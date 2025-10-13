@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS account (
   id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
   owner_type ENUM('user','org') NOT NULL,
   owner_id BIGINT UNSIGNED NOT NULL,
-  type ENUM('checking','savings','brokerage') NOT NULL,
+  type ENUM('checking','savings','brokerage','operating') NOT NULL,
   currency CHAR(3) NOT NULL DEFAULT 'EUR',
   name VARCHAR(120),
   iban VARCHAR(34) NULL,
