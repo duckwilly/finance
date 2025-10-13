@@ -1,66 +1,68 @@
-
-
 # Finance Dashboard — Simulated Wealth Manager
 
-A compact Python + MariaDB project that ingests CSV data, simulates multi‑user banking and brokerage activity, and exposes analytics/dashboards for individuals, companies, and a bank admin view. 
+A compact Python + MariaDB project that ingests CSV data, simulates multi-user
+banking and brokerage activity, and exposes analytics/dashboards for
+individuals, companies, and a bank admin view.
 
 ---
 
 ## Purpose
-- Model real‑world money flows (checking/savings) and basic brokerage (equities) for **multiple user types**: bank admin, corporate, individual.
-- Support **internal transfers** (user↔user inside the system) and **external** (to/from outside counterparties).
-- Track **positions**, **average acquisition cost**, **realized/unrealized P&L**, and show useful summaries.
+- Model real-world money flows (checking/savings) and basic brokerage (equities)
+  for **multiple user types**: bank admin, corporate, individual.
+- Support **internal transfers** (user↔user inside the system) and **external**
+  (to/from outside counterparties).
+- Track **positions**, **average acquisition cost**, **realized/unrealized P&L**,
+  and show useful summaries.
 
 ---
 
 ## Tech Stack
-- **Python** (3.14) — ETL, business logic, tests
+- **Python** (3.11+) — ETL, business logic, future FastAPI services
 - **MariaDB** (via Docker) — persistence
 - **SQLAlchemy** — ORM / DB access
 - **Pandas** — CSV ingest & transforms
 - Optional clients: **DBeaver** (DB GUI)
 
-> Logging: `logger.py` writes colored console logs and date‑rotated files in `logs/` (e.g., `2025-10-13_app.log`).
+Logging helpers live in `app/logger.py` and can be reused by scripts as well as
+future API processes.
 
 ---
 
-## Repository Layout (intended)
+## Repository Layout
 ```
 finance/
 ├─ app/
-│  ├─ db/               # SQLAlchemy models, session mgmt
-│  ├─ services/         # domain logic (transactions, trades, holdings)
-│  ├─ etl/              # CSV ingestion helpers
-│  ├─ utils/logger.py   # lightweight logger (console + file)
-│  └─ __init__.py
-├─ scripts/
-│  ├─ db_smoketest.py   # quick connectivity check
-│  ├─ ingest_transactions.py
-│  └─ ingest_trades.py
-├─ sql/
-│  └─ schema.sql        # bootstrap DDL (if no Alembic yet)
-├─ data/                # sample CSVs for demos
-├─ tests/
+│  ├─ db/                # SQLAlchemy engine/session helpers
+│  ├─ etl/               # classification helpers & future rule sets
+│  ├─ services/          # placeholder for domain logic
+│  └─ logger.py          # shared logging setup
+├─ data/                 # generated seed datasets & streaming output
 ├─ docker/
-│  └─ docker-compose.yml
-├─ .env.example
-├─ requirements.txt
-└─ README.md
+│  └─ docker-compose.yaml
+├─ old/                  # legacy reference implementation
+├─ scripts/
+│  ├─ db_smoketest.py    # quick connectivity check (PyMySQL by default)
+│  ├─ gen_seed_data.py   # high-volume synthetic dataset generator
+│  └─ load_csvs.py       # idempotent CSV loader into MariaDB
+├─ sql/
+│  └─ schema.sql         # bootstrap DDL (pre-Alembic)
+├─ Makefile              # shortcuts for common workflows
+├─ README.md
+└─ requirements.txt
 ```
-*(If some files are missing, treat this list as the source of truth for what to add next.)*
 
 ---
 
 ## Quick Start
 
 ### 1) Prerequisites
-- Docker Desktop
-- Python 3.14 
+- Docker Desktop (or compatible engine)
+- Python 3.11+
 
 ### 2) Configure environment
 Create `.env` from the example and adjust as needed:
 ```ini
-# .env.example
+# .env example
 MARIADB_ROOT_PASSWORD=devroot
 MARIADB_DATABASE=finance
 MARIADB_USER=app
@@ -70,29 +72,14 @@ DB_PORT=3306
 DB_NAME=finance
 DB_USER=app
 DB_PASSWORD=apppwd
+DB_DRIVER=mysql+pymysql
 SQLALCHEMY_ECHO=false
 ```
 
 ### 3) Start MariaDB (Docker)
 Using Compose (recommended):
-```yaml
-# docker/docker-compose.yml
-services:
-  db:
-    image: mariadb:11
-    container_name: finance
-    restart: unless-stopped
-    environment:
-      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD}
-      - MARIADB_DATABASE=${MARIADB_DATABASE}
-      - MARIADB_USER=${MARIADB_USER}
-      - MARIADB_PASSWORD=${MARIADB_PASSWORD}
-    ports:
-      - "3306:3306"   # expose to host; required for VS Code/DBeaver/tests
-    volumes:
-      - db_data:/var/lib/mysql
-volumes:
-  db_data:
+```bash
+docker compose -f docker/docker-compose.yaml up -d
 ```
 
 ### 4) Create a virtual environment & install deps
@@ -112,101 +99,80 @@ Pick one:
 ```bash
 python scripts/db_smoketest.py
 ```
-The script should connect using `DB_*` vars in `.env` and exit without errors.
+The script uses PyMySQL by default; override `DB_DRIVER` if you prefer
+`mysqlclient`.
 
 ---
 
-## Database Design (high level)
+## Synthetic Data Generation
 
-### Core Entities
-- **user** — individuals with login/identity
-- **org** — companies/corporates
-- **membership** — many‑to‑many user↔org roles
-- **account** — bank/brokerage accounts; owner = user or org
-- **transaction** — cash movements (income/expense/transfers)
-- **section** — high‑level flow type: `income`, `expense`, `transfer`
-- **category** — granular classification (rent, tax, food, etc.)
-- **counterparty** — external entities (IBAN/Name) or internal user/org
-- **instrument** — tradable equity (ISIN/Ticker, currency)
-- **trade** — executions (buy/sell), linked to a brokerage account
-- **holding** — aggregated position per account+instrument
-- **lot** — FIFO/average‑cost building blocks for realized P&L
+`scripts/gen_seed_data.py` now produces an expansive, story-driven dataset:
 
-### Keys & Notes
-- Internal transfers are two legs across two accounts, linked by a common `transfer_group_id`.
-- Holdings maintain **weighted average cost** for quick snapshots; lots enable **FIFO** for realized P&L.
+- **Defaults** (`--individuals 2500 --companies 120 --months 18`) yield roughly
+  700k transactions, 2.5k users, and 120 corporate accounts—sized to run on an
+  M4 MacBook Air (16 GB RAM) while leaving headroom for analytics.
+- All values are reproducible with `--seed <int>`.
+- Accounts cover checking, savings, and brokerage products so charts can show
+  both cash flow and investment performance.
 
-### ERD
-```mermaid
-erDiagram
-  USER ||--o{ MEMBERSHIP : has
-  ORG  ||--o{ MEMBERSHIP : includes
-  USER ||--o{ ACCOUNT : owns
-  ORG  ||--o{ ACCOUNT : controls
-  ACCOUNT ||--o{ TRANSACTION : records
-  SECTION ||--o{ CATEGORY : groups
-  CATEGORY ||--o{ TRANSACTION : classifies
-  COUNTERPARTY ||--o{ TRANSACTION : involves
-  INSTRUMENT ||--o{ TRADE : traded
-  ACCOUNT ||--o{ TRADE : executes
-  ACCOUNT ||--o{ HOLDING : aggregates
-  HOLDING ||--o{ LOT : composed_of
-  TRADE ||--o{ LOT : creates
+Common commands:
+```bash
+# Generate the default large dataset under data/seed/
+python scripts/gen_seed_data.py
+
+# Lighter run for local debugging
+python scripts/gen_seed_data.py --individuals 200 --companies 20 --months 6
+
+# Start an ongoing stream of fresh spend data (writes to data/stream/)
+python scripts/gen_seed_data.py --continuous --live-batch-size 150 --live-interval 1.5
 ```
 
----
-
-## CSV Schemas (ingest)
-
-### `data/transactions.csv`
-| column | type | notes |
-|---|---|---|
-| `external_id` | string | source row id (optional) |
-| `account_ref` | string | maps to an account (e.g., IBAN or alias) |
-| `date` | date | `YYYY-MM-DD` |
-| `amount` | decimal | positive for inflow, negative for outflow |
-| `currency` | string | ISO 4217 |
-| `section` | string | `income`/`expense`/`transfer` |
-| `category` | string | e.g., `rent`, `tax`, `food` |
-| `description` | string | free text |
-| `counterparty_name` | string | external/internal name |
-| `counterparty_account` | string | IBAN or internal handle |
-| `transfer_group_id` | string | join the two legs of an internal transfer |
-
-### `data/trades.csv`
-| column | type | notes |
-|---|---|---|
-| `account_ref` | string | brokerage account alias |
-| `trade_time` | datetime | ISO 8601 |
-| `symbol` | string | ticker |
-| `isin` | string | optional but preferred |
-| `side` | enum | `BUY`/`SELL` |
-| `qty` | decimal | shares |
-| `price` | decimal | per‑share |
-| `fees` | decimal | optional |
-| `currency` | string | trade currency |
-| `external_id` | string | optional broker id |
-
-> The ingest scripts create missing counterparties/instruments on the fly and classify rows via rules. Add rule sets in `app/etl/`.
+### Live Streaming
+`--continuous` keeps the generator running after the historical snapshot and
+appends card-style spend events to `data/stream/transactions_live.csv`. Use this
+for real-time dashboard demos—watch charts update while the stream adds new
+rows every few seconds.
 
 ---
 
-## Connection Strings
-- SQLAlchemy URL (host): `mysql+mysqlclient://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}`
-- Inside Docker (service‑to‑service): host is the compose service name (e.g., `db`).
+## Narrative Ideas for Dashboards
+These scenarios are already embedded in the generator so you can craft charts
+or KPIs around them later.
+
+### Individuals
+- **Budgeting & cost of living** — monthly salary inflows, rent debits, and
+  utilities produce clear fixed-cost vs discretionary patterns.
+- **Savings habits** — internal transfers push 8–18% of each salary into savings
+  accounts, enabling trend lines for rainy-day funds.
+- **Lifestyle segments** — categories such as travel, dining, and subscriptions
+  let you cluster users into frugal vs experiential personas.
+
+### Companies
+- **Revenue vs. expenses** — recurring customer invoice inflows contrasted with
+  vendor, rent, payroll, and quarterly tax outflows provide classic P&L views.
+- **Payroll insights** — each employee’s salary hits their employer’s account as
+  a paired debit, making headcount cost analyses straightforward.
+- **Cash runway** — with 18 months of history, you can highlight seasonality,
+  burn rate, and forecast runway for different industries.
+
+### Bank Admin / Portfolio View
+- **System-wide spend mix** — aggregate card, SEPA, and internal transfer volumes
+  to show how money flows through the institution.
+- **Sector performance** — company industries unlock heatmaps (e.g. which sectors
+  drive inflows vs. cash burn).
+- **Investment trends** — hundreds of investors trade popular tickers (AAPL,
+  MSFT, NVDA, TSLA, VWRL, ASML), enabling holdings and P&L dashboards.
+
+Capture these stories in dashboards and docs to help reviewers connect the data
+with real-world use cases.
 
 ---
 
-## Roles / Views
-- **Bank admin**: grouped view across all orgs/users, risk flags, and top categories.
-- **Corporate**: own operating/brokerage accounts + employees’ expense accounts.
-- **Individual**: checking/savings/brokerage, transfers to companies (internal/external).
-
----
-
-## Roadmap
-- Add Alembic and first migration from `sql/schema.sql`.
-- Implement `app/services/holdings.py` to maintain avg cost and lots.
-- Write robust categorization rules for transactions. Unit tests in `tests/`.
-- Add simple FastAPI endpoints and a basic dashboard page (optional).
-- Seed demo CSVs and a Jupyter notebook for quick EDA.
+## Roadmap Notes
+- Flesh out `app/services/` with reusable transaction/trade services before the
+  FastAPI layer lands.
+- Introduce Alembic migrations that mirror `sql/schema.sql`.
+- Wire the streaming feed into background workers or websocket publishers so the
+  dashboard front-end can subscribe to live updates.
+- Port over any still-useful utilities from `old/` once their modern
+  equivalents exist in the new `app/` package.

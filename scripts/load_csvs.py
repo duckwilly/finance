@@ -6,6 +6,11 @@ import pymysql
 
 SEED_DIR = Path("data/seed")
 
+ALLOWED_ACCOUNT_TYPES = {"checking", "savings", "brokerage", "operating"}
+ALLOWED_DIRECTIONS = {"DEBIT", "CREDIT"}
+ALLOWED_CHANNELS = {"SEPA", "CARD", "WIRE", "CASH", "INTERNAL"}
+ALLOWED_TRADE_SIDES = {"BUY", "SELL"}
+
 DB_CFG = dict(
     host=os.getenv("DB_HOST", "127.0.0.1"),
     port=int(os.getenv("DB_PORT", "3306")),
@@ -78,7 +83,7 @@ def upsert_account(cur, owner_type, owner_id, acct):
     cur.execute("""
         SELECT id FROM account
         WHERE owner_type=%s AND owner_id=%s AND type=%s AND name<=>%s
-    """, (owner_type, owner_id, acct["name"]))
+    """, (owner_type, owner_id, acct["type"], acct["name"] or None))
     r = cur.fetchone()
     if r:
         return r["id"]
@@ -177,12 +182,26 @@ def load_users_orgs_accounts_and_memberships():
         for a in accts:
             owner_type = a["owner_type"]
             owner_ext  = a["owner_ext_id"]
-            if owner_type == "user":
-                owner_id = user_map[owner_ext]
-            elif owner_type == "org":
-                owner_id = org_map[owner_ext]
-            else:
-                raise ValueError(f"Unknown owner_type: {owner_type}")
+
+            if owner_type not in ("user", "org"):
+                raise ValueError(f"Unknown owner_type '{owner_type}' in accounts.csv for ext_id {a['ext_id']}")
+
+            if a["type"] not in ALLOWED_ACCOUNT_TYPES:
+                raise ValueError(
+                    f"Unsupported account type '{a['type']}' for owner {owner_type}:{owner_ext}; "
+                    f"expected one of {sorted(ALLOWED_ACCOUNT_TYPES)}"
+                )
+
+            try:
+                if owner_type == "user":
+                    owner_id = user_map[owner_ext]
+                else:
+                    owner_id = org_map[owner_ext]
+            except KeyError as exc:
+                raise ValueError(
+                    f"Account owner reference '{owner_ext}' (type {owner_type}) not found while loading accounts"
+                ) from exc
+
             aid = upsert_account(cur, owner_type, owner_id, a)
             acct_map[a["ext_id"]] = aid
 
@@ -191,12 +210,24 @@ def load_users_orgs_accounts_and_memberships():
             party_type = m["party_type"]
             party_ext  = m["party_ext_id"]
             if party_type == "user":
-                party_id = user_map[party_ext]
+                try:
+                    party_id = user_map[party_ext]
+                except KeyError as exc:
+                    raise ValueError(f"Membership references unknown user ext_id '{party_ext}'") from exc
             elif party_type == "org":
-                party_id = org_map[party_ext]
+                try:
+                    party_id = org_map[party_ext]
+                except KeyError as exc:
+                    raise ValueError(f"Membership references unknown org ext_id '{party_ext}'") from exc
             else:
-                raise ValueError(f"Unknown party_type: {party_type}")
-            account_id = acct_map[m["account_ext_id"]]
+                raise ValueError(f"Unknown party_type '{party_type}' in account_memberships.csv")
+
+            try:
+                account_id = acct_map[m["account_ext_id"]]
+            except KeyError as exc:
+                raise ValueError(
+                    f"Membership references unknown account ext_id '{m['account_ext_id']}'"
+                ) from exc
             ensure_membership(cur, party_type, party_id, account_id, m["role"])
 
     return user_map, org_map, acct_map
@@ -258,19 +289,35 @@ def load_transactions(acct_map):
         transfer_bucket = {}
 
         for t in txns:
-            account_id = acct_map[t["account_ext_id"]]
+            try:
+                account_id = acct_map[t["account_ext_id"]]
+            except KeyError as exc:
+                raise ValueError(
+                    f"Transaction references unknown account ext_id '{t['account_ext_id']}'"
+                ) from exc
+
             posted_at  = t["posted_at"]
             txn_date   = t["txn_date"]
             amount     = t["amount"]
             currency   = t["currency"]
-            direction  = t["direction"]
-            channel    = t["channel"]
-            description= t.get("description") or None
-            cp_name    = t.get("counterparty_name") or None
-            cp_acct    = t.get("counterparty_account") or None
-            cp_bic     = t.get("counterparty_bic") or None
+            direction  = (t["direction"] or "").upper()
+            channel    = (t["channel"] or "").upper()
+            description = t.get("description") or None
+            cp_name     = t.get("counterparty_name") or None
+            cp_acct     = t.get("counterparty_account") or None
+            cp_bic      = t.get("counterparty_bic") or None
             transfer_ref = t.get("transfer_ref") or None
             ext_ref      = t.get("ext_reference") or None
+
+            if direction not in ALLOWED_DIRECTIONS:
+                raise ValueError(
+                    f"Unsupported transaction direction '{t['direction']}' for account {t['account_ext_id']}"
+                )
+
+            if channel not in ALLOWED_CHANNELS:
+                raise ValueError(
+                    f"Unsupported transaction channel '{t['channel']}' for account {t['account_ext_id']}"
+                )
 
             section_name = t.get("section_name") or None
             category_name= t.get("category_name") or None
@@ -325,9 +372,27 @@ def load_trades_and_holdings(acct_map, inst_map):
         cur = c.cursor()
 
         for tr in trades:
-            account_id = acct_map[tr["account_ext_id"]]
-            instrument_id = inst_map[tr["instrument_ext_id"]]
-            side = tr["side"].upper()
+            try:
+                account_id = acct_map[tr["account_ext_id"]]
+            except KeyError as exc:
+                raise ValueError(
+                    f"Trade references unknown account ext_id '{tr['account_ext_id']}'"
+                ) from exc
+
+            try:
+                instrument_id = inst_map[tr["instrument_ext_id"]]
+            except KeyError as exc:
+                raise ValueError(
+                    f"Trade references unknown instrument ext_id '{tr['instrument_ext_id']}'"
+                ) from exc
+
+            side = (tr["side"] or "").upper()
+
+            if side not in ALLOWED_TRADE_SIDES:
+                raise ValueError(
+                    f"Unsupported trade side '{tr['side']}' for account {tr['account_ext_id']}"
+                )
+
             qty = float(tr["qty"])
             price = float(tr["price"])
             fees = float(tr.get("fees") or 0.0)

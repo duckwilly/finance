@@ -37,10 +37,9 @@ logs/
 .env.*
 !.env.example
 
-# --- Data (keep only seed)
-data/*
-!data/seed/
-!data/seed/**
+# --- Data (generated outputs)
+data/seed/
+data/stream/
 !data/README.md
 
 # --- VS Code (keep optional recommendations)
