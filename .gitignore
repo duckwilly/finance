@@ -1,0 +1,52 @@
+# --- OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+
+# --- Python
+__pycache__/
+*.py[cod]
+*$py.class
+.mypy_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Packaging / builds
+build/
+dist/
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+
+# --- Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# --- Logs
+logs/
+*.log
+
+# --- Env & secrets
+.env
+.env.*
+!.env.example
+
+# --- Data (keep only seed)
+data/*
+!data/seed/
+!data/seed/**
+!data/README.md
+
+# --- VS Code (keep optional recommendations)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# --- Docker local volumes
+docker/db_data/

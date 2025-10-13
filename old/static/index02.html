@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Finance & Insight Dashboard</title>
+<style>
+  :root{
+    --bg:hsl(220 20% 8%);
+    --panel:hsl(220 14% 14%);
+    --text:#fff;
+    --muted:hsl(220 10% 65%);
+    --line:hsl(220 10% 35%);
+    --accent:hsl(204 90% 55%);
+    --radius:14px;
+    --header-h:56px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+    color:var(--text);
+    background:
+      radial-gradient(1200px 800px at 80% -10%, hsl(204 70% 15%/.35), transparent 60%),
+      radial-gradient(1000px 600px at -20% 110%, hsl(280 60% 20%/.25), transparent 60%),
+      var(--bg);
+  }
+
+  /* fixed header so the hero can truly occupy the first screen */
+  header{
+    position:fixed; inset:0 0 auto 0; height:var(--header-h); z-index:2;
+    padding:14px 20px;
+    display:flex; align-items:center;
+    background:linear-gradient(180deg, hsl(220 14% 12%), hsl(220 16% 10%));
+    border-bottom:1px solid hsl(220 10% 20%);
+    box-shadow:0 2px 12px hsl(220 30% 2%/.35);
+  }
+  header h1{margin:0;font-size:clamp(18px,2.4vw,22px);font-weight:600}
+
+  main{padding-top:var(--header-h)}
+
+  .hero{
+    position:relative;
+    min-height:calc(100svh - var(--header-h));
+    display:grid; place-items:center;
+    padding:clamp(20px,4vw,60px) 20px;
+  }
+
+  .card{
+    width:min(420px,92vw);
+    background:linear-gradient(180deg, hsl(220 14% 16%), hsl(220 14% 13%));
+    border:1px solid hsl(220 12% 22%);
+    border-radius:var(--radius);
+    box-shadow:0 20px 60px hsl(220 40% 2%/.6), inset 0 1px 0 hsl(0 0% 100%/.04);
+    padding:24px;
+  }
+  .card h2{margin:0 0 16px;font-weight:600}
+
+  form{display:grid;gap:12px}
+  label{font-size:.9rem;color:var(--muted)}
+  input{
+    width:100%;padding:12px;
+    border:1px solid hsl(220 10% 30%);
+    border-radius:10px;background:hsl(220 14% 12%);color:var(--text);outline:0;
+  }
+  input::placeholder{color:hsl(220 10% 55%)}
+  input:focus{border-color:var(--accent);box-shadow:0 0 0 3px hsl(204 90% 55%/.15)}
+  button{
+    margin-top:8px;padding:12px 14px;border:0;border-radius:10px;
+    background:linear-gradient(180deg, var(--accent), hsl(204 82% 48%));
+    color:#fff;font-weight:600;cursor:pointer;
+  }
+
+  .description{padding:28px 20px 56px;max-width:900px;margin:0 auto}
+  .description h3{margin:0 0 10px;font-size:1.1rem}
+  .description p{margin:0 0 10px;color:var(--muted)}
+</style>
+</head>
+<body>
+  <header><h1>Finance &amp; Insight Dashboard</h1></header>
+
+  <main>
+    <section class="hero" aria-label="Login">
+      <div class="card" role="region" aria-labelledby="login-title">
+        <h2 id="login-title">Log In</h2>
+        <form action="#" method="post" autocomplete="on">
+          <div>
+            <label for="username">User</label>
+            <input id="username" name="username" type="text" placeholder="username" required>
+          </div>
+          <div>
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" placeholder="••••••••" required>
+          </div>
+          <button type="submit">Sign in</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="description" aria-label="Description">
+      <h3>Description</h3>
+      <p>Lightweight landing for a finance dashboard. The login occupies the full first screen; scroll to continue.</p>
+      <p>Replace this with your app’s details, features, or links.</p>
+    </section>
+  </main>
+</body>
+</html>
