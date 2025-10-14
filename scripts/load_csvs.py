@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import csv
-import os
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -14,6 +13,7 @@ import pymysql
 
 SEED_DIR = Path("data/seed")
 
+from app.config import get_settings
 from app.log import get_logger, init_logging, log_context, progress_manager, timeit
 
 logger = get_logger(__name__)
@@ -22,12 +22,15 @@ ALLOWED_DIRECTIONS = {"DEBIT", "CREDIT"}
 ALLOWED_CHANNELS = {"SEPA", "CARD", "WIRE", "CASH", "INTERNAL"}
 ALLOWED_TRADE_SIDES = {"BUY", "SELL"}
 
+settings = get_settings()
+db_settings = settings.database
+
 DB_CFG = dict(
-    host=os.getenv("DB_HOST", "127.0.0.1"),
-    port=int(os.getenv("DB_PORT", "3306")),
-    user=os.getenv("DB_USER", "root"),
-    password=os.getenv("DB_PASSWORD", ""),
-    database=os.getenv("DB_NAME", "finance"),
+    host=db_settings.host,
+    port=db_settings.port,
+    user=db_settings.user,
+    password=db_settings.password,
+    database=db_settings.name,
     charset="utf8mb4",
     autocommit=False,
     cursorclass=pymysql.cursors.DictCursor,

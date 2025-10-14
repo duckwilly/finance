@@ -1,28 +1,45 @@
-# Simple connectivity check.
-import os
-from sqlalchemy import create_engine, text
-from dotenv import load_dotenv
+"""Simple database connectivity check."""
+from __future__ import annotations
 
-load_dotenv()
+import sys
+from pathlib import Path
 
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT")
-DB_NAME = os.getenv("DB_NAME")
+from sqlalchemy import text
 
-# Default to PyMySQL; override with DB_DRIVER if you prefer mysqlclient.
-DRIVER = os.getenv("DB_DRIVER", "mysql+pymysql")
-url = f"{DRIVER}://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-engine = create_engine(url, echo=os.getenv("SQLALCHEMY_ECHO", "false") == "true", future=True)
+from app.config import get_settings  # noqa: E402  (import after sys.path manipulation)
+from app.db.engine import create_sync_engine  # noqa: E402
 
-def main():
+settings = get_settings()
+engine = create_sync_engine()
+
+
+def main() -> None:
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))
-        version = conn.execute(text("SELECT VERSION()")).scalar()
-        db = conn.execute(text("SELECT DATABASE()")).scalar()
-        print(f"✅ Connected to {db} ({version}) via {DRIVER}")
+        version = conn.execute(text("SELECT VERSION()"))
+        db = conn.execute(text("SELECT DATABASE()"))
+        print(
+            "✅ Connected to {db} ({version}) via {driver}".format(
+                db=db.scalar(),
+                version=version.scalar(),
+                driver=settings.database.driver,
+            )
+        )
+        masked_password = "***" if settings.database.password else ""
+        print(
+            "Connection details: {user}:{pwd}@{host}:{port}/{name}".format(
+                user=settings.database.user,
+                pwd=masked_password,
+                host=settings.database.host,
+                port=settings.database.port,
+                name=settings.database.name,
+            )
+        )
+
 
 if __name__ == "__main__":
     main()
