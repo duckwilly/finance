@@ -108,6 +108,33 @@ python scripts/db_smoketest.py
 The script uses PyMySQL by default; override `DB_DRIVER` if you prefer
 `mysqlclient`.
 
+### 7) Launch the FastAPI admin dashboard
+
+With the database running and populated, you can start the new web frontend to
+explore the administrator landing page:
+
+1. Activate your virtual environment (see step 4) and ensure dependencies are installed.
+2. Export any database overrides if you are not using the defaults described in
+   step 2 (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`,
+   `DB_DRIVER`). The FastAPI layer reuses the same settings module as the ETL
+   scripts, so the environment only needs to be configured once.
+3. From the repository root, run Uvicorn:
+
+   ```bash
+   uvicorn app.web.app:app --reload
+   ```
+
+   Add `--host 0.0.0.0 --port 8080` (or similar) if you want to change the bind
+   address for containers/cloud deployments. In production you can drop
+   `--reload` and let a process manager (e.g., gunicorn with `uvicorn.workers`) handle restarts.
+4. Open [http://localhost:8000/admin](http://localhost:8000/admin) in your
+   browser. The page renders aggregated metrics and recent-account activity by
+   calling `AdminDashboardService`, which in turn queries the MariaDB instance.
+
+> **Troubleshooting:** The server logs any database connectivity errors on
+> startup. Double-check that the database container is running, credentials
+> match, and the schema has been initialized.
+
 ---
 
 ## Synthetic Data Generation
