@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy import text
 from sqlalchemy.engine import Result
-from sqlalchemy.sql import TextClause
+from sqlalchemy.sql.elements import TextClause
 from sqlalchemy.orm import Session
 
 
