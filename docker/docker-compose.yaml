@@ -3,11 +3,13 @@ services:
     image: mariadb:11
     container_name: finance
     restart: unless-stopped
+    env_file:
+      - ../.env
     environment:
-      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD}
-      - MARIADB_DATABASE=${MARIADB_DATABASE}
-      - MARIADB_USER=${MARIADB_USER}
-      - MARIADB_PASSWORD=${MARIADB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-devroot}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-finance}
+      MARIADB_USER: ${MARIADB_USER:-app}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-apppwd}
     ports:
       - "${DB_PORT:-3306}:3306"
     volumes:
