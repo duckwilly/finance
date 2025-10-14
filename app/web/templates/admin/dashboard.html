@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Finance Admin Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --text-color: #1f2328;
+        --accent-color: #2563eb;
+        --muted-text: #6b7280;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-color: #111827;
+          --card-bg: #1f2937;
+          --text-color: #f9fafb;
+          --muted-text: #9ca3af;
+        }
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg-color);
+        color: var(--text-color);
+      }
+
+      header {
+        background: var(--card-bg);
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid rgba(100, 116, 139, 0.2);
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 1.5rem;
+      }
+
+      main {
+        padding: 2rem;
+        display: grid;
+        gap: 2rem;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+      }
+
+      .summary-card {
+        background: var(--card-bg);
+        padding: 1.25rem;
+        border-radius: 0.75rem;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .summary-card h2 {
+        margin: 0;
+        font-size: 0.95rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted-text);
+      }
+
+      .summary-card .value {
+        font-size: 2rem;
+        font-weight: 600;
+      }
+
+      section h2 {
+        margin: 0 0 0.75rem 0;
+        font-size: 1.25rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--card-bg);
+        border-radius: 0.75rem;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      }
+
+      th,
+      td {
+        padding: 0.75rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid rgba(100, 116, 139, 0.15);
+      }
+
+      th {
+        font-size: 0.9rem;
+        color: var(--muted-text);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      tr:last-child td {
+        border-bottom: none;
+      }
+
+      .muted {
+        color: var(--muted-text);
+        font-size: 0.85rem;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Finance Admin Dashboard</h1>
+      <p class="muted">
+        Snapshot generated on {{ dashboard.generated_at.strftime('%Y-%m-%d %H:%M UTC') }}
+      </p>
+    </header>
+    <main>
+      <section class="summary-grid">
+        <article class="summary-card">
+          <h2>Customers</h2>
+          <span class="value">{{ '{:,}'.format(dashboard.metrics.user_count) }}</span>
+        </article>
+        <article class="summary-card">
+          <h2>Organizations</h2>
+          <span class="value">{{ '{:,}'.format(dashboard.metrics.org_count) }}</span>
+        </article>
+        <article class="summary-card">
+          <h2>Accounts</h2>
+          <span class="value">{{ '{:,}'.format(dashboard.metrics.account_count) }}</span>
+        </article>
+        <article class="summary-card">
+          <h2>Transactions</h2>
+          <span class="value">{{ '{:,}'.format(dashboard.metrics.transaction_count) }}</span>
+        </article>
+        <article class="summary-card">
+          <h2>Total Balance</h2>
+          <span class="value">
+            {{ '{:,.2f}'.format(dashboard.metrics.total_balance) }}
+            <span class="muted">EUR</span>
+          </span>
+        </article>
+      </section>
+
+      <section>
+        <h2>Recently Opened Accounts</h2>
+        {% if dashboard.recent_accounts %}
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Account</th>
+              <th scope="col">Type</th>
+              <th scope="col">Opened</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for account in dashboard.recent_accounts %}
+            <tr>
+              <td>
+                {{ account.name or ('Account #' ~ account.id) }}
+              </td>
+              <td>{{ account.type|capitalize }}</td>
+              <td>{{ account.opened_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="muted">No accounts have been opened yet.</p>
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>
