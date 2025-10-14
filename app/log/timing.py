@@ -42,7 +42,7 @@ class _Timer:
             self.logger.log(self.level, message)
         else:
             fail_message = f"{self.label} failed after {elapsed:.2f}s"
-            if total:
+            if total is not None:
                 fail_message += f" ({total:,} {self.unit})"
             self.logger.error(fail_message)
 

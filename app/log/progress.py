@@ -20,6 +20,7 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+from rich.table import Column
 from rich.text import Text
 
 
@@ -39,13 +40,18 @@ class _RateColumn(ProgressColumn):
     """Display task throughput with backwards-compatible Rich versions."""
 
     def __init__(self, unit: str) -> None:
+        super().__init__()
         self._unit = unit
+        self._table_column = Column(no_wrap=True)
 
     def render(self, task: Task) -> Text:
         speed = task.finished_speed or task.speed
         if not speed:
             return Text("-", style="progress.percentage")
         return Text(f"{speed:,.0f} {self._unit}/s", style="progress.percentage")
+
+    def get_table_column(self) -> Column:
+        return self._table_column
 
 
 class ProgressManager:
