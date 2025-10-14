@@ -81,6 +81,8 @@ Using Compose (recommended):
 ```bash
 docker compose -f docker/docker-compose.yaml up -d
 ```
+The Compose file maps the database port using `DB_PORT` from your `.env` (default
+`3306`), so updating that value keeps local tooling and scripts aligned.
 
 ### 4) Create a virtual environment & install deps
 ```bash
