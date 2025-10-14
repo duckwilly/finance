@@ -60,7 +60,7 @@ finance/
 - Python 3.11+
 
 ### 2) Configure environment
-Create `.env` from the example and adjust as needed:
+Create `.env` from the example (or rely on the baked-in defaults) and adjust as needed:
 ```ini
 # .env example
 MARIADB_ROOT_PASSWORD=devroot
@@ -75,6 +75,10 @@ DB_PASSWORD=apppwd
 DB_DRIVER=mysql+pymysql
 SQLALCHEMY_ECHO=false
 ```
+
+> **Tip:** Compose now reads `.env` automatically when you run `docker compose`,
+> so the container starts even if you skip creating the file. Customize the
+> values above when you need something other than the defaults.
 
 ### 3) Start MariaDB (Docker)
 Using Compose (recommended):
