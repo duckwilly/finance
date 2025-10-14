@@ -11,14 +11,16 @@ from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
     Progress,
+    ProgressColumn,
     SpinnerColumn,
+    Task,
     TaskID,
     TaskProgressColumn,
     TextColumn,
     TimeElapsedColumn,
     TimeRemainingColumn,
-    TransferSpeedColumn,
 )
+from rich.text import Text
 
 
 @dataclass
@@ -33,6 +35,19 @@ class _Task:
         self.progress.update(self.task_id, **kwargs)
 
 
+class _RateColumn(ProgressColumn):
+    """Display task throughput with backwards-compatible Rich versions."""
+
+    def __init__(self, unit: str) -> None:
+        self._unit = unit
+
+    def render(self, task: Task) -> Text:
+        speed = task.finished_speed or task.speed
+        if not speed:
+            return Text("-", style="progress.percentage")
+        return Text(f"{speed:,.0f} {self._unit}/s", style="progress.percentage")
+
+
 class ProgressManager:
     """Create progress bars and spinners that play nicely with logging."""
 
@@ -45,7 +60,7 @@ class ProgressManager:
     def reset_console(self) -> None:
         self._console = Console()
 
-    def _columns(self, unit: str) -> list[object]:
+    def _columns(self, unit: str) -> list[ProgressColumn]:
         return [
             TextColumn("[bold blue]{task.description}[/]"),
             BarColumn(bar_width=None),
@@ -53,7 +68,7 @@ class ProgressManager:
             MofNCompleteColumn(),
             TimeElapsedColumn(),
             TimeRemainingColumn(),
-            TransferSpeedColumn(unit=f"{unit}/s"),
+            _RateColumn(unit),
         ]
 
     @contextmanager

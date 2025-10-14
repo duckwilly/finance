@@ -41,7 +41,10 @@ class _Timer:
                 message += ")"
             self.logger.log(self.level, message)
         else:
-            self.logger.error("%s failed after %.2fs", self.label, elapsed)
+            fail_message = f"{self.label} failed after {elapsed:.2f}s"
+            if total:
+                fail_message += f" ({total:,} {self.unit})"
+            self.logger.error(fail_message)
 
 
 @contextmanager
