@@ -1,7 +1,7 @@
 services:
   db:
     image: mariadb:11
-    container_name: finance
+    container_name: finance-mariadb
     restart: unless-stopped
     env_file:
       - ../.env

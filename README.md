@@ -76,9 +76,10 @@ DB_DRIVER=mysql+pymysql
 SQLALCHEMY_ECHO=false
 ```
 
-> **Tip:** Compose now reads `.env` automatically when you run `docker compose`,
-> so the container starts even if you skip creating the file. Customize the
-> values above when you need something other than the defaults.
+> **Tip:** Run `docker compose` from the repository root and Compose will read
+> `.env` automatically. If the file is missing, the service falls back to the
+> defaults baked into `docker/docker-compose.yaml`, so the container still
+> starts. Customize the values above when you need something different.
 
 ### 3) Start MariaDB (Docker)
 Using Compose (recommended):
