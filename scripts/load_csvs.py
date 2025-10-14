@@ -1,86 +1,22 @@
 #!/usr/bin/env python3
 import csv
-import logging
 import os
 import sys
-import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Iterator, Optional, Sequence, Tuple
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import pymysql
 
 SEED_DIR = Path("data/seed")
 
-logger = logging.getLogger(__name__)
+from app.log import get_logger, init_logging, log_context, progress_manager, timeit
 
-
-class ProgressTracker:
-    """Light-weight terminal progress bar with optional totals."""
-
-    def __init__(
-        self,
-        label: str,
-        *,
-        total: Optional[int] = None,
-        unit: str = "rows",
-        width: int = 30,
-        min_interval: float = 0.5,
-    ) -> None:
-        self.label = label
-        self.total = total
-        self.unit = unit
-        self.width = width
-        self.min_interval = min_interval
-        self.start = time.time()
-        self.last_print = 0.0
-        self.current = 0
-        self._last_line_length = 0
-        self._active = False
-
-    def advance(self, step: int = 1) -> None:
-        self.current += step
-        self._display()
-
-    def pause(self) -> None:
-        if self._active:
-            print()
-            self._active = False
-            self._last_line_length = 0
-
-    def finish(self) -> None:
-        self._display(force=True, final=True)
-
-    def _display(self, force: bool = False, final: bool = False) -> None:
-        now = time.time()
-        if not force and now - self.last_print < self.min_interval and not final:
-            return
-
-        elapsed = max(now - self.start, 1e-9)
-        rate = self.current / elapsed
-
-        if self.total:
-            pct = min(self.current / self.total, 1.0) if self.total else 0.0
-            filled = int(self.width * pct)
-            bar = "#" * filled + "-" * (self.width - filled)
-            msg = (
-                f"{self.label}: [{bar}] {self.current:,}/{self.total:,} "
-                f"({pct * 100:5.1f}%) {rate:,.0f} {self.unit}/s"
-            )
-        else:
-            msg = f"{self.label}: {self.current:,} {self.unit} ({rate:,.0f} {self.unit}/s)"
-
-        padding = " " * max(0, self._last_line_length - len(msg))
-        print(f"\r{msg}{padding}", end="", flush=True)
-        self._last_line_length = len(msg)
-        self.last_print = now
-        self._active = True
-
-        if final:
-            print()
-            self._active = False
-            self._last_line_length = 0
-
+logger = get_logger(__name__)
 ALLOWED_ACCOUNT_TYPES = {"checking", "savings", "brokerage", "operating"}
 ALLOWED_DIRECTIONS = {"DEBIT", "CREDIT"}
 ALLOWED_CHANNELS = {"SEPA", "CARD", "WIRE", "CASH", "INTERNAL"}
@@ -99,15 +35,21 @@ DB_CFG = dict(
 
 @contextmanager
 def conn():
+    target = f"{DB_CFG['user']}@{DB_CFG['host']}:{DB_CFG['port']}/{DB_CFG['database']}"
+    logger.debug("Connecting to %s", target)
     c = pymysql.connect(**DB_CFG)
+    logger.info("Connected to %s", target)
     try:
         yield c
         c.commit()
+        logger.debug("Committed transaction for %s", target)
     except Exception:
+        logger.exception("Error during database work against %s", target)
         c.rollback()
         raise
     finally:
         c.close()
+        logger.debug("Closed connection to %s", target)
 
 def read_rows(name: str) -> Sequence[dict]:
     path = SEED_DIR / name
@@ -417,101 +359,117 @@ def load_transactions(acct_map):
         for row in cur.fetchall():
             CATEGORY_CACHE[(row["section_id"], row["name"])] = row["id"]
 
-        progress = ProgressTracker("Inserting transactions", total=total_rows)
-
         transfer_refs = set()
         processed = 0
         batch_size = 5000
 
-        for t in stream_rows("transactions.csv"):
-            processed += 1
-            try:
-                account_id = acct_map[t["account_ext_id"]]
-            except KeyError as exc:
-                progress.pause()
-                raise ValueError(
-                    f"Transaction references unknown account ext_id '{t['account_ext_id']}'"
-                ) from exc
+        with timeit(
+            "transaction import",
+            logger=logger,
+            unit="rows",
+            total=total_rows,
+        ) as timer, progress_manager.task(
+            "Inserting transactions", total=total_rows, unit="rows"
+        ) as task:
+            for t in stream_rows("transactions.csv"):
+                processed += 1
+                timer.add()
+                try:
+                    account_id = acct_map[t["account_ext_id"]]
+                except KeyError as exc:
+                    logger.error(
+                        "Transaction references unknown account ext_id '%s'",
+                        t["account_ext_id"],
+                    )
+                    raise ValueError(
+                        f"Transaction references unknown account ext_id '{t['account_ext_id']}'"
+                    ) from exc
 
-            posted_at = t["posted_at"]
-            txn_date = t["txn_date"]
-            amount = t["amount"]
-            currency = t["currency"]
-            direction = (t["direction"] or "").upper()
-            channel = (t["channel"] or "").upper()
-            description = t.get("description") or None
-            cp_name = t.get("counterparty_name") or None
-            cp_acct = t.get("counterparty_account") or None
-            cp_bic = t.get("counterparty_bic") or None
-            transfer_ref = t.get("transfer_ref") or None
-            ext_ref = t.get("ext_reference") or None
+                posted_at = t["posted_at"]
+                txn_date = t["txn_date"]
+                amount = t["amount"]
+                currency = t["currency"]
+                direction = (t["direction"] or "").upper()
+                channel = (t["channel"] or "").upper()
+                description = t.get("description") or None
+                cp_name = t.get("counterparty_name") or None
+                cp_acct = t.get("counterparty_account") or None
+                cp_bic = t.get("counterparty_bic") or None
+                transfer_ref = t.get("transfer_ref") or None
+                ext_ref = t.get("ext_reference") or None
 
-            if direction not in ALLOWED_DIRECTIONS:
-                progress.pause()
-                raise ValueError(
-                    f"Unsupported transaction direction '{t['direction']}' for account {t['account_ext_id']}"
+                if direction not in ALLOWED_DIRECTIONS:
+                    logger.error(
+                        "Unsupported transaction direction '%s' for account %s",
+                        t["direction"],
+                        t["account_ext_id"],
+                    )
+                    raise ValueError(
+                        f"Unsupported transaction direction '{t['direction']}' for account {t['account_ext_id']}"
+                    )
+
+                if channel not in ALLOWED_CHANNELS:
+                    logger.error(
+                        "Unsupported transaction channel '%s' for account %s",
+                        t["channel"],
+                        t["account_ext_id"],
+                    )
+                    raise ValueError(
+                        f"Unsupported transaction channel '{t['channel']}' for account {t['account_ext_id']}"
+                    )
+
+                section_name = t.get("section_name") or None
+                category_name = t.get("category_name") or None
+
+                if section_name and section_name not in sec_map:
+                    logger.error("Unknown section %s", section_name)
+                    raise ValueError(
+                        f"Unknown section {section_name} (expected one of {list(sec_map)})"
+                    )
+                section_id = sec_map.get(section_name) if section_name else sec_map["transfer"]
+
+                category_id = (
+                    get_or_create_category(cur, section_id, category_name)
+                    if category_name
+                    else None
+                )
+                counterparty_id = None
+                if any([cp_name, cp_acct, cp_bic]):
+                    counterparty_id = get_or_create_counterparty(cur, cp_name, cp_acct, cp_bic)
+
+                cur.execute(
+                    """
+                    INSERT INTO `transaction`(
+                      account_id, posted_at, txn_date, amount, currency, direction,
+                      section_id, category_id, channel, description,
+                      counterparty_id, transfer_group_id, ext_reference
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """,
+                    (
+                        account_id,
+                        posted_at,
+                        txn_date,
+                        amount,
+                        currency,
+                        direction,
+                        section_id,
+                        category_id,
+                        channel,
+                        description,
+                        counterparty_id,
+                        transfer_ref,
+                        ext_ref,
+                    ),
                 )
 
-            if channel not in ALLOWED_CHANNELS:
-                progress.pause()
-                raise ValueError(
-                    f"Unsupported transaction channel '{t['channel']}' for account {t['account_ext_id']}"
-                )
+                if transfer_ref:
+                    transfer_refs.add(transfer_ref)
 
-            section_name = t.get("section_name") or None
-            category_name = t.get("category_name") or None
-
-            if section_name and section_name not in sec_map:
-                progress.pause()
-                raise ValueError(f"Unknown section {section_name} (expected one of {list(sec_map)})")
-            section_id = sec_map.get(section_name) if section_name else sec_map["transfer"]
-
-            category_id = (
-                get_or_create_category(cur, section_id, category_name)
-                if category_name
-                else None
-            )
-            counterparty_id = None
-            if any([cp_name, cp_acct, cp_bic]):
-                counterparty_id = get_or_create_counterparty(cur, cp_name, cp_acct, cp_bic)
-
-            cur.execute(
-                """
-                INSERT INTO `transaction`(
-                  account_id, posted_at, txn_date, amount, currency, direction,
-                  section_id, category_id, channel, description,
-                  counterparty_id, transfer_group_id, ext_reference
-                )
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """,
-                (
-                    account_id,
-                    posted_at,
-                    txn_date,
-                    amount,
-                    currency,
-                    direction,
-                    section_id,
-                    category_id,
-                    channel,
-                    description,
-                    counterparty_id,
-                    transfer_ref,
-                    ext_ref,
-                ),
-            )
-
-            if transfer_ref:
-                transfer_refs.add(transfer_ref)
-
-            if processed % batch_size == 0:
-                progress.pause()
-                c.commit()
-                logger.info("Committed %s transactions", processed)
-
-            progress.advance()
-
-        progress.finish()
+                if processed % batch_size == 0:
+                    c.commit()
+                    logger.info("Committed %s transactions", processed)
+                task.advance()
 
         # ensure final batch is committed before creating transfer links
         c.commit()
@@ -521,41 +479,44 @@ def load_transactions(acct_map):
             refs_list = list(transfer_refs)
             chunk_size = 1000
 
-            for i in range(0, len(refs_list), chunk_size):
-                chunk = refs_list[i : i + chunk_size]
-                placeholders = ",".join(["%s"] * len(chunk))
-                cur.execute(
-                    f"""
-                    INSERT IGNORE INTO transfer_link(debit_txn_id, credit_txn_id)
-                    SELECT d.id, c.id
-                    FROM `transaction` d
-                    JOIN `transaction` c
-                      ON d.transfer_group_id = c.transfer_group_id
-                     AND d.direction = 'DEBIT'
-                     AND c.direction = 'CREDIT'
-                    WHERE d.transfer_group_id IN ({placeholders})
-                """,
-                    chunk,
-                )
+            with progress_manager.spinner(
+                f"Linking {len(refs_list):,} transfer groups"
+            ):
+                for i in range(0, len(refs_list), chunk_size):
+                    chunk = refs_list[i : i + chunk_size]
+                    placeholders = ",".join(["%s"] * len(chunk))
+                    cur.execute(
+                        f"""
+                        INSERT IGNORE INTO transfer_link(debit_txn_id, credit_txn_id)
+                        SELECT d.id, c.id
+                        FROM `transaction` d
+                        JOIN `transaction` c
+                          ON d.transfer_group_id = c.transfer_group_id
+                         AND d.direction = 'DEBIT'
+                         AND c.direction = 'CREDIT'
+                        WHERE d.transfer_group_id IN ({placeholders})
+                    """,
+                        chunk,
+                    )
 
-            anomalies = []
-            for i in range(0, len(refs_list), chunk_size):
-                chunk = refs_list[i : i + chunk_size]
-                placeholders = ",".join(["%s"] * len(chunk))
-                cur.execute(
-                    f"""
-                    SELECT transfer_group_id AS ref,
-                           COUNT(*) AS cnt,
-                           SUM(direction='DEBIT') AS debits,
-                           SUM(direction='CREDIT') AS credits
-                    FROM `transaction`
-                    WHERE transfer_group_id IN ({placeholders})
-                    GROUP BY transfer_group_id
-                    HAVING cnt <> 2 OR debits <> 1 OR credits <> 1
-                """,
-                    chunk,
-                )
-                anomalies.extend(cur.fetchall())
+                anomalies = []
+                for i in range(0, len(refs_list), chunk_size):
+                    chunk = refs_list[i : i + chunk_size]
+                    placeholders = ",".join(["%s"] * len(chunk))
+                    cur.execute(
+                        f"""
+                        SELECT transfer_group_id AS ref,
+                               COUNT(*) AS cnt,
+                               SUM(direction='DEBIT') AS debits,
+                               SUM(direction='CREDIT') AS credits
+                        FROM `transaction`
+                        WHERE transfer_group_id IN ({placeholders})
+                        GROUP BY transfer_group_id
+                        HAVING cnt <> 2 OR debits <> 1 OR credits <> 1
+                    """,
+                        chunk,
+                    )
+                    anomalies.extend(cur.fetchall())
 
             for row in anomalies:
                 logger.warning(
@@ -575,64 +536,96 @@ def load_trades_and_holdings(acct_map, inst_map):
 
     with conn() as c:
         cur = c.cursor()
+        with timeit(
+            "trade import",
+            logger=logger,
+            unit="trades",
+            total=len(trades),
+        ) as timer, progress_manager.task(
+            "Processing trades", total=len(trades), unit="rows"
+        ) as task:
+            for tr in trades:
+                timer.add()
+                try:
+                    account_id = acct_map[tr["account_ext_id"]]
+                except KeyError as exc:
+                    logger.error(
+                        "Trade references unknown account ext_id '%s'",
+                        tr["account_ext_id"],
+                    )
+                    raise ValueError(
+                        f"Trade references unknown account ext_id '{tr['account_ext_id']}'"
+                    ) from exc
 
-        for tr in trades:
-            try:
-                account_id = acct_map[tr["account_ext_id"]]
-            except KeyError as exc:
-                raise ValueError(
-                    f"Trade references unknown account ext_id '{tr['account_ext_id']}'"
-                ) from exc
+                try:
+                    instrument_id = inst_map[tr["instrument_ext_id"]]
+                except KeyError as exc:
+                    logger.error(
+                        "Trade references unknown instrument ext_id '%s'",
+                        tr["instrument_ext_id"],
+                    )
+                    raise ValueError(
+                        f"Trade references unknown instrument ext_id '{tr['instrument_ext_id']}'"
+                    ) from exc
 
-            try:
-                instrument_id = inst_map[tr["instrument_ext_id"]]
-            except KeyError as exc:
-                raise ValueError(
-                    f"Trade references unknown instrument ext_id '{tr['instrument_ext_id']}'"
-                ) from exc
+                side = (tr["side"] or "").upper()
 
-            side = (tr["side"] or "").upper()
+                if side not in ALLOWED_TRADE_SIDES:
+                    logger.error(
+                        "Unsupported trade side '%s' for account %s",
+                        tr["side"],
+                        tr["account_ext_id"],
+                    )
+                    raise ValueError(
+                        f"Unsupported trade side '{tr['side']}' for account {tr['account_ext_id']}"
+                    )
 
-            if side not in ALLOWED_TRADE_SIDES:
-                raise ValueError(
-                    f"Unsupported trade side '{tr['side']}' for account {tr['account_ext_id']}"
+                qty = float(tr["qty"])
+                price = float(tr["price"])
+                fees = float(tr.get("fees") or 0.0)
+                tax  = float(tr.get("tax") or 0.0)
+                trade_time = tr["trade_time"]
+                settle_dt  = tr.get("settle_dt") or None
+                currency   = tr.get("currency") or "EUR"
+
+                # Insert trade
+                cur.execute(
+                    """
+                    INSERT INTO trade(account_id, instrument_id, trade_time, side, qty, price, fees, tax, currency, settle_dt)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """,
+                    (account_id, instrument_id, trade_time, side, qty, price, fees, tax, currency, settle_dt),
                 )
+                trade_id = cur.lastrowid
 
-            qty = float(tr["qty"])
-            price = float(tr["price"])
-            fees = float(tr.get("fees") or 0.0)
-            tax  = float(tr.get("tax") or 0.0)
-            trade_time = tr["trade_time"]
-            settle_dt  = tr.get("settle_dt") or None
-            currency   = tr.get("currency") or "EUR"
+                # Update holding (WAC method)
+                h = ensure_holding(cur, account_id, instrument_id)
+                h_id, h_qty, h_avg = h["id"], float(h["qty"]), float(h["avg_cost"])
 
-            # Insert trade
-            cur.execute("""
-                INSERT INTO trade(account_id, instrument_id, trade_time, side, qty, price, fees, tax, currency, settle_dt)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """, (account_id, instrument_id, trade_time, side, qty, price, fees, tax, currency, settle_dt))
-            trade_id = cur.lastrowid
-
-            # Update holding (WAC method)
-            h = ensure_holding(cur, account_id, instrument_id)
-            h_id, h_qty, h_avg = h["id"], float(h["qty"]), float(h["avg_cost"])
-
-            if side == "BUY":
-                buy_cost = qty * price + fees + tax
-                new_qty = h_qty + qty
-                new_avg = (h_qty * h_avg + buy_cost) / new_qty if new_qty else 0.0
-                cur.execute("UPDATE holding SET qty=%s, avg_cost=%s WHERE id=%s", (new_qty, new_avg, h_id))
-                insert_lot(cur, h_id, trade_id, qty, buy_cost)
-            elif side == "SELL":
-                if qty > h_qty + 1e-9:
-                    raise ValueError(f"Sell qty {qty} exceeds holding qty {h_qty}")
-                # Under WAC, avg stays constant; reduce qty and record a negative lot at WAC basis
-                new_qty = h_qty - qty
-                cur.execute("UPDATE holding SET qty=%s WHERE id=%s", (new_qty, h_id))
-                sell_basis = qty * h_avg
-                insert_lot(cur, h_id, trade_id, -qty, -sell_basis)
-            else:
-                raise ValueError(f"Unknown side {side}")
+                if side == "BUY":
+                    buy_cost = qty * price + fees + tax
+                    new_qty = h_qty + qty
+                    new_avg = (h_qty * h_avg + buy_cost) / new_qty if new_qty else 0.0
+                    cur.execute("UPDATE holding SET qty=%s, avg_cost=%s WHERE id=%s", (new_qty, new_avg, h_id))
+                    insert_lot(cur, h_id, trade_id, qty, buy_cost)
+                elif side == "SELL":
+                    if qty > h_qty + 1e-9:
+                        logger.error(
+                            "Sell qty %s exceeds holding qty %s for account_id=%s instrument_id=%s",
+                            qty,
+                            h_qty,
+                            account_id,
+                            instrument_id,
+                        )
+                        raise ValueError(f"Sell qty {qty} exceeds holding qty {h_qty}")
+                    # Under WAC, avg stays constant; reduce qty and record a negative lot at WAC basis
+                    new_qty = h_qty - qty
+                    cur.execute("UPDATE holding SET qty=%s WHERE id=%s", (new_qty, h_id))
+                    sell_basis = qty * h_avg
+                    insert_lot(cur, h_id, trade_id, -qty, -sell_basis)
+                else:
+                    raise ValueError(f"Unknown side {side}")
+                task.advance()
 
 def main():
     logger.info("Loading users/orgs/accounts/memberships…")
@@ -647,13 +640,19 @@ def main():
     logger.info("Load complete.")
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    # Quick sanity for env
-    missing = [k for k in ["DB_HOST","DB_PORT","DB_USER","DB_PASSWORD","DB_NAME"] if os.getenv(k) is None]
+    init_logging(app_name="csv-loader")
+    log_context.bind(job="load_csvs", database=DB_CFG["database"], host=DB_CFG["host"])
+
+    missing = [
+        k
+        for k in ["DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME"]
+        if os.getenv(k) is None
+    ]
     if missing:
         logger.info("Using defaults for env vars: %s", ", ".join(missing))
+
     try:
         main()
-    except Exception as e:
-        logger.exception("Loader failed: %s", e)
+    except Exception:
+        logger.exception("Loader failed")
         sys.exit(1)
