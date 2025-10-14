@@ -234,10 +234,10 @@ TXN_HEADERS = [
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--individuals", type=int, default=2500, help="Number of individual users to create")
-    parser.add_argument("--companies", type=int, default=120, help="Number of corporate organisations")
-    parser.add_argument("--months", type=int, default=18, help="How many months of history to generate")
-    parser.add_argument("--start", type=str, default="2023-01", help="Start month (YYYY-MM)")
+    parser.add_argument("--individuals", type=int, default=500, help="Number of individual users to create")
+    parser.add_argument("--companies", type=int, default=50, help="Number of corporate organisations")
+    parser.add_argument("--months", type=int, default=6, help="How many months of history to generate")
+    parser.add_argument("--start", type=str, default="2025-01", help="Start month (YYYY-MM)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--currency", type=str, default="EUR", help="Base currency for cash accounts")
     parser.add_argument(
