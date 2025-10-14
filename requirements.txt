@@ -1,7 +1,8 @@
 SQLAlchemy>=2.0,<3
 pandas>=2.2
 python-dotenv>=1.0
-PyMySQL>=1.1               
+PyMySQL>=1.1
+rich>=13.7
 alembic>=1.13              # (migrations; optional for now)
 fastapi>=0.115             # (if you run monthly_overview_api.py)
 uvicorn>=0.30              # (FastAPI dev server)

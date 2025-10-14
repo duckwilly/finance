@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import csv
 import itertools
-import logging
 import os
 import random
 import time
@@ -17,75 +16,9 @@ from typing import Iterable, Iterator, Optional, Sequence
 SEED_DIR = Path("data/seed")
 STREAM_DIR = Path("data/stream")
 
-logger = logging.getLogger(__name__)
+from app.log import get_logger, init_logging, log_context, progress_manager, timeit
 
-
-class ProgressTracker:
-    """Simple textual progress indicator for generation steps."""
-
-    def __init__(
-        self,
-        label: str,
-        *,
-        total: Optional[int] = None,
-        unit: str = "rows",
-        width: int = 30,
-        min_interval: float = 0.5,
-    ) -> None:
-        self.label = label
-        self.total = total
-        self.unit = unit
-        self.width = width
-        self.min_interval = min_interval
-        self.start = time.time()
-        self.last_print = 0.0
-        self.current = 0
-        self._last_line_length = 0
-        self._active = False
-
-    def advance(self, step: int = 1) -> None:
-        self.current += step
-        self._display()
-
-    def pause(self) -> None:
-        if self._active:
-            print()
-            self._active = False
-            self._last_line_length = 0
-
-    def finish(self) -> None:
-        self._display(force=True, final=True)
-
-    def _display(self, force: bool = False, final: bool = False) -> None:
-        now = time.time()
-        if not force and now - self.last_print < self.min_interval and not final:
-            return
-
-        elapsed = max(now - self.start, 1e-9)
-        rate = self.current / elapsed
-
-        if self.total:
-            pct = min(self.current / self.total, 1.0)
-            filled = int(self.width * pct)
-            bar = "#" * filled + "-" * (self.width - filled)
-            msg = (
-                f"{self.label}: [{bar}] {self.current:,}/{self.total:,} "
-                f"({pct * 100:5.1f}%) {rate:,.0f} {self.unit}/s"
-            )
-        else:
-            msg = f"{self.label}: {self.current:,} {self.unit} ({rate:,.0f} {self.unit}/s)"
-
-        padding = " " * max(0, self._last_line_length - len(msg))
-        print(f"\r{msg}{padding}", end="", flush=True)
-        self._last_line_length = len(msg)
-        self.last_print = now
-        self._active = True
-
-        if final:
-            print()
-            self._active = False
-            self._last_line_length = 0
-
+logger = get_logger(__name__)
 FIRST_NAMES = [
     "Liam",
     "Emma",
@@ -844,15 +777,17 @@ def write_transactions(rows: Iterator[dict[str, object]]) -> int:
     path = SEED_DIR / "transactions.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     logger.info("Writing transactions to %s", path)
-    progress = ProgressTracker("Generating transactions", unit="rows", min_interval=0.2)
-    with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=TXN_HEADERS)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
-            count += 1
-            progress.advance()
-    progress.finish()
+    with timeit("transaction csv write", logger=logger, unit="rows") as timer, progress_manager.task(
+        "Generating transactions", unit="rows"
+    ) as task:
+        with path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=TXN_HEADERS)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+                count += 1
+                timer.add()
+                task.advance()
     logger.info("Generated %s transactions", count)
     return count
 
@@ -1005,5 +940,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    init_logging(app_name="seed-data")
+    log_context.bind(job="generate_seed", seed_dir=str(SEED_DIR))
     main()
