@@ -1,4 +1,7 @@
-.PHONY: venv deps db-up db-schema seed load smoke
+.PHONY: quickstart venv deps db-up db-schema seed load smoke
+
+quickstart:
+	./scripts/quickstart.sh
 
 venv:
 	python3 -m venv .venv
