@@ -471,7 +471,7 @@
     }
 
     const labels = {{ company.income_series | map(attribute='label') | list | tojson }};
-    const rawValues = {{ company.income_series | map(attribute='amount') | list | tojson }};
+    const rawValues = {{ company.income_series | map(attribute='amount') | map('float') | list | tojson }};
     const values = rawValues.map(function (value) {
       if (value === null || value === undefined) {
         return 0;
