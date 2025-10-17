@@ -4,6 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlencode
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -115,7 +117,9 @@ async def admin_company_detail(
     """Render the detail page for a single company."""
 
     service = AdminCompanyService(session)
-    detail = service.get_company_detail(org_id)
+    period_param = request.query_params.get("period")
+    today = date.today()
+    detail = service.get_company_detail(org_id, period_key=period_param, today=today)
     if detail is None:
         raise HTTPException(status_code=404, detail="Company not found")
 
@@ -124,6 +128,7 @@ async def admin_company_detail(
         {
             "request": request,
             "company": detail,
+            "period_options": AdminCompanyService.period_options(today=today),
         },
     )
 

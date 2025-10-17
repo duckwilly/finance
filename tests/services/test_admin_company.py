@@ -237,6 +237,11 @@ def test_get_company_detail(session: Session) -> None:
     assert detail.name == 'Acme Corp'
     assert detail.total_balance == Decimal('560')
     assert detail.payroll_headcount == 2
+    assert detail.period.key == 'ytd'
+    assert detail.income_total == Decimal('1000')
+    assert detail.expense_total == Decimal('440')
+    assert detail.net_cash_flow == Decimal('560')
+    assert detail.payroll_total == Decimal('440')
     assert {account.account_id for account in detail.accounts} == {1, 2}
 
     operating = next(account for account in detail.accounts if account.account_id == 1)
@@ -251,6 +256,16 @@ def test_get_company_detail(session: Session) -> None:
     owner = next(member for member in detail.members if member.name == 'Dana Carvey')
     assert owner.role == 'OWNER'
     assert owner.email == 'dana@example.com'
+
+    assert [employee.name for employee in detail.payroll_employees] == ['Bob', 'Alice']
+    bob = detail.payroll_employees[0]
+    assert bob.total_compensation == Decimal('240')
+    alice = detail.payroll_employees[1]
+    assert alice.total_compensation == Decimal('200')
+
+    assert [category.name for category in detail.top_expense_categories] == ['Payroll', 'Salary Bonus']
+    assert detail.top_expense_categories[0].total_spent == Decimal('350')
+    assert detail.top_expense_categories[1].total_spent == Decimal('90')
 
     assert service.get_company_detail(999) is None
 
@@ -329,7 +344,8 @@ def _create_schema(conn: Connection) -> None:
             direction TEXT NOT NULL,
             section_id INTEGER NOT NULL,
             category_id INTEGER,
-            counterparty_id INTEGER
+            counterparty_id INTEGER,
+            txn_date TEXT NOT NULL DEFAULT (DATE('now'))
         );
         """
     )
