@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{% block title %}Finance Admin{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --text-color: #1f2328;
+        --accent-color: #2563eb;
+        --muted-text: #6b7280;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-color: #111827;
+          --card-bg: #1f2937;
+          --text-color: #f9fafb;
+          --muted-text: #9ca3af;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg-color);
+        color: var(--text-color);
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      nav.top-nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 2rem;
+        background: var(--card-bg);
+        border-bottom: 1px solid rgba(100, 116, 139, 0.2);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      }
+
+      .nav-logo {
+        font-weight: 600;
+        font-size: 1.1rem;
+      }
+
+      .nav-links {
+        display: flex;
+        gap: 1.5rem;
+        font-size: 0.95rem;
+      }
+
+      .nav-links a {
+        opacity: 0.85;
+        transition: opacity 0.2s ease;
+      }
+
+      .nav-links a:hover,
+      .nav-links a:focus {
+        opacity: 1;
+      }
+
+      main {
+        padding: 2rem;
+        display: grid;
+        gap: 2rem;
+      }
+
+      .page-header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: flex-end;
+        justify-content: space-between;
+      }
+
+      .page-header h1 {
+        margin: 0;
+        font-size: 1.75rem;
+      }
+
+      .page-filters:empty {
+        display: none;
+      }
+
+      .muted {
+        color: var(--muted-text);
+        font-size: 0.9rem;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+      }
+
+      .summary-card {
+        background: var(--card-bg);
+        padding: 1.25rem;
+        border-radius: 0.75rem;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .summary-card h2 {
+        margin: 0;
+        font-size: 0.95rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted-text);
+      }
+
+      .summary-card .value {
+        font-size: 2rem;
+        font-weight: 600;
+      }
+
+      section h2 {
+        margin: 0 0 0.75rem 0;
+        font-size: 1.25rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--card-bg);
+        border-radius: 0.75rem;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      }
+
+      th,
+      td {
+        padding: 0.75rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid rgba(100, 116, 139, 0.15);
+      }
+
+      th {
+        font-size: 0.9rem;
+        color: var(--muted-text);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      tr:last-child td {
+        border-bottom: none;
+      }
+
+      @media (max-width: 600px) {
+        nav.top-nav {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 0.75rem;
+        }
+
+        .nav-links {
+          flex-wrap: wrap;
+          gap: 0.75rem;
+        }
+
+        main {
+          padding: 1.5rem;
+        }
+
+        .summary-card .value {
+          font-size: 1.75rem;
+        }
+      }
+    </style>
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body>
+    <nav class="top-nav">
+      <a class="nav-logo" href="/admin">Finance Admin</a>
+      <div class="nav-links">
+        <a href="/admin">Dashboard</a>
+        <a href="/admin/companies">Companies</a>
+        <a href="/admin/individuals">Individuals</a>
+      </div>
+    </nav>
+    <main>
+      <section class="page-header">
+        <h1>{% block page_title %}Finance Admin{% endblock %}</h1>
+        <div class="page-filters">
+          {% block filters %}{% endblock %}
+        </div>
+      </section>
+      <section class="page-content">
+        {% block content %}{% endblock %}
+      </section>
+    </main>
+  </body>
+</html>
