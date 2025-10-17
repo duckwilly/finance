@@ -58,17 +58,13 @@ finance/
 ### 🚀 One-command bootstrap (recommended)
 
 The repository includes a helper that mirrors the CI workflow locally—creating a
-`.env` from `.env.example` when needed, setting up a virtual environment,
-installing dependencies, starting MariaDB via Docker Compose, applying the
-schema, smoke testing the connection **before** any synthetic data is generated,
-and finally booting the FastAPI admin UI:
+virtual environment, installing dependencies, starting MariaDB via Docker
+Compose, loading the schema + demo data, smoke testing the connection, and
+finally booting the FastAPI admin UI:
 
 ```bash
-./scripts/quickstart.sh
+make quickstart
 ```
-
-> **Tip:** Prefer `make`? Run `make quickstart`, which simply forwards to the
-> script above.
 
 When the script finishes you can head to
 [http://localhost:8000/admin](http://localhost:8000/admin) to explore the
