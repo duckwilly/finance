@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -102,6 +102,28 @@ async def admin_companies(
             "has_next": company_page.page < total_pages,
             "prev_url": prev_url,
             "next_url": next_url,
+        },
+    )
+
+
+@router.get("/companies/{org_id}", response_class=HTMLResponse)
+async def admin_company_detail(
+    org_id: int,
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> HTMLResponse:
+    """Render the detail page for a single company."""
+
+    service = AdminCompanyService(session)
+    detail = service.get_company_detail(org_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    return _templates.TemplateResponse(
+        "admin/company_detail.html",
+        {
+            "request": request,
+            "company": detail,
         },
     )
 
