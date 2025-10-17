@@ -1,0 +1,118 @@
+{% extends "admin/base.html" %}
+
+{% block title %}Company Detail · Finance Admin{% endblock %}
+
+{% block content %}
+<div class="stack">
+  <section class="card-grid">
+    <article class="card">
+      <h2>Organization</h2>
+      <div class="value">{{ company.organization.name }}</div>
+      <p class="muted">ID {{ company.organization.id }}</p>
+    </article>
+    <article class="card">
+      <h2>Total Balance</h2>
+      <div class="value">{{ '{:,.2f}'.format(company.overview.total_balance) }}</div>
+      <p class="muted">Across {{ company.accounts | length }} accounts</p>
+    </article>
+    <article class="card">
+      <h2>Income ({{ company.cashflow | length }} mo)</h2>
+      <div class="value">{{ '{:,.2f}'.format(company.overview.income_total) }}</div>
+      <p class="muted">Cumulative inflow</p>
+    </article>
+    <article class="card">
+      <h2>Expenses ({{ company.cashflow | length }} mo)</h2>
+      <div class="value">{{ '{:,.2f}'.format(company.overview.expense_total) }}</div>
+      <p class="muted">Cumulative outflow</p>
+    </article>
+    <article class="card">
+      <h2>Payroll</h2>
+      <div class="value">{{ '{:,.2f}'.format(company.overview.payroll_total) }}</div>
+      <p class="muted">{{ company.overview.employee_count }} employees</p>
+    </article>
+  </section>
+
+  <section>
+    <h2>Cash Flow</h2>
+    {% if company.cashflow %}
+    <div class="chart-placeholder">
+      Cash-flow chart placeholder for {{ company.cashflow | length }} months of activity.
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Month</th>
+          <th scope="col">Income</th>
+          <th scope="col">Expenses</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for bucket in company.cashflow %}
+        <tr>
+          <td>{{ bucket.month.strftime('%Y-%m') }}</td>
+          <td>{{ '{:,.2f}'.format(bucket.income) }}</td>
+          <td>{{ '{:,.2f}'.format(bucket.expenses) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No transactions recorded yet.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Payroll</h2>
+    {% if company.payroll.employees %}
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Employee</th>
+          <th scope="col">Latest Salary</th>
+          <th scope="col">Cumulative Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for employee in company.payroll.employees %}
+        <tr>
+          <td>{{ employee.name }}</td>
+          <td>{{ '{:,.2f}'.format(employee.latest_salary) }}</td>
+          <td>{{ '{:,.2f}'.format(employee.total_paid) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No payroll transactions available.</p>
+    {% endif %}
+  </section>
+
+  <section>
+    <h2>Accounts</h2>
+    {% if company.accounts %}
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Account</th>
+          <th scope="col">Type</th>
+          <th scope="col">Currency</th>
+          <th scope="col">Balance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for account in company.accounts %}
+        <tr>
+          <td>{{ account.name or ('Account #' ~ account.id) }}</td>
+          <td>{{ account.type | capitalize }}</td>
+          <td>{{ account.currency }}</td>
+          <td>{{ '{:,.2f}'.format(account.balance) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">This organization does not yet own any accounts.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

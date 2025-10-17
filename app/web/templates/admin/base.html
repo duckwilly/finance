@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{% block title %}Finance Admin{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+        --bg-color: #f6f8fa;
+        --card-bg: #ffffff;
+        --surface-border: rgba(100, 116, 139, 0.15);
+        --text-color: #1f2328;
+        --muted-text: #6b7280;
+        --accent-color: #2563eb;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-color: #111827;
+          --card-bg: #1f2937;
+          --text-color: #f9fafb;
+          --muted-text: #9ca3af;
+          --surface-border: rgba(148, 163, 184, 0.25);
+        }
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg-color);
+        color: var(--text-color);
+        display: flex;
+        flex-direction: column;
+      }
+
+      header {
+        background: var(--card-bg);
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid var(--surface-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 1.5rem;
+      }
+
+      nav a {
+        color: var(--muted-text);
+        text-decoration: none;
+        font-size: 0.95rem;
+      }
+
+      nav a:hover,
+      nav a:focus {
+        color: var(--accent-color);
+      }
+
+      main {
+        flex: 1 1 auto;
+        padding: 2rem clamp(1rem, 4vw, 3rem);
+        display: flex;
+        flex-direction: column;
+        gap: 2rem;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+      }
+
+      .card {
+        background: var(--card-bg);
+        border-radius: 0.75rem;
+        padding: 1.25rem;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .card h2,
+      .card h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted-text);
+      }
+
+      .card .value {
+        font-size: 1.75rem;
+        font-weight: 600;
+      }
+
+      section h2 {
+        margin: 0;
+        font-size: 1.25rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--card-bg);
+        border-radius: 0.75rem;
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      }
+
+      th,
+      td {
+        padding: 0.75rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid var(--surface-border);
+      }
+
+      th {
+        font-size: 0.9rem;
+        color: var(--muted-text);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      tr:last-child td {
+        border-bottom: none;
+      }
+
+      .muted {
+        color: var(--muted-text);
+        font-size: 0.9rem;
+      }
+
+      .chart-placeholder {
+        border: 2px dashed var(--surface-border);
+        border-radius: 0.75rem;
+        padding: 2rem;
+        text-align: center;
+        color: var(--muted-text);
+        font-style: italic;
+        background: rgba(37, 99, 235, 0.05);
+      }
+
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+      }
+
+      @media (max-width: 640px) {
+        header {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+    </style>
+    {% block head_extra %}{% endblock %}
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Finance Admin</h1>
+        <p class="muted">Operational insights for finance teams</p>
+      </div>
+      <nav>
+        <a href="/admin">Dashboard</a>
+      </nav>
+    </header>
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>
