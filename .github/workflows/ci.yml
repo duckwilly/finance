@@ -87,21 +87,21 @@ jobs:
           curl -sSf http://127.0.0.1:8000/admin/companies > /tmp/companies.html
 
           ORG_ID=$(python - <<'PY'
-from app.config import get_settings
-from sqlalchemy import create_engine, text
+          from app.config import get_settings
+          from sqlalchemy import create_engine, text
 
-settings = get_settings()
-engine = create_engine(settings.database.sqlalchemy_url)
+          settings = get_settings()
+          engine = create_engine(settings.database.sqlalchemy_url)
 
-with engine.connect() as connection:
-    result = connection.execute(text("SELECT id FROM org ORDER BY id LIMIT 1"))
-    row = result.first()
+          with engine.connect() as connection:
+              result = connection.execute(text("SELECT id FROM org ORDER BY id LIMIT 1"))
+              row = result.first()
 
-if row is None:
-    raise SystemExit("No organisations found to test detail page")
+          if row is None:
+              raise SystemExit("No organisations found to test detail page")
 
-print(row[0])
-PY
-)
+          print(row[0])
+          PY
+          )
 
           curl -sSf http://127.0.0.1:8000/admin/companies/$ORG_ID > /tmp/company_detail.html
