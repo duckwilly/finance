@@ -63,15 +63,16 @@ Compose, loading the schema + demo data, smoke testing the connection, and
 finally booting the FastAPI admin UI:
 
 ```bash
-./scripts/quickstart.sh
+make quickstart
 ```
-
-> **Tip:** Prefer `make`? Run `make quickstart`, which simply forwards to the
-> script above.
 
 When the script finishes you can head to
 [http://localhost:8000/admin](http://localhost:8000/admin) to explore the
 dashboard. Press `Ctrl+C` in the terminal to stop the FastAPI server.
+
+If a `.env` file already exists, the script leaves it untouched; otherwise it
+copies `.env.example` automatically so Docker Compose and the Python helpers
+share a consistent configuration.
 
 **Prerequisites**
 - Docker Desktop (or a compatible Docker engine)

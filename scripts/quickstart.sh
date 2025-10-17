@@ -19,6 +19,15 @@ step() {
 
 require_command docker
 
+if [[ ! -f .env ]]; then
+  if [[ -f .env.example ]]; then
+    step "Creating .env from .env.example"
+    cp .env.example .env
+  else
+    echo "Warning: .env not found and .env.example missing; continuing with defaults" >&2
+  fi
+fi
+
 PYTHON_BIN="${PYTHON:-python3}"
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   echo "Error: unable to locate python interpreter '$PYTHON_BIN'" >&2
@@ -103,14 +112,14 @@ with engine.begin() as connection:
         connection.execute(text(raw_statement))
 PY
 
+step "Running database smoketest"
+python scripts/db_smoketest.py
+
 step "Generating seed CSV data"
 python scripts/gen_seed_data.py
 
 step "Loading CSV data into MariaDB"
 python scripts/load_csvs.py
-
-step "Running database smoketest"
-python scripts/db_smoketest.py
 
 step "Starting FastAPI admin dashboard (press Ctrl+C to stop)"
 exec uvicorn app.web.app:app --reload
