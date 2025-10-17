@@ -8,6 +8,7 @@ import itertools
 import os
 import random
 import time
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -22,76 +23,9 @@ SEED_DIR = Path("data/seed")
 STREAM_DIR = Path("data/stream")
 
 from app.log import get_logger, init_logging, log_context, progress_manager, timeit
+from scripts.name_data import random_company_name, random_person_name
 
 logger = get_logger(__name__)
-FIRST_NAMES = [
-    "Liam",
-    "Emma",
-    "Noah",
-    "Olivia",
-    "Ava",
-    "Isabella",
-    "Sophia",
-    "Mia",
-    "Charlotte",
-    "Amelia",
-    "Lucas",
-    "Mila",
-    "Jack",
-    "Emily",
-    "Benjamin",
-    "Ethan",
-    "Samuel",
-    "Eva",
-    "Thomas",
-    "Zoë",
-]
-LAST_NAMES = [
-    "de Jong",
-    "Jansen",
-    "Bakker",
-    "Visser",
-    "Smit",
-    "Meijer",
-    "Mulder",
-    "Bos",
-    "Vos",
-    "Peters",
-    "Hendriks",
-    "Kok",
-    "van Dijk",
-    "de Graaf",
-    "van Leeuwen",
-    "van der Meer",
-    "Sanders",
-    "Willems",
-    "Kuipers",
-    "Koster",
-]
-COMPANY_PREFIXES = [
-    "North",
-    "Blue",
-    "Bright",
-    "Next",
-    "Prime",
-    "Urban",
-    "Atlas",
-    "Delta",
-    "Aurora",
-    "Summit",
-]
-COMPANY_SUFFIXES = [
-    "Analytics",
-    "Logistics",
-    "Studios",
-    "Foods",
-    "Consulting",
-    "Industries",
-    "Labs",
-    "Retail",
-    "Capital",
-    "Ventures",
-]
 INDUSTRIES = [
     "Technology",
     "Retail",
@@ -279,22 +213,25 @@ def month_end(day: date) -> date:
 
 
 def random_name() -> tuple[str, str]:
-    first = random.choice(FIRST_NAMES)
-    last = random.choice(LAST_NAMES)
-    return first, last
+    """Return a first/last combination using the shared name pools."""
+    return random_person_name()
 
 
 def sanitize_email(name: str, idx: int) -> str:
-    slug = name.lower().replace(" ", ".").replace("'", "")
+    normalized = unicodedata.normalize("NFKD", name)
+    ascii_name = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    slug = ascii_name.lower().replace(" ", ".").replace("'", "").replace("-", ".")
     return f"{slug}{idx:04d}@example.com"
 
 
 def build_companies(n: int) -> list[Company]:
     companies: list[Company] = []
+    seen_names: set[str] = set()
     for i in range(1, n + 1):
-        prefix = random.choice(COMPANY_PREFIXES)
-        suffix = random.choice(COMPANY_SUFFIXES)
-        name = f"{prefix} {suffix} BV"
+        name = random_company_name()
+        while name in seen_names:
+            name = random_company_name()
+        seen_names.add(name)
         industry = random.choice(INDUSTRIES)
         ext_id = f"C-{i:05d}"
         account_ext_id = f"A-C{i:05d}-OP"
