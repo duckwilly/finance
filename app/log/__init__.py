@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from logging.handlers import QueueHandler, QueueListener, TimedRotatingFileHandler
+from datetime import datetime, date
+from logging.handlers import QueueHandler, QueueListener
 from pathlib import Path
 from queue import SimpleQueue
 from threading import RLock
@@ -38,7 +39,6 @@ class LoggingConfig:
     level: str | int = os.getenv("APP_LOG_LEVEL", "INFO")
     log_dir: Optional[Path] = Path(os.getenv("APP_LOG_DIR", "logs"))
     console: bool = os.getenv("APP_LOG_CONSOLE", "1") != "0"
-    retention: int = int(os.getenv("APP_LOG_RETENTION", "14"))
     rich_tracebacks: bool = os.getenv("APP_LOG_TRACEBACKS", "1") != "0"
     queue: bool = os.getenv("APP_LOG_QUEUE", "1") != "0"
 
@@ -54,6 +54,46 @@ def _parse_level(level: str | int) -> int:
     if isinstance(level, int):
         return level
     return getattr(logging, str(level).upper(), logging.INFO)
+
+
+class DailyFileHandler(logging.FileHandler):
+    """Logging handler that writes to a single log file per day."""
+
+    def __init__(
+        self,
+        directory: Path,
+        *,
+        encoding: str = "utf-8",
+        date_format: str = "%Y_%m_%d",
+    ) -> None:
+        self.directory = directory
+        self.date_format = date_format
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self._current_date: date = datetime.now().date()
+        super().__init__(
+            self._path_for_date(self._current_date),
+            mode="a",
+            encoding=encoding,
+        )
+
+    def _path_for_date(self, target_date: date) -> Path:
+        return self.directory / f"{target_date.strftime(self.date_format)}.log"
+
+    def _switch_file(self) -> None:
+        if self.stream:
+            try:
+                self.stream.flush()
+            finally:
+                self.stream.close()
+        self.baseFilename = os.fspath(self._path_for_date(self._current_date))
+        self.stream = self._open()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        record_date = datetime.fromtimestamp(record.created).date()
+        if record_date != self._current_date:
+            self._current_date = record_date
+            self._switch_file()
+        super().emit(record)
 
 
 def _build_handlers(cfg: LoggingConfig, level: int) -> list[logging.Handler]:
@@ -81,14 +121,7 @@ def _build_handlers(cfg: LoggingConfig, level: int) -> list[logging.Handler]:
 
     if cfg.log_dir:
         log_dir = Path(cfg.log_dir)
-        log_dir.mkdir(parents=True, exist_ok=True)
-        filename = log_dir / f"{cfg.app_name}.log"
-        file_handler = TimedRotatingFileHandler(
-            filename,
-            when="midnight",
-            backupCount=max(cfg.retention, 0),
-            encoding="utf-8",
-        )
+        file_handler = DailyFileHandler(log_dir)
         file_handler.setLevel(level)
         file_handler.setFormatter(
             logging.Formatter(
