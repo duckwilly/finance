@@ -40,6 +40,39 @@ class CompanyPage:
         return ceil(self.total / self.page_size)
 
 
+@dataclass(frozen=True)
+class CompanyAccount:
+    """Account level details for a single organization."""
+
+    account_id: int
+    name: str | None
+    type: str
+    currency: str
+    balance: Decimal
+
+
+@dataclass(frozen=True)
+class CompanyMember:
+    """User membership metadata for an organization."""
+
+    user_id: int
+    name: str
+    email: str | None
+    role: str
+
+
+@dataclass(frozen=True)
+class CompanyDetail:
+    """Composite detail view of an organization."""
+
+    org_id: int
+    name: str
+    total_balance: Decimal
+    payroll_headcount: int
+    accounts: list[CompanyAccount]
+    members: list[CompanyMember]
+
+
 class AdminCompanyService:
     """Facade exposing company level aggregates for administrators."""
 
@@ -150,16 +183,126 @@ class AdminCompanyService:
             page_size=page_size,
         )
 
+    def get_company_detail(self, org_id: int) -> CompanyDetail | None:
+        """Return detailed information for a single organization."""
+
+        org_row = self._session.execute(
+            text(
+                """
+                SELECT id, name
+                FROM org
+                WHERE id = :org_id
+                """
+            ),
+            {"org_id": org_id},
+        ).mappings().one_or_none()
+
+        if org_row is None:
+            return None
+
+        accounts_result = self._session.execute(
+            text(
+                """
+                SELECT
+                    a.id AS account_id,
+                    a.name AS account_name,
+                    a.type AS account_type,
+                    a.currency AS account_currency,
+                    COALESCE(v.balance, 0) AS balance
+                FROM account a
+                LEFT JOIN v_account_balance v ON v.account_id = a.id
+                WHERE a.owner_type = 'org' AND a.owner_id = :org_id
+                ORDER BY
+                    CASE WHEN a.name IS NULL OR a.name = '' THEN 1 ELSE 0 END,
+                    a.name,
+                    a.id
+                """
+            ),
+            {"org_id": org_id},
+        )
+
+        account_rows = accounts_result.mappings().all()
+
+        accounts = [
+            CompanyAccount(
+                account_id=int(row["account_id"]),
+                name=(row.get("account_name") if row.get("account_name") else None),
+                type=str(row["account_type"]),
+                currency=str(row["account_currency"]),
+                balance=self._to_decimal(row.get("balance")),
+            )
+            for row in account_rows
+        ]
+
+        total_balance = sum((account.balance for account in accounts), Decimal(0))
+
+        payroll_headcount_raw = self._session.execute(
+            text(
+                """
+                SELECT COUNT(DISTINCT CASE
+                    WHEN t.section_id = :expense_section
+                     AND (
+                        LOWER(c.name) LIKE :pattern_payroll OR
+                        LOWER(c.name) LIKE :pattern_salary OR
+                        LOWER(c.name) LIKE :pattern_wage
+                     )
+                    THEN t.counterparty_id
+                END) AS payroll_headcount
+                FROM account a
+                LEFT JOIN `transaction` t ON t.account_id = a.id
+                LEFT JOIN category c ON c.id = t.category_id
+                WHERE a.owner_type = 'org' AND a.owner_id = :org_id
+                """
+            ),
+            {
+                "org_id": org_id,
+                "expense_section": self._PAYROLL_SECTION_ID,
+                "pattern_payroll": self._PAYROLL_PATTERNS[0],
+                "pattern_salary": self._PAYROLL_PATTERNS[1],
+                "pattern_wage": self._PAYROLL_PATTERNS[2],
+            },
+        ).scalar()
+
+        members_result = self._session.execute(
+            text(
+                """
+                SELECT
+                    u.id AS user_id,
+                    u.name AS user_name,
+                    u.email AS user_email,
+                    m.role AS membership_role
+                FROM membership m
+                JOIN user u ON u.id = m.user_id
+                WHERE m.org_id = :org_id
+                ORDER BY u.name
+                """
+            ),
+            {"org_id": org_id},
+        )
+
+        members = [
+            CompanyMember(
+                user_id=int(row["user_id"]),
+                name=str(row["user_name"]),
+                email=(row.get("user_email") if row.get("user_email") else None),
+                role=str(row["membership_role"]),
+            )
+            for row in members_result.mappings()
+        ]
+
+        return CompanyDetail(
+            org_id=int(org_row["id"]),
+            name=str(org_row["name"]),
+            total_balance=total_balance,
+            payroll_headcount=int(payroll_headcount_raw or 0),
+            accounts=accounts,
+            members=members,
+        )
+
     def _parse_rows(self, rows: Iterable[Mapping[str, object]]) -> list[CompanySummary]:
         summaries: list[CompanySummary] = []
         for row in rows:
-            balance_raw = row.get("total_balance")
-            if isinstance(balance_raw, Decimal):
-                balance_value = balance_raw
-            elif balance_raw is None:
-                balance_value = Decimal(0)
-            else:
-                balance_value = Decimal(str(balance_raw))
+            balance_value = self._to_decimal(row.get("total_balance"))
             summaries.append(
                 CompanySummary(
                     org_id=int(row["org_id"]),
@@ -174,4 +317,12 @@ class AdminCompanyService:
         result: Result = self._session.execute(statement, params or {})
         value = result.scalar() or 0
         return int(value)
+
+    @staticmethod
+    def _to_decimal(value: object) -> Decimal:
+        if isinstance(value, Decimal):
+            return value
+        if value is None:
+            return Decimal(0)
+        return Decimal(str(value))
 

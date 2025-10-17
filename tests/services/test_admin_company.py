@@ -40,8 +40,8 @@ def test_pagination_bounds(session: Session) -> None:
         session.execute(
             text(
                 """
-                INSERT INTO account (owner_type, owner_id)
-                VALUES ('org', :org_id)
+                INSERT INTO account (owner_type, owner_id, type)
+                VALUES ('org', :org_id, 'operating')
                 """
             ),
             {"org_id": idx},
@@ -66,10 +66,10 @@ def test_metrics_with_payroll_mix(session: Session) -> None:
     session.execute(
         text(
             """
-            INSERT INTO account (id, owner_type, owner_id) VALUES
-            (1, 'org', 1),
-            (2, 'org', 1),
-            (3, 'org', 2)
+            INSERT INTO account (id, owner_type, owner_id, type) VALUES
+            (1, 'org', 1, 'operating'),
+            (2, 'org', 1, 'operating'),
+            (3, 'org', 2, 'operating')
             """
         )
     )
@@ -148,6 +148,113 @@ def test_metrics_with_payroll_mix(session: Session) -> None:
     assert filtered.items[0].name == "Globex LLC"
 
 
+
+def test_get_company_detail(session: Session) -> None:
+    """Detailed view returns account and membership metadata."""
+
+    session.execute(text("INSERT INTO org (id, name) VALUES (1, 'Acme Corp')"))
+    session.execute(
+        text(
+            """
+            INSERT INTO account (id, owner_type, owner_id, name, type, currency) VALUES
+            (1, 'org', 1, 'Operating Account', 'operating', 'EUR'),
+            (2, 'org', 1, NULL, 'savings', 'EUR')
+            """
+        )
+    )
+    session.execute(
+        text(
+            """
+            INSERT INTO category (id, section_id, name) VALUES
+            (1, 2, 'Payroll'),
+            (2, 2, 'Salary Bonus'),
+            (3, 1, 'Revenue')
+            """
+        )
+    )
+    session.execute(
+        text(
+            """
+            INSERT INTO counterparty (id, name) VALUES
+            (1, 'Alice'),
+            (2, 'Bob')
+            """
+        )
+    )
+
+    transactions = [
+        (1, 1000, 'CREDIT', 1, 3, None),
+        (1, 200, 'DEBIT', 2, 1, 1),
+        (1, 150, 'DEBIT', 2, 1, 2),
+        (2, 90, 'DEBIT', 2, 2, 2),
+    ]
+
+    for account_id, amount, direction, section_id, category_id, counterparty_id in transactions:
+        session.execute(
+            text(
+                """
+                INSERT INTO `transaction`
+                    (account_id, amount, direction, section_id, category_id, counterparty_id)
+                VALUES
+                    (:account_id, :amount, :direction, :section_id, :category_id, :counterparty_id)
+                """
+            ),
+            {
+                'account_id': account_id,
+                'amount': amount,
+                'direction': direction,
+                'section_id': section_id,
+                'category_id': category_id,
+                'counterparty_id': counterparty_id,
+            },
+        )
+
+    session.execute(
+        text(
+            """
+            INSERT INTO user (id, name, email) VALUES
+            (1, 'Dana Carvey', 'dana@example.com'),
+            (2, 'Lee Jordan', NULL)
+            """
+        )
+    )
+    session.execute(
+        text(
+            """
+            INSERT INTO membership (user_id, org_id, role) VALUES
+            (1, 1, 'OWNER'),
+            (2, 1, 'ACCOUNTANT')
+            """
+        )
+    )
+
+    session.commit()
+
+    service = AdminCompanyService(session)
+    detail = service.get_company_detail(1)
+
+    assert detail is not None
+    assert detail.name == 'Acme Corp'
+    assert detail.total_balance == Decimal('560')
+    assert detail.payroll_headcount == 2
+    assert {account.account_id for account in detail.accounts} == {1, 2}
+
+    operating = next(account for account in detail.accounts if account.account_id == 1)
+    assert operating.name == 'Operating Account'
+    assert operating.balance == Decimal('650')
+
+    savings = next(account for account in detail.accounts if account.account_id == 2)
+    assert savings.name is None
+    assert savings.balance == Decimal('-90')
+
+    assert {member.name for member in detail.members} == {'Dana Carvey', 'Lee Jordan'}
+    owner = next(member for member in detail.members if member.name == 'Dana Carvey')
+    assert owner.role == 'OWNER'
+    assert owner.email == 'dana@example.com'
+
+    assert service.get_company_detail(999) is None
+
+
 def _create_schema(conn: Connection) -> None:
     conn.exec_driver_sql(
         """
@@ -163,7 +270,10 @@ def _create_schema(conn: Connection) -> None:
         CREATE TABLE account (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             owner_type TEXT NOT NULL,
-            owner_id INTEGER NOT NULL
+            owner_id INTEGER NOT NULL,
+            name TEXT,
+            type TEXT NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'EUR'
         );
         """
     )
@@ -183,6 +293,29 @@ def _create_schema(conn: Connection) -> None:
         CREATE TABLE counterparty (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL
+        );
+        """
+    )
+
+    conn.exec_driver_sql(
+        """
+        CREATE TABLE user (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT
+        );
+        """
+    )
+
+    conn.exec_driver_sql(
+        """
+        CREATE TABLE membership (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            org_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES user(id),
+            FOREIGN KEY (org_id) REFERENCES org(id)
         );
         """
     )

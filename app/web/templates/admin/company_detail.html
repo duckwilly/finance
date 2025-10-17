@@ -1,0 +1,194 @@
+{% extends "admin/base.html" %}
+
+{% block title %}{{ company.name }} · Finance Admin{% endblock %}
+
+{% block head %}
+<style>
+  .layout {
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+  }
+
+  .breadcrumbs {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+  }
+
+  .breadcrumbs a {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .breadcrumbs a:hover,
+  .breadcrumbs a:focus {
+    text-decoration: underline;
+  }
+
+  .overview {
+    display: grid;
+    gap: 1.5rem;
+    padding: 1.75rem;
+  }
+
+  .overview h2 {
+    margin: 0;
+    font-size: 1.6rem;
+  }
+
+  .metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2rem;
+  }
+
+  .metric {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .metric span {
+    font-size: 0.85rem;
+    color: var(--muted-text);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .metric strong {
+    font-size: 1.4rem;
+  }
+
+  .grid {
+    display: grid;
+    gap: 1.75rem;
+  }
+
+  @media (min-width: 960px) {
+    .grid {
+      grid-template-columns: 2fr 1fr;
+    }
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    padding: 0.85rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(100, 116, 139, 0.15);
+  }
+
+  th {
+    font-size: 0.85rem;
+    color: var(--muted-text);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .card {
+    padding: 1.25rem 0;
+  }
+
+  .card h3 {
+    margin: 0 1.25rem 0.5rem;
+    font-size: 1.2rem;
+  }
+
+  .empty {
+    padding: 1.25rem;
+    color: var(--muted-text);
+    font-style: italic;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="layout">
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="/admin/companies">Companies</a>
+    <span aria-hidden="true">/</span>
+    <span>{{ company.name }}</span>
+  </nav>
+
+  <section class="overview card" aria-labelledby="company-heading">
+    <div>
+      <h2 id="company-heading">{{ company.name }}</h2>
+    </div>
+    <div class="metrics">
+      <div class="metric" aria-label="Total balance">
+        <span>Total Balance</span>
+        <strong>{{ '{:,.2f}'.format(company.total_balance) }} EUR</strong>
+      </div>
+      <div class="metric" aria-label="Payroll headcount">
+        <span>Payroll Headcount</span>
+        <strong>{{ company.payroll_headcount }}</strong>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid" aria-label="Company data">
+    <article class="card" aria-labelledby="accounts-heading">
+      <h3 id="accounts-heading">Accounts</h3>
+      {% if company.accounts %}
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Type</th>
+            <th scope="col">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for account in company.accounts %}
+          <tr>
+            <td>{{ account.name if account.name else 'Account #' ~ account.account_id }}</td>
+            <td>{{ account.type|capitalize }}</td>
+            <td>{{ '{:,.2f}'.format(account.balance) }} {{ account.currency }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">No accounts are associated with this company.</p>
+      {% endif %}
+    </article>
+
+    <article class="card" aria-labelledby="members-heading">
+      <h3 id="members-heading">Members</h3>
+      {% if company.members %}
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Role</th>
+            <th scope="col">Email</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for member in company.members %}
+          <tr>
+            <td>{{ member.name }}</td>
+            <td>{{ member.role|replace('_', ' ')|title }}</td>
+            <td>{% if member.email %}<a href="mailto:{{ member.email }}">{{ member.email }}</a>{% else %}<span class="muted">Not provided</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">No members are associated with this company.</p>
+      {% endif %}
+    </article>
+  </section>
+</section>
+{% endblock %}
