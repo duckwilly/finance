@@ -6,7 +6,7 @@ from decimal import Decimal
 from math import ceil
 from typing import Iterable, Mapping
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import text
 from sqlalchemy.engine import Result
@@ -92,6 +92,15 @@ class ExpenseCategorySummary:
 
 
 @dataclass(frozen=True)
+class IncomeSeriesPoint:
+    """Monthly aggregation of income values for a reporting window."""
+
+    period_start: date
+    label: str
+    amount: Decimal
+
+
+@dataclass(frozen=True)
 class CompanyDetail:
     """Composite detail view of an organization."""
 
@@ -108,6 +117,7 @@ class CompanyDetail:
     payroll_total: Decimal
     payroll_employees: list[PayrollEmployee]
     top_expense_categories: list[ExpenseCategorySummary]
+    income_series: list[IncomeSeriesPoint]
 
 
 class AdminCompanyService:
@@ -242,11 +252,32 @@ class AdminCompanyService:
         org_id: int,
         *,
         period_key: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
         today: date | None = None,
     ) -> CompanyDetail | None:
         """Return detailed information for a single organization."""
 
-        period = self._resolve_period(period_key, today=today)
+        reference_today = today or date.today()
+
+        range_start = start_date
+        range_end = end_date
+
+        if range_start is not None and range_end is not None:
+            if range_start > range_end:
+                range_start, range_end = range_end, range_start
+            if range_end > reference_today:
+                range_end = reference_today
+            period = PeriodRange(
+                key="custom",
+                label="Custom range",
+                start=range_start,
+                end=range_end,
+            )
+        else:
+            period = self._resolve_period(period_key, today=reference_today)
+            range_start = period.start
+            range_end = period.end
 
         org_row = self._session.execute(
             text(
@@ -376,14 +407,68 @@ class AdminCompanyService:
             {
                 "org_id": org_id,
                 "expense_section": self._PAYROLL_SECTION_ID,
-                "start_date": period.start.isoformat(),
-                "end_date": period.end.isoformat(),
+                "start_date": range_start.isoformat(),
+                "end_date": range_end.isoformat(),
             },
         ).mappings().one()
 
         income_total = self._to_decimal(cashflow_row.get("income_total"))
         expense_total = self._to_decimal(cashflow_row.get("expense_total"))
         net_cash_flow = income_total - expense_total
+
+        income_transactions = self._session.execute(
+            text(
+                """
+                SELECT
+                    t.txn_date AS txn_date,
+                    CASE
+                        WHEN t.direction = 'CREDIT' THEN t.amount
+                        ELSE -t.amount
+                    END AS normalized_amount
+                FROM account a
+                JOIN `transaction` t ON t.account_id = a.id
+                WHERE a.owner_type = 'org'
+                  AND a.owner_id = :org_id
+                  AND t.txn_date BETWEEN :start_date AND :end_date
+                  AND t.section_id = 1
+                """
+            ),
+            {
+                "org_id": org_id,
+                "start_date": range_start.isoformat(),
+                "end_date": range_end.isoformat(),
+            },
+        ).mappings()
+
+        monthly_lookup: dict[date, Decimal] = {}
+        for row in income_transactions:
+            txn_value = row.get("txn_date")
+            if txn_value is None:
+                continue
+            txn_date = self._coerce_date(txn_value)
+            month_start = txn_date.replace(day=1)
+            amount = self._to_decimal(row.get("normalized_amount"))
+            monthly_lookup[month_start] = monthly_lookup.get(month_start, Decimal(0)) + amount
+
+        series: list[IncomeSeriesPoint] = []
+
+        def _increment_month(value: date) -> date:
+            if value.month == 12:
+                return value.replace(year=value.year + 1, month=1, day=1)
+            return value.replace(month=value.month + 1, day=1)
+
+        current_month = range_start.replace(day=1)
+        last_month = range_end.replace(day=1)
+        while current_month <= last_month:
+            amount = monthly_lookup.get(current_month, Decimal(0))
+            series.append(
+                IncomeSeriesPoint(
+                    period_start=current_month,
+                    label=current_month.strftime("%b %Y"),
+                    amount=amount,
+                )
+            )
+            current_month = _increment_month(current_month)
 
         payroll_rows = self._session.execute(
             text(
@@ -412,8 +497,8 @@ class AdminCompanyService:
             ),
             {
                 "org_id": org_id,
-                "start_date": period.start.isoformat(),
-                "end_date": period.end.isoformat(),
+                "start_date": range_start.isoformat(),
+                "end_date": range_end.isoformat(),
                 "expense_section": self._PAYROLL_SECTION_ID,
                 "pattern_payroll": self._PAYROLL_PATTERNS[0],
                 "pattern_salary": self._PAYROLL_PATTERNS[1],
@@ -456,8 +541,8 @@ class AdminCompanyService:
             ),
             {
                 "org_id": org_id,
-                "start_date": period.start.isoformat(),
-                "end_date": period.end.isoformat(),
+                "start_date": range_start.isoformat(),
+                "end_date": range_end.isoformat(),
                 "expense_section": self._PAYROLL_SECTION_ID,
             },
         )
@@ -487,6 +572,7 @@ class AdminCompanyService:
             payroll_total=payroll_total,
             payroll_employees=payroll_employees,
             top_expense_categories=top_expense_categories,
+            income_series=series,
         )
 
     @classmethod
@@ -521,6 +607,19 @@ class AdminCompanyService:
         if value is None:
             return Decimal(0)
         return Decimal(str(value))
+
+    @staticmethod
+    def _coerce_date(value: object) -> date:
+        if isinstance(value, date):
+            return value
+        if isinstance(value, datetime):
+            return value.date()
+        if value is None:
+            raise ValueError("Cannot convert None to date")
+        text_value = str(value)
+        if len(text_value) >= 10:
+            text_value = text_value[:10]
+        return date.fromisoformat(text_value)
 
     @classmethod
     def _resolve_period(

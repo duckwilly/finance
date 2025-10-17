@@ -63,6 +63,7 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    flex-wrap: wrap;
   }
 
   .period-form label {
@@ -73,12 +74,42 @@
     color: var(--muted-text);
   }
 
-  .period-form select {
+  .period-form .field-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .period-form input[type="date"] {
     border-radius: 0.5rem;
     border: 1px solid rgba(148, 163, 184, 0.5);
     padding: 0.45rem 0.75rem;
     background-color: rgba(15, 23, 42, 0.03);
     font-size: 0.95rem;
+    color: inherit;
+  }
+
+  .period-form span.separator {
+    font-size: 0.85rem;
+    color: var(--muted-text);
+  }
+
+  .period-form button {
+    border: none;
+    border-radius: 0.5rem;
+    background-color: var(--accent-color);
+    color: #ffffff;
+    font-weight: 600;
+    padding: 0.5rem 1.1rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+  }
+
+  .period-form button:hover,
+  .period-form button:focus {
+    background-color: #1d4ed8;
+    outline: none;
   }
 
   .metrics {
@@ -121,6 +152,25 @@
     .grid {
       grid-template-columns: 2fr 1fr;
     }
+
+    .grid .wide {
+      grid-column: 1 / -1;
+    }
+  }
+
+  .chart-card {
+    padding: 1.25rem 1.25rem 1.75rem;
+  }
+
+  .chart-container {
+    position: relative;
+    width: 100%;
+    min-height: 240px;
+  }
+
+  .chart-container canvas {
+    width: 100% !important;
+    height: 100% !important;
   }
 
   table {
@@ -185,6 +235,17 @@
     padding: 0.6rem 1rem;
   }
 
+  .employee-link {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .employee-link:hover,
+  .employee-link:focus {
+    text-decoration: underline;
+  }
+
   .muted {
     color: var(--muted-text);
   }
@@ -195,6 +256,7 @@
     font-style: italic;
   }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -216,12 +278,23 @@
         </p>
       </div>
       <form method="get" class="period-form">
-        <label for="period">Period</label>
-        <select id="period" name="period" onchange="this.form.submit()">
-          {% for option in period_options %}
-          <option value="{{ option.key }}" {% if option.key == company.period.key %}selected{% endif %}>{{ option.label }}</option>
-          {% endfor %}
-        </select>
+        <label for="start-date">Period</label>
+        <div class="field-group">
+          <input
+            type="date"
+            id="start-date"
+            name="start_date"
+            value="{{ company.period.start.isoformat() }}"
+          />
+          <span class="separator" aria-hidden="true">to</span>
+          <input
+            type="date"
+            id="end-date"
+            name="end_date"
+            value="{{ company.period.end.isoformat() }}"
+          />
+        </div>
+        <button type="submit">Apply</button>
       </form>
     </div>
     <div class="metrics">
@@ -232,10 +305,6 @@
       <div class="metric" aria-label="Payroll headcount">
         <span>Payroll Headcount</span>
         <strong>{{ company.payroll_headcount }}</strong>
-      </div>
-      <div class="metric" aria-label="Active accounts">
-        <span>Active Accounts</span>
-        <strong>{{ company.accounts|length }}</strong>
       </div>
       <div class="metric" aria-label="Income for the selected period">
         <span>Income · {{ company.period.label }}</span>
@@ -258,6 +327,23 @@
   </section>
 
   <section class="grid" aria-label="Company data">
+    <article class="card chart-card wide" aria-labelledby="income-trend-heading">
+      <div class="card-header">
+        <h3 id="income-trend-heading">Income Trend</h3>
+        <span class="badge">{{ company.period.label }}</span>
+      </div>
+      {% if company.income_series %}
+      <div class="chart-container">
+        <canvas
+          id="income-chart"
+          role="img"
+          aria-label="Line chart showing monthly income for the selected period"
+        ></canvas>
+      </div>
+      {% else %}
+      <p class="empty">No income activity in the selected window.</p>
+      {% endif %}
+    </article>
     <article class="card" aria-labelledby="accounts-heading">
       <div class="card-header">
         <h3 id="accounts-heading">Accounts</h3>
@@ -327,7 +413,18 @@
         <tbody>
           {% for employee in company.payroll_employees %}
           <tr>
-            <td>{{ employee.name }}</td>
+            <td>
+              {% if employee.counterparty_id %}
+              <a
+                class="employee-link"
+                href="/admin/personal/{{ employee.counterparty_id }}"
+              >
+                {{ employee.name }}
+              </a>
+              {% else %}
+              {{ employee.name }}
+              {% endif %}
+            </td>
             <td>{{ '{:,.2f}'.format(employee.total_compensation) }} EUR</td>
           </tr>
           {% endfor %}
@@ -335,35 +432,6 @@
       </table>
       {% else %}
       <p class="empty">No payroll transactions matched the selected period.</p>
-      {% endif %}
-    </article>
-
-    <article class="card" aria-labelledby="members-heading">
-      <div class="card-header">
-        <h3 id="members-heading">Members</h3>
-        <span class="badge">{{ company.members|length }} total</span>
-      </div>
-      {% if company.members %}
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Name</th>
-            <th scope="col">Role</th>
-            <th scope="col">Email</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for member in company.members %}
-          <tr>
-            <td>{{ member.name }}</td>
-            <td>{{ member.role|replace('_', ' ')|title }}</td>
-            <td>{% if member.email %}<a href="mailto:{{ member.email }}">{{ member.email }}</a>{% else %}<span class="muted">Not provided</span>{% endif %}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <p class="empty">No members are associated with this company.</p>
       {% endif %}
     </article>
 
@@ -395,4 +463,88 @@
     </article>
   </section>
 </section>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const chartElement = document.getElementById('income-chart');
+    if (!chartElement || typeof Chart === 'undefined') {
+      return;
+    }
+
+    const labels = {{ company.income_series | map(attribute='label') | list | tojson }};
+    const rawValues = {{ company.income_series | map(attribute='amount') | map('float') | list | tojson }};
+    const values = rawValues.map(function (value) {
+      if (value === null || value === undefined) {
+        return 0;
+      }
+      const parsed = Number(value);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    });
+
+    const currencyFormatter = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'EUR',
+      maximumFractionDigits: 2,
+    });
+
+    new Chart(chartElement, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'Income',
+            data: values,
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37, 99, 235, 0.15)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true,
+            pointRadius: 4,
+            pointHoverRadius: 5,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false,
+          },
+          tooltip: {
+            callbacks: {
+              label: function (context) {
+                const amount = context.parsed.y ?? 0;
+                return currencyFormatter.format(amount);
+              },
+            },
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: function (value) {
+                return currencyFormatter.format(value);
+              },
+            },
+            grid: {
+              color: 'rgba(148, 163, 184, 0.2)',
+            },
+          },
+          x: {
+            ticks: {
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: 6,
+            },
+            grid: {
+              display: false,
+            },
+          },
+        },
+      },
+    });
+  });
+</script>
 {% endblock %}

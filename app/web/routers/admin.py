@@ -118,8 +118,18 @@ async def admin_company_detail(
 
     service = AdminCompanyService(session)
     period_param = request.query_params.get("period")
+    start_param = request.query_params.get("start_date")
+    end_param = request.query_params.get("end_date")
+    start_date = _parse_iso_date(start_param)
+    end_date = _parse_iso_date(end_param)
     today = date.today()
-    detail = service.get_company_detail(org_id, period_key=period_param, today=today)
+    detail = service.get_company_detail(
+        org_id,
+        period_key=period_param,
+        start_date=start_date,
+        end_date=end_date,
+        today=today,
+    )
     if detail is None:
         raise HTTPException(status_code=404, detail="Company not found")
 
@@ -128,7 +138,6 @@ async def admin_company_detail(
         {
             "request": request,
             "company": detail,
-            "period_options": AdminCompanyService.period_options(today=today),
         },
     )
 
@@ -150,3 +159,12 @@ def _parse_page_size(value: str | None) -> int:
         if parsed <= option:
             return option
     return _PAGE_SIZE_OPTIONS[-1]
+
+
+def _parse_iso_date(value: str | None) -> date | None:
+    if value is None or value == "":
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
