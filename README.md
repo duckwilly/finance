@@ -55,11 +55,31 @@ finance/
 
 ## Quick Start
 
-### 1) Prerequisites
-- Docker Desktop (or compatible engine)
+### 🚀 One-command bootstrap (recommended)
+
+The repository includes a helper that mirrors the CI workflow locally—creating a
+virtual environment, installing dependencies, starting MariaDB via Docker
+Compose, loading the schema + demo data, smoke testing the connection, and
+finally booting the FastAPI admin UI:
+
+```bash
+./scripts/quickstart.sh
+```
+
+> **Tip:** Prefer `make`? Run `make quickstart`, which simply forwards to the
+> script above.
+
+When the script finishes you can head to
+[http://localhost:8000/admin](http://localhost:8000/admin) to explore the
+dashboard. Press `Ctrl+C` in the terminal to stop the FastAPI server.
+
+**Prerequisites**
+- Docker Desktop (or a compatible Docker engine)
 - Python 3.11+
 
-### 2) Configure environment
+### Manual setup (if you prefer step-by-step)
+
+#### 1) Configure environment
 Create `.env` from the example (or rely on the baked-in defaults) and adjust as needed:
 ```ini
 # .env example
@@ -81,7 +101,7 @@ SQLALCHEMY_ECHO=false
 > defaults baked into `docker/docker-compose.yaml`, so the container still
 > starts. Customize the values above when you need something different.
 
-### 3) Start MariaDB (Docker)
+#### 2) Start MariaDB (Docker)
 Using Compose (recommended):
 ```bash
 docker compose -f docker/docker-compose.yaml up -d
@@ -89,7 +109,7 @@ docker compose -f docker/docker-compose.yaml up -d
 The Compose file maps the database port using `DB_PORT` from your `.env` (default
 `3306`), so updating that value keeps local tooling and scripts aligned.
 
-### 4) Create a virtual environment & install deps
+#### 3) Create a virtual environment & install deps
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -97,26 +117,26 @@ pip install -U pip
 pip install -r requirements.txt
 ```
 
-### 5) Initialize the database
+#### 4) Initialize the database
 Pick one:
 - Execute `sql/schema.sql` in DBeaver/VS Code SQL editor; or
 - Provide Alembic migrations (TODO) and run `alembic upgrade head`.
 
-### 6) Smoke test the connection
+#### 5) Smoke test the connection
 ```bash
 python scripts/db_smoketest.py
 ```
 The script uses PyMySQL by default; override `DB_DRIVER` if you prefer
 `mysqlclient`.
 
-### 7) Launch the FastAPI admin dashboard
+#### 6) Launch the FastAPI admin dashboard
 
 With the database running and populated, you can start the new web frontend to
 explore the administrator landing page:
 
-1. Activate your virtual environment (see step 4) and ensure dependencies are installed.
+1. Activate your virtual environment (see step 3) and ensure dependencies are installed.
 2. Export any database overrides if you are not using the defaults described in
-   step 2 (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`,
+   step 1 (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`,
    `DB_DRIVER`). The FastAPI layer reuses the same settings module as the ETL
    scripts, so the environment only needs to be configured once.
 3. From the repository root, run Uvicorn:
