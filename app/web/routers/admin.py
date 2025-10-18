@@ -1,10 +1,8 @@
 """Routes for administrative views."""
 from __future__ import annotations
 
-from pathlib import Path
-from urllib.parse import urlencode
-
 from datetime import date
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -13,7 +11,15 @@ from sqlalchemy.orm import Session
 
 from app.services.admin_company import AdminCompanyService
 from app.services.admin_dashboard import AdminDashboardService
+from app.services.admin_individual import AdminIndividualService
 from app.web.dependencies import get_db_session
+from app.web.utils.pagination import (
+    DEFAULT_PAGE_SIZE_OPTIONS,
+    build_pagination_links,
+    normalize_page_size,
+    parse_iso_date,
+    parse_positive_int,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -21,7 +27,7 @@ _templates = Jinja2Templates(
     directory=str(Path(__file__).resolve().parent.parent / "templates")
 )
 
-_PAGE_SIZE_OPTIONS: tuple[int, ...] = (10, 20, 50)
+_PAGE_SIZE_OPTIONS: tuple[int, ...] = DEFAULT_PAGE_SIZE_OPTIONS
 
 
 @router.get("/", include_in_schema=False)
@@ -59,8 +65,8 @@ async def admin_companies(
 
     query_params = request.query_params
 
-    page = _parse_positive_int(query_params.get("page"), default=1)
-    page_size = _parse_page_size(query_params.get("page_size"))
+    page = parse_positive_int(query_params.get("page"), default=1)
+    page_size = normalize_page_size(query_params.get("page_size"))
     search = query_params.get("search")
     search_value = search if search else None
 
@@ -70,24 +76,9 @@ async def admin_companies(
     )
 
     total_pages = company_page.total_pages
-
-    preserved_params = {
-        key: value
-        for key, value in query_params.multi_items()
-        if key != "page"
-    }
-
-    prev_url = None
-    if company_page.page > 1:
-        prev_params = dict(preserved_params)
-        prev_params["page"] = str(company_page.page - 1)
-        prev_url = f"?{urlencode(prev_params)}"
-
-    next_url = None
-    if company_page.page < total_pages:
-        next_params = dict(preserved_params)
-        next_params["page"] = str(company_page.page + 1)
-        next_url = f"?{urlencode(next_params)}"
+    pagination_links = build_pagination_links(
+        query_params, page=company_page.page, total_pages=total_pages
+    )
 
     return _templates.TemplateResponse(
         "admin/companies.html",
@@ -100,10 +91,10 @@ async def admin_companies(
             "total_pages": total_pages,
             "page_size_options": _PAGE_SIZE_OPTIONS,
             "search": search_value or "",
-            "has_previous": company_page.page > 1,
-            "has_next": company_page.page < total_pages,
-            "prev_url": prev_url,
-            "next_url": next_url,
+            "has_previous": pagination_links.has_previous,
+            "has_next": pagination_links.has_next,
+            "prev_url": pagination_links.prev_url,
+            "next_url": pagination_links.next_url,
         },
     )
 
@@ -120,8 +111,8 @@ async def admin_company_detail(
     period_param = request.query_params.get("period")
     start_param = request.query_params.get("start_date")
     end_param = request.query_params.get("end_date")
-    start_date = _parse_iso_date(start_param)
-    end_date = _parse_iso_date(end_param)
+    start_date = parse_iso_date(start_param)
+    end_date = parse_iso_date(end_param)
     today = date.today()
     detail = service.get_company_detail(
         org_id,
@@ -142,29 +133,79 @@ async def admin_company_detail(
     )
 
 
-def _parse_positive_int(value: str | None, *, default: int) -> int:
-    try:
-        parsed = int(value) if value is not None else default
-    except (TypeError, ValueError):
-        return default
-    return parsed if parsed > 0 else default
+@router.get("/individuals", response_class=HTMLResponse)
+async def admin_individuals(
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> HTMLResponse:
+    """Render the paginated individuals listing view."""
+
+    query_params = request.query_params
+
+    page = parse_positive_int(query_params.get("page"), default=1)
+    page_size = normalize_page_size(query_params.get("page_size"))
+    search = query_params.get("search")
+    search_value = search if search else None
+
+    service = AdminIndividualService(session)
+    individual_page = service.list_individuals(
+        page=page, page_size=page_size, search=search_value
+    )
+
+    total_pages = individual_page.total_pages
+    pagination_links = build_pagination_links(
+        query_params, page=individual_page.page, total_pages=total_pages
+    )
+
+    return _templates.TemplateResponse(
+        "admin/individuals.html",
+        {
+            "request": request,
+            "individuals": individual_page.items,
+            "page": individual_page.page,
+            "page_size": individual_page.page_size,
+            "total": individual_page.total,
+            "total_pages": total_pages,
+            "page_size_options": _PAGE_SIZE_OPTIONS,
+            "search": search_value or "",
+            "has_previous": pagination_links.has_previous,
+            "has_next": pagination_links.has_next,
+            "prev_url": pagination_links.prev_url,
+            "next_url": pagination_links.next_url,
+        },
+    )
 
 
-def _parse_page_size(value: str | None) -> int:
-    try:
-        parsed = int(value) if value is not None else _PAGE_SIZE_OPTIONS[1]
-    except (TypeError, ValueError):
-        return _PAGE_SIZE_OPTIONS[1]
-    for option in _PAGE_SIZE_OPTIONS:
-        if parsed <= option:
-            return option
-    return _PAGE_SIZE_OPTIONS[-1]
+@router.get("/individuals/{user_id}", response_class=HTMLResponse)
+async def admin_individual_detail(
+    user_id: int,
+    request: Request,
+    session: Session = Depends(get_db_session),
+) -> HTMLResponse:
+    """Render the detail page for a single individual."""
 
+    service = AdminIndividualService(session)
+    period_param = request.query_params.get("period")
+    start_param = request.query_params.get("start_date")
+    end_param = request.query_params.get("end_date")
+    start_date = parse_iso_date(start_param)
+    end_date = parse_iso_date(end_param)
+    today = date.today()
+    detail = service.get_individual_detail(
+        user_id,
+        period_key=period_param,
+        start_date=start_date,
+        end_date=end_date,
+        today=today,
+    )
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Individual not found")
 
-def _parse_iso_date(value: str | None) -> date | None:
-    if value is None or value == "":
-        return None
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        return None
+    return _templates.TemplateResponse(
+        "admin/individual_detail.html",
+        {
+            "request": request,
+            "individual": detail,
+            "period_options": AdminIndividualService.period_options(today=today),
+        },
+    )
