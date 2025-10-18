@@ -1,54 +1,40 @@
-"""Unit tests for the ``AdminCompanyService``."""
-from __future__ import annotations
-
+from datetime import date
 from decimal import Decimal
+from unittest.mock import create_autospec
 
-import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Connection
-from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.orm import Session
 
+from app.repositories.admin.company_repository import (
+    AdminCompanyRepository,
+    CashflowRow,
+    CompanyAccountRow,
+    CompanyMemberRow,
+    CompanyRow,
+    CompanySummaryRow,
+    ExpenseCategoryRow,
+    IncomeTransactionRow,
+    PayrollEmployeeRow,
+)
 from app.services.admin_company import AdminCompanyService
 
 
-@pytest.fixture()
-def session() -> Session:
-    engine = create_engine(
-        "sqlite+pysqlite:///:memory:",
-        future=True,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-
-    with engine.begin() as conn:
-        _create_schema(conn)
-
-    SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-
-    with SessionLocal() as session:
-        yield session
-
-    engine.dispose()
+def _service_with_repository(repository: AdminCompanyRepository) -> AdminCompanyService:
+    session = create_autospec(Session, instance=True)
+    return AdminCompanyService(session, repository=repository)
 
 
-def test_pagination_bounds(session: Session) -> None:
+def test_pagination_bounds() -> None:
     """Pages beyond the dataset collapse to the last available page."""
 
-    for idx in range(1, 24):
-        session.execute(text("INSERT INTO org (name) VALUES (:name)"), {"name": f"Org {idx:02d}"})
-        session.execute(
-            text(
-                """
-                INSERT INTO account (owner_type, owner_id, type)
-                VALUES ('org', :org_id, 'operating')
-                """
-            ),
-            {"org_id": idx},
-        )
-    session.commit()
+    repository = create_autospec(AdminCompanyRepository, instance=True)
+    repository.count_companies.return_value = 23
+    repository.fetch_company_summaries.return_value = [
+        CompanySummaryRow(org_id=21, org_name="Org 21", total_balance=Decimal("0"), payroll_headcount=0),
+        CompanySummaryRow(org_id=22, org_name="Org 22", total_balance=Decimal("0"), payroll_headcount=0),
+        CompanySummaryRow(org_id=23, org_name="Org 23", total_balance=Decimal("0"), payroll_headcount=0),
+    ]
 
-    service = AdminCompanyService(session)
+    service = _service_with_repository(repository)
 
     page = service.list_companies(page=5, page_size=10)
 
@@ -58,80 +44,42 @@ def test_pagination_bounds(session: Session) -> None:
     assert len(page.items) == 3
     assert all(company.total_balance == Decimal("0") for company in page.items)
 
+    repository.fetch_company_summaries.assert_called_once_with(search=None, limit=10, offset=20)
 
-def test_metrics_with_payroll_mix(session: Session) -> None:
+
+def test_metrics_with_payroll_mix() -> None:
     """Payroll headcount and balances aggregate correctly across accounts."""
 
-    session.execute(text("INSERT INTO org (id, name) VALUES (1, 'Acme Corp'), (2, 'Globex LLC')"))
-    session.execute(
-        text(
-            """
-            INSERT INTO account (id, owner_type, owner_id, type) VALUES
-            (1, 'org', 1, 'operating'),
-            (2, 'org', 1, 'operating'),
-            (3, 'org', 2, 'operating')
-            """
-        )
-    )
-    session.execute(
-        text(
-            """
-            INSERT INTO category (id, section_id, name) VALUES
-            (1, 2, 'Payroll'),
-            (2, 2, 'Rent'),
-            (3, 2, 'Salary Bonus'),
-            (4, 1, 'Revenue')
-            """
-        )
-    )
-    session.execute(
-        text(
-            """
-            INSERT INTO counterparty (id, name) VALUES
-            (1, 'Alice'),
-            (2, 'Bob'),
-            (3, 'Charlie'),
-            (4, 'Dana')
-            """
-        )
-    )
-
-    payroll_txns = [
-        (1, 1000, "CREDIT", 1, 4, None),
-        (1, 200, "DEBIT", 2, 1, 1),
-        (1, 150, "DEBIT", 2, 1, 2),
-        (2, 120, "DEBIT", 2, 3, 2),
-        (1, 90, "DEBIT", 2, 2, 3),
-        (3, 800, "CREDIT", 1, 4, None),
-        (3, 220, "DEBIT", 2, 1, 3),
-        (3, 80, "DEBIT", 2, 3, 4),
+    repository = create_autospec(AdminCompanyRepository, instance=True)
+    repository.count_companies.side_effect = [2, 1]
+    repository.fetch_company_summaries.side_effect = [
+        [
+            CompanySummaryRow(
+                org_id=1,
+                org_name="Acme Corp",
+                total_balance=Decimal("440"),
+                payroll_headcount=2,
+            ),
+            CompanySummaryRow(
+                org_id=2,
+                org_name="Globex LLC",
+                total_balance=Decimal("500"),
+                payroll_headcount=2,
+            ),
+        ],
+        [
+            CompanySummaryRow(
+                org_id=2,
+                org_name="Globex LLC",
+                total_balance=Decimal("500"),
+                payroll_headcount=2,
+            )
+        ],
     ]
 
-    for account_id, amount, direction, section_id, category_id, counterparty_id in payroll_txns:
-        session.execute(
-            text(
-                """
-                INSERT INTO `transaction`
-                    (account_id, amount, direction, section_id, category_id, counterparty_id)
-                VALUES
-                    (:account_id, :amount, :direction, :section_id, :category_id, :counterparty_id)
-                """
-            ),
-            {
-                "account_id": account_id,
-                "amount": amount,
-                "direction": direction,
-                "section_id": section_id,
-                "category_id": category_id,
-                "counterparty_id": counterparty_id,
-            },
-        )
+    service = _service_with_repository(repository)
 
-    session.commit()
-
-    service = AdminCompanyService(session)
     page = service.list_companies(page=1, page_size=10)
-
     by_name = {company.name: company for company in page.items}
 
     acme = by_name["Acme Corp"]
@@ -147,216 +95,108 @@ def test_metrics_with_payroll_mix(session: Session) -> None:
     assert filtered.total == 1
     assert filtered.items[0].name == "Globex LLC"
 
+    first_call = repository.fetch_company_summaries.call_args_list[0]
+    assert first_call.kwargs == {"search": None, "limit": 10, "offset": 0}
+
+    second_call = repository.fetch_company_summaries.call_args_list[1]
+    assert second_call.kwargs == {"search": "globex", "limit": 10, "offset": 0}
 
 
-def test_get_company_detail(session: Session) -> None:
+def test_get_company_detail() -> None:
     """Detailed view returns account and membership metadata."""
 
-    session.execute(text("INSERT INTO org (id, name) VALUES (1, 'Acme Corp')"))
-    session.execute(
-        text(
-            """
-            INSERT INTO account (id, owner_type, owner_id, name, type, currency) VALUES
-            (1, 'org', 1, 'Operating Account', 'operating', 'EUR'),
-            (2, 'org', 1, NULL, 'savings', 'EUR')
-            """
-        )
+    repository = create_autospec(AdminCompanyRepository, instance=True)
+    repository.get_company.side_effect = [
+        CompanyRow(org_id=1, org_name="Acme Corp"),
+        None,
+    ]
+    repository.list_accounts.return_value = [
+        CompanyAccountRow(
+            account_id=1,
+            account_name="Operating Account",
+            account_type="operating",
+            account_currency="EUR",
+            balance=Decimal("650"),
+        ),
+        CompanyAccountRow(
+            account_id=2,
+            account_name=None,
+            account_type="savings",
+            account_currency="EUR",
+            balance=Decimal("-90"),
+        ),
+    ]
+    repository.get_payroll_headcount.return_value = 2
+    repository.list_members.return_value = [
+        CompanyMemberRow(
+            user_id=1,
+            user_name="Dana Carvey",
+            user_email="dana@example.com",
+            membership_role="OWNER",
+        ),
+        CompanyMemberRow(
+            user_id=2,
+            user_name="Lee Jordan",
+            user_email=None,
+            membership_role="ACCOUNTANT",
+        ),
+    ]
+    repository.get_cashflow.return_value = CashflowRow(
+        income_total=Decimal("1000"),
+        expense_total=Decimal("440"),
     )
-    session.execute(
-        text(
-            """
-            INSERT INTO category (id, section_id, name) VALUES
-            (1, 2, 'Payroll'),
-            (2, 2, 'Salary Bonus'),
-            (3, 1, 'Revenue')
-            """
-        )
-    )
-    session.execute(
-        text(
-            """
-            INSERT INTO counterparty (id, name) VALUES
-            (1, 'Alice'),
-            (2, 'Bob')
-            """
-        )
-    )
-
-    transactions = [
-        (1, 1000, 'CREDIT', 1, 3, None),
-        (1, 200, 'DEBIT', 2, 1, 1),
-        (1, 150, 'DEBIT', 2, 1, 2),
-        (2, 90, 'DEBIT', 2, 2, 2),
+    repository.list_income_transactions.return_value = [
+        IncomeTransactionRow(txn_date=date(2024, 1, 10), normalized_amount=Decimal("1000")),
+    ]
+    repository.list_payroll_employees.return_value = [
+        PayrollEmployeeRow(counterparty_id=2, counterparty_name="Bob", total_paid=Decimal("240")),
+        PayrollEmployeeRow(counterparty_id=1, counterparty_name="Alice", total_paid=Decimal("200")),
+    ]
+    repository.list_top_expense_categories.return_value = [
+        ExpenseCategoryRow(category_id=1, category_name="Payroll", total_spent=Decimal("350")),
+        ExpenseCategoryRow(category_id=2, category_name="Salary Bonus", total_spent=Decimal("90")),
     ]
 
-    for account_id, amount, direction, section_id, category_id, counterparty_id in transactions:
-        session.execute(
-            text(
-                """
-                INSERT INTO `transaction`
-                    (account_id, amount, direction, section_id, category_id, counterparty_id)
-                VALUES
-                    (:account_id, :amount, :direction, :section_id, :category_id, :counterparty_id)
-                """
-            ),
-            {
-                'account_id': account_id,
-                'amount': amount,
-                'direction': direction,
-                'section_id': section_id,
-                'category_id': category_id,
-                'counterparty_id': counterparty_id,
-            },
-        )
+    service = _service_with_repository(repository)
 
-    session.execute(
-        text(
-            """
-            INSERT INTO user (id, name, email) VALUES
-            (1, 'Dana Carvey', 'dana@example.com'),
-            (2, 'Lee Jordan', NULL)
-            """
-        )
-    )
-    session.execute(
-        text(
-            """
-            INSERT INTO membership (user_id, org_id, role) VALUES
-            (1, 1, 'OWNER'),
-            (2, 1, 'ACCOUNTANT')
-            """
-        )
-    )
-
-    session.commit()
-
-    service = AdminCompanyService(session)
-    detail = service.get_company_detail(1)
+    detail = service.get_company_detail(1, today=date(2024, 1, 31))
 
     assert detail is not None
-    assert detail.name == 'Acme Corp'
-    assert detail.total_balance == Decimal('560')
+    assert detail.name == "Acme Corp"
+    assert detail.total_balance == Decimal("560")
     assert detail.payroll_headcount == 2
-    assert detail.period.key == 'ytd'
-    assert detail.income_total == Decimal('1000')
-    assert detail.expense_total == Decimal('440')
-    assert detail.net_cash_flow == Decimal('560')
-    assert detail.payroll_total == Decimal('440')
+    assert detail.period.key == "ytd"
+    assert detail.income_total == Decimal("1000")
+    assert detail.expense_total == Decimal("440")
+    assert detail.net_cash_flow == Decimal("560")
+    assert detail.payroll_total == Decimal("440")
     assert {account.account_id for account in detail.accounts} == {1, 2}
 
     operating = next(account for account in detail.accounts if account.account_id == 1)
-    assert operating.name == 'Operating Account'
-    assert operating.balance == Decimal('650')
+    assert operating.name == "Operating Account"
+    assert operating.balance == Decimal("650")
 
     savings = next(account for account in detail.accounts if account.account_id == 2)
     assert savings.name is None
-    assert savings.balance == Decimal('-90')
+    assert savings.balance == Decimal("-90")
 
-    assert {member.name for member in detail.members} == {'Dana Carvey', 'Lee Jordan'}
-    owner = next(member for member in detail.members if member.name == 'Dana Carvey')
-    assert owner.role == 'OWNER'
-    assert owner.email == 'dana@example.com'
+    assert {member.name for member in detail.members} == {"Dana Carvey", "Lee Jordan"}
+    owner = next(member for member in detail.members if member.name == "Dana Carvey")
+    assert owner.role == "OWNER"
+    assert owner.email == "dana@example.com"
 
-    assert [employee.name for employee in detail.payroll_employees] == ['Bob', 'Alice']
+    assert [employee.name for employee in detail.payroll_employees] == ["Bob", "Alice"]
     bob = detail.payroll_employees[0]
-    assert bob.total_compensation == Decimal('240')
+    assert bob.total_compensation == Decimal("240")
     alice = detail.payroll_employees[1]
-    assert alice.total_compensation == Decimal('200')
+    assert alice.total_compensation == Decimal("200")
 
-    assert [category.name for category in detail.top_expense_categories] == ['Payroll', 'Salary Bonus']
-    assert detail.top_expense_categories[0].total_spent == Decimal('350')
-    assert detail.top_expense_categories[1].total_spent == Decimal('90')
+    assert [category.name for category in detail.top_expense_categories] == [
+        "Payroll",
+        "Salary Bonus",
+    ]
+    assert detail.top_expense_categories[0].total_spent == Decimal("350")
+    assert detail.top_expense_categories[1].total_spent == Decimal("90")
 
     assert service.get_company_detail(999) is None
 
-
-def _create_schema(conn: Connection) -> None:
-    conn.exec_driver_sql(
-        """
-        CREATE TABLE org (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL
-        );
-        """
-    )
-
-    conn.exec_driver_sql(
-        """
-        CREATE TABLE account (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            owner_type TEXT NOT NULL,
-            owner_id INTEGER NOT NULL,
-            name TEXT,
-            type TEXT NOT NULL,
-            currency TEXT NOT NULL DEFAULT 'EUR'
-        );
-        """
-    )
-
-    conn.exec_driver_sql(
-        """
-        CREATE TABLE category (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            section_id INTEGER NOT NULL,
-            name TEXT NOT NULL
-        );
-        """
-    )
-
-    conn.exec_driver_sql(
-        """
-        CREATE TABLE counterparty (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL
-        );
-        """
-    )
-
-    conn.exec_driver_sql(
-        """
-        CREATE TABLE user (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT
-        );
-        """
-    )
-
-    conn.exec_driver_sql(
-        """
-        CREATE TABLE membership (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            org_id INTEGER NOT NULL,
-            role TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES user(id),
-            FOREIGN KEY (org_id) REFERENCES org(id)
-        );
-        """
-    )
-
-    conn.exec_driver_sql(
-        """
-        CREATE TABLE `transaction` (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            account_id INTEGER NOT NULL,
-            amount NUMERIC NOT NULL,
-            direction TEXT NOT NULL,
-            section_id INTEGER NOT NULL,
-            category_id INTEGER,
-            counterparty_id INTEGER,
-            txn_date TEXT NOT NULL DEFAULT (DATE('now'))
-        );
-        """
-    )
-
-    conn.exec_driver_sql(
-        """
-        CREATE VIEW v_account_balance AS
-        SELECT
-            account_id,
-            SUM(CASE WHEN direction = 'CREDIT' THEN amount ELSE -amount END) AS balance
-        FROM `transaction`
-        GROUP BY account_id;
-        """
-    )
