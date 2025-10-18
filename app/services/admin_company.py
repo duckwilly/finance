@@ -4,14 +4,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from math import ceil
-from typing import Iterable, Mapping
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
-from sqlalchemy import text
-from sqlalchemy.engine import Result
 from sqlalchemy.orm import Session
-from sqlalchemy.sql.elements import TextClause
+
+from app.repositories.admin.company_repository import AdminCompanyRepository
 
 
 @dataclass(frozen=True)
@@ -122,9 +120,6 @@ class CompanyDetail:
 
 class AdminCompanyService:
     """Facade exposing company level aggregates for administrators."""
-
-    _PAYROLL_SECTION_ID = 2
-    _PAYROLL_PATTERNS: tuple[str, str, str] = ("%payroll%", "%salary%", "%wage%")
     _PERIOD_DEFAULT = "ytd"
     _PERIOD_LABELS: dict[str, str] = {
         "ytd": "Year to date",
@@ -143,8 +138,12 @@ class AdminCompanyService:
         "last_12_months",
     )
 
-    def __init__(self, session: Session) -> None:
-        self._session = session
+    def __init__(
+        self,
+        session: Session,
+        repository: AdminCompanyRepository | None = None,
+    ) -> None:
+        self._repository = repository or AdminCompanyRepository(session)
 
     def list_companies(
         self,
@@ -160,85 +159,27 @@ class AdminCompanyService:
         if page_size < 1:
             raise ValueError("page_size must be greater than zero")
 
-        search_pattern = f"%{search.lower()}%" if search else None
-
-        total = self._scalar(
-            text(
-                """
-                SELECT COUNT(*)
-                FROM org o
-                WHERE (:search IS NULL OR LOWER(o.name) LIKE :search)
-                """
-            ),
-            {"search": search_pattern},
-        )
+        total = self._repository.count_companies(search=search)
 
         max_page = max(1, ceil(total / page_size)) if total else 1
         page = min(page, max_page)
         offset = (page - 1) * page_size
 
-        result = self._session.execute(
-            text(
-                """
-                WITH filtered_orgs AS (
-                    SELECT o.id, o.name
-                    FROM org o
-                    WHERE (:search IS NULL OR LOWER(o.name) LIKE :search)
-                ),
-                balance_agg AS (
-                    SELECT fo.id AS org_id, COALESCE(SUM(v.balance), 0) AS total_balance
-                    FROM filtered_orgs fo
-                    LEFT JOIN account a
-                        ON a.owner_type = 'org' AND a.owner_id = fo.id
-                    LEFT JOIN v_account_balance v
-                        ON v.account_id = a.id
-                    GROUP BY fo.id
-                ),
-                payroll_agg AS (
-                    SELECT
-                        fo.id AS org_id,
-                        COUNT(DISTINCT CASE
-                            WHEN c.section_id = :expense_section
-                             AND (
-                                LOWER(c.name) LIKE :pattern_payroll
-                                OR LOWER(c.name) LIKE :pattern_salary
-                                OR LOWER(c.name) LIKE :pattern_wage
-                             )
-                            THEN t.counterparty_id
-                        END) AS payroll_headcount
-                    FROM filtered_orgs fo
-                    LEFT JOIN account a
-                        ON a.owner_type = 'org' AND a.owner_id = fo.id
-                    LEFT JOIN `transaction` t
-                        ON t.account_id = a.id
-                    LEFT JOIN category c
-                        ON c.id = t.category_id
-                    GROUP BY fo.id
-                )
-                SELECT
-                    fo.id AS org_id,
-                    fo.name AS org_name,
-                    COALESCE(balance_agg.total_balance, 0) AS total_balance,
-                    COALESCE(payroll_agg.payroll_headcount, 0) AS payroll_headcount
-                FROM filtered_orgs fo
-                LEFT JOIN balance_agg ON balance_agg.org_id = fo.id
-                LEFT JOIN payroll_agg ON payroll_agg.org_id = fo.id
-                ORDER BY fo.name
-                LIMIT :limit OFFSET :offset
-                """
-            ),
-            {
-                "search": search_pattern,
-                "limit": page_size,
-                "offset": offset,
-                "expense_section": self._PAYROLL_SECTION_ID,
-                "pattern_payroll": self._PAYROLL_PATTERNS[0],
-                "pattern_salary": self._PAYROLL_PATTERNS[1],
-                "pattern_wage": self._PAYROLL_PATTERNS[2],
-            },
+        rows = self._repository.fetch_company_summaries(
+            search=search,
+            limit=page_size,
+            offset=offset,
         )
 
-        items = self._parse_rows(result.mappings())
+        items = [
+            CompanySummary(
+                org_id=row.org_id,
+                name=row.org_name,
+                total_balance=row.total_balance,
+                payroll_headcount=row.payroll_headcount,
+            )
+            for row in rows
+        ]
 
         return CompanyPage(
             items=items,
@@ -279,175 +220,55 @@ class AdminCompanyService:
             range_start = period.start
             range_end = period.end
 
-        org_row = self._session.execute(
-            text(
-                """
-                SELECT id, name
-                FROM org
-                WHERE id = :org_id
-                """
-            ),
-            {"org_id": org_id},
-        ).mappings().one_or_none()
+        org_row = self._repository.get_company(org_id)
 
         if org_row is None:
             return None
 
-        accounts_result = self._session.execute(
-            text(
-                """
-                SELECT
-                    a.id AS account_id,
-                    a.name AS account_name,
-                    a.type AS account_type,
-                    a.currency AS account_currency,
-                    COALESCE(v.balance, 0) AS balance
-                FROM account a
-                LEFT JOIN v_account_balance v ON v.account_id = a.id
-                WHERE a.owner_type = 'org' AND a.owner_id = :org_id
-                ORDER BY
-                    CASE WHEN a.name IS NULL OR a.name = '' THEN 1 ELSE 0 END,
-                    a.name,
-                    a.id
-                """
-            ),
-            {"org_id": org_id},
-        )
-
-        account_rows = accounts_result.mappings().all()
-
         accounts = [
             CompanyAccount(
-                account_id=int(row["account_id"]),
-                name=(row.get("account_name") if row.get("account_name") else None),
-                type=str(row["account_type"]),
-                currency=str(row["account_currency"]),
-                balance=self._to_decimal(row.get("balance")),
+                account_id=row.account_id,
+                name=row.account_name,
+                type=row.account_type,
+                currency=row.account_currency,
+                balance=row.balance,
             )
-            for row in account_rows
+            for row in self._repository.list_accounts(org_id)
         ]
 
         total_balance = sum((account.balance for account in accounts), Decimal(0))
 
-        payroll_headcount_raw = self._session.execute(
-            text(
-                """
-                SELECT COUNT(DISTINCT CASE
-                    WHEN t.section_id = :expense_section
-                     AND (
-                        LOWER(c.name) LIKE :pattern_payroll OR
-                        LOWER(c.name) LIKE :pattern_salary OR
-                        LOWER(c.name) LIKE :pattern_wage
-                     )
-                    THEN t.counterparty_id
-                END) AS payroll_headcount
-                FROM account a
-                LEFT JOIN `transaction` t ON t.account_id = a.id
-                LEFT JOIN category c ON c.id = t.category_id
-                WHERE a.owner_type = 'org' AND a.owner_id = :org_id
-                """
-            ),
-            {
-                "org_id": org_id,
-                "expense_section": self._PAYROLL_SECTION_ID,
-                "pattern_payroll": self._PAYROLL_PATTERNS[0],
-                "pattern_salary": self._PAYROLL_PATTERNS[1],
-                "pattern_wage": self._PAYROLL_PATTERNS[2],
-            },
-        ).scalar()
-
-        members_result = self._session.execute(
-            text(
-                """
-                SELECT
-                    u.id AS user_id,
-                    u.name AS user_name,
-                    u.email AS user_email,
-                    m.role AS membership_role
-                FROM membership m
-                JOIN user u ON u.id = m.user_id
-                WHERE m.org_id = :org_id
-                ORDER BY u.name
-                """
-            ),
-            {"org_id": org_id},
-        )
+        payroll_headcount_raw = self._repository.get_payroll_headcount(org_id)
 
         members = [
             CompanyMember(
-                user_id=int(row["user_id"]),
-                name=str(row["user_name"]),
-                email=(row.get("user_email") if row.get("user_email") else None),
-                role=str(row["membership_role"]),
+                user_id=row.user_id,
+                name=row.user_name,
+                email=row.user_email,
+                role=row.membership_role,
             )
-            for row in members_result.mappings()
+            for row in self._repository.list_members(org_id)
         ]
 
-        cashflow_row = self._session.execute(
-            text(
-                """
-                SELECT
-                    SUM(CASE
-                        WHEN t.section_id = 1 THEN
-                            CASE WHEN t.direction = 'CREDIT' THEN t.amount ELSE -t.amount END
-                        ELSE 0
-                    END) AS income_total,
-                    SUM(CASE
-                        WHEN t.section_id = :expense_section THEN
-                            CASE WHEN t.direction = 'DEBIT' THEN t.amount ELSE -t.amount END
-                        ELSE 0
-                    END) AS expense_total
-                FROM account a
-                LEFT JOIN `transaction` t
-                    ON t.account_id = a.id
-                   AND t.txn_date BETWEEN :start_date AND :end_date
-                WHERE a.owner_type = 'org' AND a.owner_id = :org_id
-                """
-            ),
-            {
-                "org_id": org_id,
-                "expense_section": self._PAYROLL_SECTION_ID,
-                "start_date": range_start.isoformat(),
-                "end_date": range_end.isoformat(),
-            },
-        ).mappings().one()
+        cashflow = self._repository.get_cashflow(
+            org_id,
+            start_date=range_start,
+            end_date=range_end,
+        )
 
-        income_total = self._to_decimal(cashflow_row.get("income_total"))
-        expense_total = self._to_decimal(cashflow_row.get("expense_total"))
+        income_total = cashflow.income_total
+        expense_total = cashflow.expense_total
         net_cash_flow = income_total - expense_total
 
-        income_transactions = self._session.execute(
-            text(
-                """
-                SELECT
-                    t.txn_date AS txn_date,
-                    CASE
-                        WHEN t.direction = 'CREDIT' THEN t.amount
-                        ELSE -t.amount
-                    END AS normalized_amount
-                FROM account a
-                JOIN `transaction` t ON t.account_id = a.id
-                WHERE a.owner_type = 'org'
-                  AND a.owner_id = :org_id
-                  AND t.txn_date BETWEEN :start_date AND :end_date
-                  AND t.section_id = 1
-                """
-            ),
-            {
-                "org_id": org_id,
-                "start_date": range_start.isoformat(),
-                "end_date": range_end.isoformat(),
-            },
-        ).mappings()
-
         monthly_lookup: dict[date, Decimal] = {}
-        for row in income_transactions:
-            txn_value = row.get("txn_date")
-            if txn_value is None:
-                continue
-            txn_date = self._coerce_date(txn_value)
+        for row in self._repository.list_income_transactions(
+            org_id,
+            start_date=range_start,
+            end_date=range_end,
+        ):
+            txn_date = row.txn_date
             month_start = txn_date.replace(day=1)
-            amount = self._to_decimal(row.get("normalized_amount"))
+            amount = row.normalized_amount
             monthly_lookup[month_start] = monthly_lookup.get(month_start, Decimal(0)) + amount
 
         series: list[IncomeSeriesPoint] = []
@@ -470,97 +291,37 @@ class AdminCompanyService:
             )
             current_month = _increment_month(current_month)
 
-        payroll_rows = self._session.execute(
-            text(
-                """
-                SELECT
-                    t.counterparty_id AS counterparty_id,
-                    COALESCE(cp.name, 'Unspecified') AS counterparty_name,
-                    SUM(CASE WHEN t.direction = 'DEBIT' THEN t.amount ELSE -t.amount END) AS total_paid
-                FROM account a
-                JOIN `transaction` t ON t.account_id = a.id
-                LEFT JOIN category c ON c.id = t.category_id
-                LEFT JOIN counterparty cp ON cp.id = t.counterparty_id
-                WHERE a.owner_type = 'org'
-                  AND a.owner_id = :org_id
-                  AND t.txn_date BETWEEN :start_date AND :end_date
-                  AND t.section_id = :expense_section
-                  AND (
-                        LOWER(COALESCE(c.name, '')) LIKE :pattern_payroll OR
-                        LOWER(COALESCE(c.name, '')) LIKE :pattern_salary OR
-                        LOWER(COALESCE(c.name, '')) LIKE :pattern_wage
-                  )
-                GROUP BY t.counterparty_id, cp.name
-                HAVING ABS(total_paid) > 0
-                ORDER BY total_paid DESC
-                """
-            ),
-            {
-                "org_id": org_id,
-                "start_date": range_start.isoformat(),
-                "end_date": range_end.isoformat(),
-                "expense_section": self._PAYROLL_SECTION_ID,
-                "pattern_payroll": self._PAYROLL_PATTERNS[0],
-                "pattern_salary": self._PAYROLL_PATTERNS[1],
-                "pattern_wage": self._PAYROLL_PATTERNS[2],
-            },
-        )
-
         payroll_employees = [
             PayrollEmployee(
-                counterparty_id=(
-                    int(row["counterparty_id"]) if row.get("counterparty_id") is not None else None
-                ),
-                name=str(row["counterparty_name"]),
-                total_compensation=self._to_decimal(row.get("total_paid")).copy_abs(),
+                counterparty_id=row.counterparty_id,
+                name=row.counterparty_name,
+                total_compensation=row.total_paid.copy_abs(),
             )
-            for row in payroll_rows.mappings()
+            for row in self._repository.list_payroll_employees(
+                org_id,
+                start_date=range_start,
+                end_date=range_end,
+            )
         ]
 
         payroll_total = sum((employee.total_compensation for employee in payroll_employees), Decimal(0))
 
-        top_expense_rows = self._session.execute(
-            text(
-                """
-                SELECT
-                    c.id AS category_id,
-                    COALESCE(c.name, 'Uncategorized') AS category_name,
-                    SUM(CASE WHEN t.direction = 'DEBIT' THEN t.amount ELSE -t.amount END) AS total_spent
-                FROM account a
-                JOIN `transaction` t ON t.account_id = a.id
-                LEFT JOIN category c ON c.id = t.category_id
-                WHERE a.owner_type = 'org'
-                  AND a.owner_id = :org_id
-                  AND t.txn_date BETWEEN :start_date AND :end_date
-                  AND t.section_id = :expense_section
-                GROUP BY c.id, c.name
-                HAVING ABS(total_spent) > 0
-                ORDER BY total_spent DESC
-                LIMIT 5
-                """
-            ),
-            {
-                "org_id": org_id,
-                "start_date": range_start.isoformat(),
-                "end_date": range_end.isoformat(),
-                "expense_section": self._PAYROLL_SECTION_ID,
-            },
-        )
-
         top_expense_categories = [
             ExpenseCategorySummary(
-                category_id=(
-                    int(row["category_id"]) if row.get("category_id") is not None else None
-                ),
-                name=str(row["category_name"]),
-                total_spent=self._to_decimal(row.get("total_spent")).copy_abs(),
+                category_id=row.category_id,
+                name=row.category_name,
+                total_spent=row.total_spent.copy_abs(),
             )
-            for row in top_expense_rows.mappings()
+            for row in self._repository.list_top_expense_categories(
+                org_id,
+                start_date=range_start,
+                end_date=range_end,
+            )
         ]
 
         return CompanyDetail(
-            org_id=int(org_row["id"]),
-            name=str(org_row["name"]),
+            org_id=org_row.org_id,
+            name=org_row.org_name,
             total_balance=total_balance,
             payroll_headcount=int(payroll_headcount_raw or 0),
             accounts=accounts,
@@ -580,46 +341,6 @@ class AdminCompanyService:
         """Return the available reporting periods."""
 
         return [cls._resolve_period(key, today=today) for key in cls._PERIOD_ORDER]
-
-    def _parse_rows(self, rows: Iterable[Mapping[str, object]]) -> list[CompanySummary]:
-        summaries: list[CompanySummary] = []
-        for row in rows:
-            balance_value = self._to_decimal(row.get("total_balance"))
-            summaries.append(
-                CompanySummary(
-                    org_id=int(row["org_id"]),
-                    name=str(row["org_name"]),
-                    total_balance=balance_value,
-                    payroll_headcount=int(row.get("payroll_headcount") or 0),
-                )
-            )
-        return summaries
-
-    def _scalar(self, statement: TextClause, params: dict | None = None) -> int:
-        result: Result = self._session.execute(statement, params or {})
-        value = result.scalar() or 0
-        return int(value)
-
-    @staticmethod
-    def _to_decimal(value: object) -> Decimal:
-        if isinstance(value, Decimal):
-            return value
-        if value is None:
-            return Decimal(0)
-        return Decimal(str(value))
-
-    @staticmethod
-    def _coerce_date(value: object) -> date:
-        if isinstance(value, date):
-            return value
-        if isinstance(value, datetime):
-            return value.date()
-        if value is None:
-            raise ValueError("Cannot convert None to date")
-        text_value = str(value)
-        if len(text_value) >= 10:
-            text_value = text_value[:10]
-        return date.fromisoformat(text_value)
 
     @classmethod
     def _resolve_period(
