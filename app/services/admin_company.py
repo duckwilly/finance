@@ -1,7 +1,6 @@
 """Service logic for organization listings in the admin area."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from decimal import Decimal
 from math import ceil
 
@@ -9,113 +8,18 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.domain.admin.company import (
+    CompanyAccount,
+    CompanyDetail,
+    CompanyMember,
+    CompanyPage,
+    CompanySummary,
+    ExpenseCategorySummary,
+    IncomeSeriesPoint,
+    PayrollEmployee,
+    PeriodRange,
+)
 from app.repositories.admin.company_repository import AdminCompanyRepository
-
-
-@dataclass(frozen=True)
-class CompanySummary:
-    """Aggregated view of an organization's financial footprint."""
-
-    org_id: int
-    name: str
-    total_balance: Decimal
-    payroll_headcount: int
-
-
-@dataclass(frozen=True)
-class CompanyPage:
-    """Paginated collection of ``CompanySummary`` items."""
-
-    items: list[CompanySummary]
-    total: int
-    page: int
-    page_size: int
-
-    @property
-    def total_pages(self) -> int:
-        """Return the number of pages represented by the dataset."""
-
-        if self.total == 0:
-            return 1
-        return ceil(self.total / self.page_size)
-
-
-@dataclass(frozen=True)
-class CompanyAccount:
-    """Account level details for a single organization."""
-
-    account_id: int
-    name: str | None
-    type: str
-    currency: str
-    balance: Decimal
-
-
-@dataclass(frozen=True)
-class CompanyMember:
-    """User membership metadata for an organization."""
-
-    user_id: int
-    name: str
-    email: str | None
-    role: str
-
-
-@dataclass(frozen=True)
-class PeriodRange:
-    """Normalized representation of a reporting period."""
-
-    key: str
-    label: str
-    start: date
-    end: date
-
-
-@dataclass(frozen=True)
-class PayrollEmployee:
-    """Aggregated payroll information for an employee."""
-
-    counterparty_id: int | None
-    name: str
-    total_compensation: Decimal
-
-
-@dataclass(frozen=True)
-class ExpenseCategorySummary:
-    """Expense totals aggregated by category."""
-
-    category_id: int | None
-    name: str
-    total_spent: Decimal
-
-
-@dataclass(frozen=True)
-class IncomeSeriesPoint:
-    """Monthly aggregation of income values for a reporting window."""
-
-    period_start: date
-    label: str
-    amount: Decimal
-
-
-@dataclass(frozen=True)
-class CompanyDetail:
-    """Composite detail view of an organization."""
-
-    org_id: int
-    name: str
-    total_balance: Decimal
-    payroll_headcount: int
-    accounts: list[CompanyAccount]
-    members: list[CompanyMember]
-    period: PeriodRange
-    income_total: Decimal
-    expense_total: Decimal
-    net_cash_flow: Decimal
-    payroll_total: Decimal
-    payroll_employees: list[PayrollEmployee]
-    top_expense_categories: list[ExpenseCategorySummary]
-    income_series: list[IncomeSeriesPoint]
 
 
 class AdminCompanyService:
@@ -171,22 +75,9 @@ class AdminCompanyService:
             offset=offset,
         )
 
-        items = [
-            CompanySummary(
-                org_id=row.org_id,
-                name=row.org_name,
-                total_balance=row.total_balance,
-                payroll_headcount=row.payroll_headcount,
-            )
-            for row in rows
-        ]
+        items = [CompanySummary.from_row(row) for row in rows]
 
-        return CompanyPage(
-            items=items,
-            total=total,
-            page=page,
-            page_size=page_size,
-        )
+        return CompanyPage.assemble(items, total=total, page=page, page_size=page_size)
 
     def get_company_detail(
         self,
@@ -209,7 +100,7 @@ class AdminCompanyService:
                 range_start, range_end = range_end, range_start
             if range_end > reference_today:
                 range_end = reference_today
-            period = PeriodRange(
+            period = PeriodRange.normalized(
                 key="custom",
                 label="Custom range",
                 start=range_start,
@@ -226,13 +117,7 @@ class AdminCompanyService:
             return None
 
         accounts = [
-            CompanyAccount(
-                account_id=row.account_id,
-                name=row.account_name,
-                type=row.account_type,
-                currency=row.account_currency,
-                balance=row.balance,
-            )
+            CompanyAccount.from_row(row)
             for row in self._repository.list_accounts(org_id)
         ]
 
@@ -241,12 +126,7 @@ class AdminCompanyService:
         payroll_headcount_raw = self._repository.get_payroll_headcount(org_id)
 
         members = [
-            CompanyMember(
-                user_id=row.user_id,
-                name=row.user_name,
-                email=row.user_email,
-                role=row.membership_role,
-            )
+            CompanyMember.from_row(row)
             for row in self._repository.list_members(org_id)
         ]
 
@@ -283,7 +163,7 @@ class AdminCompanyService:
         while current_month <= last_month:
             amount = monthly_lookup.get(current_month, Decimal(0))
             series.append(
-                IncomeSeriesPoint(
+                IncomeSeriesPoint.create(
                     period_start=current_month,
                     label=current_month.strftime("%b %Y"),
                     amount=amount,
@@ -292,11 +172,7 @@ class AdminCompanyService:
             current_month = _increment_month(current_month)
 
         payroll_employees = [
-            PayrollEmployee(
-                counterparty_id=row.counterparty_id,
-                name=row.counterparty_name,
-                total_compensation=row.total_paid.copy_abs(),
-            )
+            PayrollEmployee.from_row(row)
             for row in self._repository.list_payroll_employees(
                 org_id,
                 start_date=range_start,
@@ -307,11 +183,7 @@ class AdminCompanyService:
         payroll_total = sum((employee.total_compensation for employee in payroll_employees), Decimal(0))
 
         top_expense_categories = [
-            ExpenseCategorySummary(
-                category_id=row.category_id,
-                name=row.category_name,
-                total_spent=row.total_spent.copy_abs(),
-            )
+            ExpenseCategorySummary.from_row(row)
             for row in self._repository.list_top_expense_categories(
                 org_id,
                 start_date=range_start,
@@ -319,7 +191,7 @@ class AdminCompanyService:
             )
         ]
 
-        return CompanyDetail(
+        return CompanyDetail.assemble(
             org_id=org_row.org_id,
             name=org_row.org_name,
             total_balance=total_balance,
@@ -373,5 +245,5 @@ class AdminCompanyService:
             start = reference_date.replace(month=1, day=1)
 
         label = cls._PERIOD_LABELS[resolved_key]
-        return PeriodRange(key=resolved_key, label=label, start=start, end=reference_date)
+        return PeriodRange.normalized(key=resolved_key, label=label, start=start, end=reference_date)
 
