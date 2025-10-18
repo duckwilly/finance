@@ -45,6 +45,14 @@ class IndividualPage:
     page: int
     page_size: int
 
+    @property
+    def total_pages(self) -> int:
+        """Return the number of pages represented by the dataset."""
+
+        if self.total <= 0:
+            return 1
+        return (self.total + self.page_size - 1) // self.page_size
+
     @classmethod
     def assemble(
         cls,
