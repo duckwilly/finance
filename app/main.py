@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 
 from app.core import get_logger
 from app.routers import dashboard_router
@@ -16,6 +17,11 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Finance Platform", version="0.1.0")
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
     app.include_router(dashboard_router)
+
+    @app.get("/", include_in_schema=False)
+    async def root_redirect():
+        return RedirectResponse(url="/dashboard/")
+
     LOGGER.info("FastAPI application initialised")
     return app
 

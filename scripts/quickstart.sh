@@ -30,6 +30,14 @@ if [[ ! -f .env ]]; then
   fi
 fi
 
+if [[ -f .env ]]; then
+  step "Loading environment variables from .env"
+  # shellcheck disable=SC1091
+  set -a
+  source .env
+  set +a
+fi
+
 PYTHON_BIN="${PYTHON:-python3}"
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   echo "Error: unable to locate python interpreter '$PYTHON_BIN'" >&2

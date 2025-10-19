@@ -15,6 +15,8 @@ class AdminMetrics(BaseModel):
     total_transactions: int
     first_transaction_at: datetime | None
     last_transaction_at: datetime | None
+    total_cash: Decimal = Decimal("0")
+    total_holdings: Decimal = Decimal("0")
     total_aum: Decimal
 
     @field_serializer("total_aum")

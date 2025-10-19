@@ -13,6 +13,7 @@ from .transactions import (
     TransactionChannel,
     TransactionDirection,
 )
+from .stocks import PositionAgg
 
 __all__ = [
     "Base",
@@ -25,4 +26,5 @@ __all__ = [
     "Transaction",
     "TransactionChannel",
     "TransactionDirection",
+    "PositionAgg"
 ]

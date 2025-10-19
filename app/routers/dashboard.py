@@ -5,15 +5,14 @@ from collections.abc import Generator
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.logger import get_logger
 from app.db.session import get_sessionmaker
 from app.services import AdminService
+from app.core.templates import templates
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
-templates = Jinja2Templates(directory="app/templates")
 SESSION_FACTORY: sessionmaker = get_sessionmaker()
 LOGGER = get_logger(__name__)
 
