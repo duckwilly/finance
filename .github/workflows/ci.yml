@@ -35,26 +35,22 @@ jobs:
         run: |
           python -m pip install -U pip
           pip install -r requirements.txt
-      - name: Apply schema
+      - name: Quickstart (server smoke)
+        env:
+          QUICKSTART_SKIP_DOCKER: "1"
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: finance
         run: |
-          mysql -h 127.0.0.1 -uroot -proot finance < sql/schema.sql
-      - name: Smoketest
-        env:
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_USER: root
-          DB_PASSWORD: root
-          DB_NAME: finance
-        run: python scripts/db_smoketest.py
-      - name: Generate seed CSVs
-        run: python scripts/gen_seed_data.py
-      - name: Load CSVs
-        env:
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_USER: root
-          DB_PASSWORD: root
-          DB_NAME: finance
-        run: python scripts/load_csvs.py
+          set +e
+          timeout 420 make quickstart
+          status=$?
+          if [ "$status" -eq 124 ]; then
+            echo "Quickstart timed out after server launch as expected."
+          elif [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
       - name: Run unit tests
         run: pytest

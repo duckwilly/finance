@@ -17,7 +17,12 @@ step() {
   echo "==> $1"
 }
 
-require_command docker
+SKIP_DOCKER="${QUICKSTART_SKIP_DOCKER:-0}"
+START_SERVER="${QUICKSTART_START_SERVER:-1}"
+
+if [[ "${SKIP_DOCKER}" != "1" ]]; then
+  require_command docker
+fi
 
 if [[ ! -f .env ]]; then
   if [[ -f .env.example ]]; then
@@ -48,8 +53,12 @@ step "Installing Python dependencies"
 pip install -q -U pip
 pip install -q -r requirements.txt
 
-step "Starting MariaDB with Docker Compose"
-docker compose -f docker/docker-compose.yaml up -d
+if [[ "${SKIP_DOCKER}" != "1" ]]; then
+  step "Starting MariaDB with Docker Compose"
+  docker compose -f docker/docker-compose.yaml up -d
+else
+  echo "Skipping Docker Compose startup (QUICKSTART_SKIP_DOCKER=${SKIP_DOCKER})"
+fi
 
 step "Waiting for the database to become available"
 python - <<'PY'
@@ -121,5 +130,28 @@ python scripts/gen_seed_data.py
 step "Loading CSV data into MariaDB"
 python scripts/load_csvs.py
 
-step "Quickstart complete"
-echo "Database seeded. Install uvicorn separately and run 'uvicorn app.main:app --reload' once the new application modules are implemented."
+if [[ "${START_SERVER}" == "1" ]]; then
+  require_command uvicorn
+  step "Quickstart complete"
+  step "Starting FastAPI development server"
+  UVICORN_HOST="${QUICKSTART_HOST:-0.0.0.0}"
+  UVICORN_PORT="${QUICKSTART_PORT:-8000}"
+  UVICORN_LOG_LEVEL="${QUICKSTART_LOG_LEVEL:-info}"
+
+  cleanup() {
+    if [[ -n "${UVICORN_PID:-}" ]]; then
+      kill "${UVICORN_PID}" >/dev/null 2>&1 || true
+      wait "${UVICORN_PID}" 2>/dev/null || true
+    fi
+  }
+
+  trap cleanup EXIT INT TERM
+  uvicorn app.main:app --host "${UVICORN_HOST}" --port "${UVICORN_PORT}" --log-level "${UVICORN_LOG_LEVEL}" --reload &
+  UVICORN_PID=$!
+  echo "FastAPI application running at http://${UVICORN_HOST}:${UVICORN_PORT} (PID ${UVICORN_PID})."
+  echo "Press Ctrl+C to stop the server."
+  wait "${UVICORN_PID}"
+else
+  step "Quickstart complete"
+  echo "Server startup skipped (QUICKSTART_START_SERVER=${START_SERVER})."
+fi
