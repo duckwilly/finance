@@ -17,7 +17,95 @@ step() {
   echo "==> $1"
 }
 
+# Default values
 START_SERVER="${QUICKSTART_START_SERVER:-1}"
+SIMULATION_SIZE="medium"
+SIMULATION_MONTHS=""
+INDIVIDUALS=""
+COMPANIES=""
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --size)
+      SIMULATION_SIZE="$2"
+      shift 2
+      ;;
+    --months)
+      SIMULATION_MONTHS="$2"
+      shift 2
+      ;;
+    --individuals)
+      INDIVIDUALS="$2"
+      shift 2
+      ;;
+    --companies)
+      COMPANIES="$2"
+      shift 2
+      ;;
+    --no-server)
+      START_SERVER="0"
+      shift
+      ;;
+    --help)
+      echo "Usage: $0 [OPTIONS]"
+      echo ""
+      echo "Options:"
+      echo "  --size SIZE          Simulation size preset: small, medium, large (default: medium)"
+      echo "  --months MONTHS      Number of months to simulate (overrides preset)"
+      echo "  --individuals NUM    Number of individuals (overrides preset)"
+      echo "  --companies NUM      Number of companies (overrides preset)"
+      echo "  --no-server          Don't start the FastAPI server"
+      echo "  --help               Show this help message"
+      echo ""
+      echo "Presets:"
+      echo "  small:   50 individuals, 5 companies, 3 months"
+      echo "  medium:  500 individuals, 50 companies, 12 months"
+      echo "  large:   2000 individuals, 200 companies, 24 months"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Use --help for usage information"
+      exit 1
+      ;;
+  esac
+done
+
+# Set parameters based on presets or use provided values
+case "$SIMULATION_SIZE" in
+  small)
+    DEFAULT_INDIVIDUALS=50
+    DEFAULT_COMPANIES=5
+    DEFAULT_MONTHS=3
+    ;;
+  medium)
+    DEFAULT_INDIVIDUALS=500
+    DEFAULT_COMPANIES=50
+    DEFAULT_MONTHS=12
+    ;;
+  large)
+    DEFAULT_INDIVIDUALS=2000
+    DEFAULT_COMPANIES=200
+    DEFAULT_MONTHS=24
+    ;;
+  *)
+    echo "Error: Invalid simulation size '$SIMULATION_SIZE'. Use: small, medium, large"
+    exit 1
+    ;;
+esac
+
+# Use provided values or defaults
+FINAL_INDIVIDUALS="${INDIVIDUALS:-$DEFAULT_INDIVIDUALS}"
+FINAL_COMPANIES="${COMPANIES:-$DEFAULT_COMPANIES}"
+FINAL_MONTHS="${SIMULATION_MONTHS:-$DEFAULT_MONTHS}"
+
+echo "Simulation configuration:"
+echo "  Size preset: $SIMULATION_SIZE"
+echo "  Individuals: $FINAL_INDIVIDUALS"
+echo "  Companies: $FINAL_COMPANIES"
+echo "  Months: $FINAL_MONTHS"
+echo "  Start server: $([ "$START_SERVER" = "1" ] && echo "yes" || echo "no")"
 
 require_command docker
 
@@ -147,7 +235,7 @@ step "Fetching historical stock prices and FX rates"
 python scripts/fetch_stock_prices.py
 
 step "Generating seed CSV data"
-python scripts/gen_seed_data.py --seed $(date +%s)
+python scripts/gen_seed_data.py --seed $(date +%s) --individuals "$FINAL_INDIVIDUALS" --companies "$FINAL_COMPANIES" --months "$FINAL_MONTHS"
 
 step "Loading CSV data into MariaDB"
 python scripts/load_csvs.py

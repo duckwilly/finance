@@ -168,6 +168,7 @@ class AdminService:
             select(
                 Individual.id.label("individual_id"),
                 Individual.name,
+                Individual.job_title,
                 func.coalesce(income_subquery.c.monthly_income, 0).label("monthly_income"),
                 func.coalesce(balance_totals.c.checking_balance, 0).label("checking_balance"),
                 func.coalesce(balance_totals.c.savings_balance, 0).label("savings_balance"),
@@ -188,12 +189,15 @@ class AdminService:
             search_terms = [record.name]
             if employer_name:
                 search_terms.append(employer_name)
+            if record.job_title:
+                search_terms.append(record.job_title)
 
             rows.append(
                 ListViewRow(
                     key=str(record.individual_id),
                     values={
                         "name": record.name,
+                        "job_title": record.job_title or "",
                         "employer": employer_name,
                         "monthly_income": record.monthly_income,
                         "checking_aum": record.checking_balance,
@@ -209,6 +213,7 @@ class AdminService:
             columns=[
                 ListViewColumn(key="name", title="Name"),
                 ListViewColumn(key="employer", title="Employer"),
+                ListViewColumn(key="job_title", title="Job Title"),
                 ListViewColumn(key="monthly_income", title="Monthly income", column_type="currency", align="right"),
                 ListViewColumn(key="checking_aum", title="Checking AUM", column_type="currency", align="right"),
                 ListViewColumn(key="savings_aum", title="Savings AUM", column_type="currency", align="right"),

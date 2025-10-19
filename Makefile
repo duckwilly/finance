@@ -1,7 +1,27 @@
-.PHONY: quickstart venv deps db-up db-schema seed seed-reproducible load smoke clear-db clear-seed
+.PHONY: quickstart quickstart-small quickstart-medium quickstart-large quickstart-ci start start-prod venv deps db-up db-schema seed seed-reproducible load smoke clear-db clear-seed
 
 quickstart:
 	./scripts/quickstart.sh
+
+quickstart-small:
+	./scripts/quickstart.sh --size small
+
+quickstart-medium:
+	./scripts/quickstart.sh --size medium
+
+quickstart-large:
+	./scripts/quickstart.sh --size large
+
+quickstart-ci:
+	./scripts/quickstart.sh --size small --no-server
+
+start:
+	@if [ ! -d .venv ]; then echo "Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	. .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+start-prod:
+	@if [ ! -d .venv ]; then echo "Virtual environment not found. Run 'make venv' first."; exit 1; fi
+	. .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 venv:
 	python3 -m venv .venv

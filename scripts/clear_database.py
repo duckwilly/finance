@@ -13,8 +13,47 @@ from app.log import get_logger, init_logging
 
 logger = get_logger(__name__)
 
+def is_database_empty():
+    """Check if the database has any data."""
+    settings = get_settings()
+    engine = create_engine(settings.database.sqlalchemy_url, future=True)
+    
+    # Tables to check for data
+    tables_to_check = [
+        "user",
+        "org", 
+        "account",
+        "transaction",
+        "trade",
+        "holding",
+        "instrument",
+        "price_daily",
+        "fx_rate_daily"
+    ]
+    
+    with engine.connect() as connection:
+        for table in tables_to_check:
+            try:
+                result = connection.execute(text(f"SELECT COUNT(*) FROM {table}"))
+                count = result.scalar()
+                if count > 0:
+                    logger.info(f"Found {count} rows in {table}, database is not empty")
+                    return False
+            except Exception as e:
+                # Table might not exist yet, which is fine for an empty database
+                logger.debug(f"Could not check table {table}: {e}")
+                continue
+    
+    logger.info("Database appears to be empty")
+    return True
+
 def clear_database():
     """Clear all data from database tables in dependency order."""
+    # Check if database is empty first
+    if is_database_empty():
+        logger.info("Database is empty, skipping clear operation")
+        return
+    
     settings = get_settings()
     engine = create_engine(settings.database.sqlalchemy_url, future=True)
     

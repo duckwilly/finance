@@ -24,6 +24,7 @@ STREAM_DIR = Path("data/stream")
 
 from app.log import get_logger, init_logging, log_context, progress_manager, timeit
 from scripts.name_data import random_company_name, random_person_name
+from scripts.job_titles import get_job_titles_for_tier
 
 logger = get_logger(__name__)
 INDUSTRIES = [
@@ -127,6 +128,7 @@ class Individual:
     savings_account: str
     landlord: str
     wealth_tier: str
+    job_title: str
 
 
 class IdFactory:
@@ -285,6 +287,9 @@ def build_individuals(n: int, companies: Sequence[Company]) -> list[Individual]:
     
     company_weights = [SIZE_TIERS[company.size_tier] for company in companies]
     
+    # Track used job titles per company to ensure uniqueness
+    company_used_titles = {company.ext_id: set() for company in companies}
+    
     individuals = []
     user_id = 1
     
@@ -301,6 +306,20 @@ def build_individuals(n: int, companies: Sequence[Company]) -> list[Individual]:
             # Assign employer based on company size weights
             employer = random.choices(companies, weights=company_weights)[0]
             
+            # Assign job title based on wealth tier, ensuring uniqueness within company
+            available_titles = get_job_titles_for_tier(tier_name)
+            used_titles = company_used_titles[employer.ext_id]
+            unused_titles = [title for title in available_titles if title not in used_titles]
+            
+            if unused_titles:
+                job_title = random.choice(unused_titles)
+            else:
+                # If all titles for this tier are used, pick any available title
+                job_title = random.choice(available_titles)
+            
+            # Track the used title
+            company_used_titles[employer.ext_id].add(job_title)
+            
             individuals.append(Individual(
                 ext_id=f"U-{user_id:05d}",
                 name=f"{first} {last}",
@@ -312,6 +331,7 @@ def build_individuals(n: int, companies: Sequence[Company]) -> list[Individual]:
                 savings_account=f"A-U{user_id:05d}-SAV",
                 landlord=random.choice(PROPERTY_MANAGERS),
                 wealth_tier=tier_name,
+                job_title=job_title,
             ))
             user_id += 1
     
@@ -854,9 +874,9 @@ def generate_trades(individuals: Sequence[Individual], start_month: date, months
 
 def write_core_tables(individuals: list[Individual], companies: list[Company], currency: str) -> None:
     users_rows = [
-        {"ext_id": "U-ADMIN", "name": "Bank Admin", "email": "admin@simulatedbank.dev"},
+        {"ext_id": "U-ADMIN", "name": "Bank Admin", "email": "admin@simulatedbank.dev", "job_title": "System Administrator"},
     ] + [
-        {"ext_id": person.ext_id, "name": person.name, "email": person.email}
+        {"ext_id": person.ext_id, "name": person.name, "email": person.email, "job_title": person.job_title}
         for person in individuals
     ]
     org_rows = [
@@ -939,7 +959,7 @@ def write_core_tables(individuals: list[Individual], companies: list[Company], c
 
     write_csv(
         SEED_DIR / "users.csv",
-        ["ext_id", "name", "email"],
+        ["ext_id", "name", "email", "job_title"],
         users_rows,
     )
     write_csv(

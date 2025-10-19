@@ -83,13 +83,13 @@ def count_rows(name: str) -> int:
             return 0
         return sum(1 for _ in f)
 
-def upsert_user(cur, name, email):
+def upsert_user(cur, name, email, job_title=None):
     # Unique by email (schema has UNIQUE email)
     cur.execute("SELECT id FROM `user` WHERE email=%s", (email,))
     row = cur.fetchone()
     if row:
         return row["id"]
-    cur.execute("INSERT INTO `user`(name, email) VALUES (%s,%s)", (name, email))
+    cur.execute("INSERT INTO `user`(name, email, job_title) VALUES (%s,%s,%s)", (name, email, job_title))
     return cur.lastrowid
 
 def upsert_org(cur, name):
@@ -239,7 +239,7 @@ def load_users_orgs_accounts_and_memberships():
 
         # users
         for u in users:
-            uid = upsert_user(cur, u["name"], u["email"])
+            uid = upsert_user(cur, u["name"], u["email"], u.get("job_title"))
             user_map[u["ext_id"]] = uid
 
         # orgs

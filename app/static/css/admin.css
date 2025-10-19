@@ -226,6 +226,7 @@ body.page {
   cursor: pointer;
   transition: background-color var(--transition), color var(--transition);
   user-select: none;
+  vertical-align: top;
 }
 
 .list-view__cell--head:hover {
@@ -344,6 +345,20 @@ body.page {
   padding-bottom: 1rem;
 }
 
+@media (max-width: 1300px) {
+  .details {
+    grid-template-columns: 1fr;
+  }
+  
+  .details__panel {
+    padding: 1.5rem;
+  }
+  
+  .card-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
 @media (max-width: 600px) {
   body.page {
     padding: 1.5rem;
@@ -351,5 +366,19 @@ body.page {
 
   .page__header {
     gap: 1.5rem;
+  }
+  
+  .details__panel {
+    padding: 1rem;
+  }
+  
+  .list-view__cell {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+  }
+  
+  .list-view__cell--head {
+    font-size: 0.8rem;
+    padding: 0.5rem 0.75rem;
   }
 }
