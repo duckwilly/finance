@@ -1,34 +1,28 @@
 """Database models for the finance domain."""
+from __future__ import annotations
+
+from .base import Base
+from .companies import Company
+from .individuals import Individual
+from .transactions import (
+    Account,
+    AccountOwnerType,
+    AccountType,
+    Section,
+    Transaction,
+    TransactionChannel,
+    TransactionDirection,
+)
 
 __all__ = [
+    "Base",
     "Company",
     "Individual",
-    "StockHolding",
+    "Account",
+    "AccountOwnerType",
+    "AccountType",
+    "Section",
     "Transaction",
-    "AdminUser",
+    "TransactionChannel",
+    "TransactionDirection",
 ]
-
-
-class _Placeholder:
-    def __init_subclass__(cls) -> None:
-        raise TypeError("Model stubs must be replaced with real SQLAlchemy models.")
-
-
-class Company(_Placeholder):
-    """Stub company model."""
-
-
-class Individual(_Placeholder):
-    """Stub individual model."""
-
-
-class StockHolding(_Placeholder):
-    """Stub stock holding model."""
-
-
-class Transaction(_Placeholder):
-    """Stub transaction model."""
-
-
-class AdminUser(_Placeholder):
-    """Stub admin model."""
