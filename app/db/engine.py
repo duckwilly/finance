@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from app.config import get_settings
-from app.logger import get_logger
+from app.core.logger import get_logger
 
 LOGGER = get_logger(__name__)
 

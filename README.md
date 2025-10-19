@@ -31,31 +31,14 @@ future API processes.
 ## Repository Layout
 ```
 finance/
-├─ app/
-│  ├─ db/                # SQLAlchemy engine/session helpers
-│  ├─ etl/               # classification helpers & future rule sets
-│  ├─ services/          # placeholder for domain logic
-│  └─ logger.py          # shared logging setup
-├─ data/                 # generated seed datasets & streaming output
-├─ docker/
-│  └─ docker-compose.yaml
-├─ old/                  # legacy reference implementation
-├─ scripts/
-│  ├─ db_smoketest.py    # quick connectivity check (PyMySQL by default)
-│  ├─ gen_seed_data.py   # high-volume synthetic dataset generator
-│  └─ load_csvs.py       # idempotent CSV loader into MariaDB
-├─ sql/
-│  └─ schema.sql         # bootstrap DDL (pre-Alembic)
-├─ Makefile              # shortcuts for common workflows
-├─ README.md
-└─ requirements.txt
+**UPDATE THIS**
 ```
 
 ---
 
 ## Quick Start
 
-### 🚀 One-command bootstrap (recommended)
+### One-command bootstrap (recommended)
 
 The repository includes a helper that mirrors the CI workflow locally—creating a
 virtual environment, installing dependencies, starting MariaDB via Docker
@@ -224,10 +207,5 @@ with real-world use cases.
 ---
 
 ## Roadmap Notes
-- Flesh out `app/services/` with reusable transaction/trade services before the
-  FastAPI layer lands.
 - Introduce Alembic migrations that mirror `sql/schema.sql`.
-- Wire the streaming feed into background workers or websocket publishers so the
-  dashboard front-end can subscribe to live updates.
-- Port over any still-useful utilities from `old/` once their modern
-  equivalents exist in the new `app/` package.
+- Live updates with new transaction data
