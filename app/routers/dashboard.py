@@ -49,6 +49,11 @@ async def read_dashboard(
     LOGGER.info("Dashboard endpoint requested")
     metrics = admin_service.get_metrics(session)
     context = {
+        "request": request,
         "metrics": metrics,
     }
-    return templates.TemplateResponse(request, "admin/dashboard.html", context)
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/dashboard.html",
+        context=context,
+    )
