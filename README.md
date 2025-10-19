@@ -103,11 +103,21 @@ When you are ready to run the application manually, execute
 will launch the server for you unless disabled via environment variables).
 
 ## Synthetic Data & Tooling
-The data generation scripts continue to provide a comprehensive dataset covering
-individuals, companies, transactions, and stock trades. Adjust the parameters in
-`scripts/gen_seed_data.py` to create lighter or heavier workloads, then reload
-with `scripts/load_csvs.py`. These scripts rely on the shared configuration and
-logging modules preserved during the rebuild.
+The data generation scripts provide a comprehensive dataset covering individuals, 
+companies, transactions, and stock trades with real historical price data.
+
+### Data Sources
+- **Stock Prices**: Real historical daily prices from 2021-present via Yahoo Finance
+- **FX Rates**: Real USD/EUR exchange rates from 2021-present
+- **Transactions**: Synthetic bank transactions with realistic patterns
+- **Stock Trades**: Portfolio simulation with 70% of users having varying investment levels
+
+### Data Generation Workflow
+1. `scripts/fetch_stock_prices.py` - Downloads real historical stock prices and FX rates
+2. `scripts/gen_seed_data.py` - Generates synthetic users, companies, transactions, and trades
+3. `scripts/load_csvs.py` - Loads all data into the database
+
+Adjust parameters in `scripts/gen_seed_data.py` to create lighter or heavier workloads.
 
 ## Next Steps
 - Flesh out domain models in `app/models/` and their accompanying schemas.

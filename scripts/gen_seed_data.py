@@ -100,17 +100,7 @@ INSTRUMENTS = [
     {"ext_id": "I-ASM", "symbol": "ASML", "name": "ASML Holding N.V.", "type": "EQUITY", "currency": "EUR", "isin": "NL0010273215", "mic": "XAMS"},
 ]
 
-PRICE_POINTS = [
-    ("2024-12-31", {"I-AAPL": 195.48, "I-MSFT": 389.25, "I-NVDA": 487.22, "I-TSLA": 253.50, "I-VWRL": 115.72, "I-ASM": 652.10}),
-    ("2025-01-31", {"I-AAPL": 199.11, "I-MSFT": 402.18, "I-NVDA": 512.02, "I-TSLA": 261.34, "I-VWRL": 118.64, "I-ASM": 671.92}),
-    ("2025-02-28", {"I-AAPL": 205.43, "I-MSFT": 410.55, "I-NVDA": 533.10, "I-TSLA": 275.11, "I-VWRL": 121.03, "I-ASM": 689.35}),
-]
-
-FX_POINTS = [
-    ("2024-12-31", "USD", "EUR", 0.92),
-    ("2025-01-31", "USD", "EUR", 0.93),
-    ("2025-02-28", "USD", "EUR", 0.94),
-]
+# Price and FX data are now fetched from real sources via fetch_stock_prices.py
 
 
 @dataclass
@@ -167,11 +157,17 @@ TXN_HEADERS = [
 
 
 def parse_args() -> argparse.Namespace:
+    # Calculate default start and months based on current year
+    current_year = date.today().year
+    current_month = date.today().month
+    default_start = f"{current_year}-01"
+    default_months = current_month
+    
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--individuals", type=int, default=500, help="Number of individual users to create")
     parser.add_argument("--companies", type=int, default=50, help="Number of corporate organisations")
-    parser.add_argument("--months", type=int, default=6, help="How many months of history to generate")
-    parser.add_argument("--start", type=str, default="2025-01", help="Start month (YYYY-MM)")
+    parser.add_argument("--months", type=int, default=default_months, help="How many months of history to generate")
+    parser.add_argument("--start", type=str, default=default_start, help="Start month (YYYY-MM)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--currency", type=str, default="EUR", help="Base currency for cash accounts")
     parser.add_argument(
@@ -559,27 +555,143 @@ def company_transactions(
                 }
 
 
-def generate_trades(individuals: Sequence[Individual]) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+def generate_historical_positions(individuals: Sequence[Individual], start_month: date) -> list[dict[str, object]]:
+    """Generate historical positions that exist before the simulation period."""
+    historical_trades = []
+    trade_id = IdFactory("TR-HIST-", start=1)
+    
+    for person in individuals:
+        # Generate 1-5 historical trades 6-18 months before simulation start
+        num_historical = random.randint(1, 5)
+        historical_start = start_month - timedelta(days=random.randint(180, 540))  # 6-18 months before
+        
+        holdings: dict[str, float] = {}
+        for _ in range(num_historical):
+            instrument = random.choice(INSTRUMENTS)
+            qty = round(random.uniform(1, 15), 2)
+            # Use realistic price ranges based on instrument
+            if instrument["ext_id"] == "I-AAPL":
+                price = round(random.uniform(120, 200), 2)
+            elif instrument["ext_id"] == "I-MSFT":
+                price = round(random.uniform(300, 450), 2)
+            elif instrument["ext_id"] == "I-NVDA":
+                price = round(random.uniform(200, 600), 2)
+            elif instrument["ext_id"] == "I-TSLA":
+                price = round(random.uniform(150, 300), 2)
+            elif instrument["ext_id"] == "I-VWRL":
+                price = round(random.uniform(80, 130), 2)
+            elif instrument["ext_id"] == "I-ASM":
+                price = round(random.uniform(400, 800), 2)
+            else:
+                price = round(random.uniform(50, 300), 2)
+            
+            # Historical trades are always BUY
+            trade_time = historical_start + timedelta(days=random.randint(0, 90))
+            trade_time = datetime.combine(trade_time, datetime.min.time().replace(hour=random.randint(9, 16)))
+            
+            historical_trades.append({
+                "ext_id": trade_id.next(),
+                "account_ext_id": person.checking_account.replace("-CHK", "-BRK"),
+                "instrument_ext_id": instrument["ext_id"],
+                "side": "BUY",
+                "qty": f"{qty:.2f}",
+                "price": f"{price:.2f}",
+                "fees": f"{random.uniform(0.5, 4.5):.2f}",
+                "tax": f"{random.uniform(0, 2.0):.2f}",
+                "trade_time": trade_time.isoformat(),
+                "settle_dt": (trade_time.date() + timedelta(days=2)).isoformat(),
+                "currency": instrument["currency"],
+            })
+            holdings[instrument["ext_id"]] = holdings.get(instrument["ext_id"], 0) + qty
+    
+    return historical_trades
+
+
+def generate_trades(individuals: Sequence[Individual], start_month: date, months: int) -> list[dict[str, object]]:
+    """Generate trades for the simulation period with enhanced portfolio distribution."""
     if not individuals:
-        return [], []
-    sample_size = min(len(individuals), max(100, len(individuals) // 10))
-    random_investors = random.sample(individuals, k=sample_size)
+        return []
+    
+    # Select ~70% of users for portfolios
+    portfolio_size = int(len(individuals) * 0.7)
+    random_investors = random.sample(individuals, k=portfolio_size)
+    
     trade_rows: list[dict[str, object]] = []
     trade_id = IdFactory("TR-", start=1)
-    for person in random_investors:
-        num_trades = random.randint(6, 18)
-        holdings: dict[str, float] = {}
-        for _ in range(num_trades):
-            instrument = random.choice(INSTRUMENTS)
-            qty = round(random.uniform(1, 25), 2)
-            price = round(random.uniform(20, 500), 2)
-            side_options = ["BUY", "SELL"] if holdings.get(instrument["ext_id"], 0) > 2 else ["BUY"]
-            side = random.choice(side_options)
-            if side == "SELL":
-                qty = min(qty, holdings.get(instrument["ext_id"], qty))
-            trade_time = datetime(2024, random.randint(1, 12), random.randint(1, 28), random.randint(10, 16), random.randint(0, 59))
-            trade_rows.append(
-                {
+    
+    # Generate historical positions first
+    historical_trades = generate_historical_positions(random_investors, start_month)
+    trade_rows.extend(historical_trades)
+    
+    # Assign portfolio tiers
+    small_investors = random_investors[:int(len(random_investors) * 0.4)]  # 40%
+    medium_investors = random_investors[int(len(random_investors) * 0.4):int(len(random_investors) * 0.8)]  # 40%
+    large_investors = random_investors[int(len(random_investors) * 0.8):]  # 20%
+    
+    # Generate trades for each tier
+    for tier_name, investors, min_trades, max_trades, min_stocks, max_stocks in [
+        ("small", small_investors, 2, 5, 1, 2),
+        ("medium", medium_investors, 6, 12, 2, 4),
+        ("large", large_investors, 13, 25, 3, 6),
+    ]:
+        for person in investors:
+            num_trades = random.randint(min_trades, max_trades)
+            num_stocks = random.randint(min_stocks, max_stocks)
+            selected_stocks = random.sample(INSTRUMENTS, k=num_stocks)
+            
+            holdings: dict[str, float] = {}
+            
+            # Generate trades throughout the simulation period
+            for _ in range(num_trades):
+                instrument = random.choice(selected_stocks)
+                qty = round(random.uniform(1, 25), 2)
+                
+                # Use realistic price ranges
+                if instrument["ext_id"] == "I-AAPL":
+                    price = round(random.uniform(120, 200), 2)
+                elif instrument["ext_id"] == "I-MSFT":
+                    price = round(random.uniform(300, 450), 2)
+                elif instrument["ext_id"] == "I-NVDA":
+                    price = round(random.uniform(200, 600), 2)
+                elif instrument["ext_id"] == "I-TSLA":
+                    price = round(random.uniform(150, 300), 2)
+                elif instrument["ext_id"] == "I-VWRL":
+                    price = round(random.uniform(80, 130), 2)
+                elif instrument["ext_id"] == "I-ASM":
+                    price = round(random.uniform(400, 800), 2)
+                else:
+                    price = round(random.uniform(50, 300), 2)
+                
+                # Determine if this should be a BUY or SELL
+                current_holding = holdings.get(instrument["ext_id"], 0)
+                if current_holding > qty * 2:  # Can sell if we have enough
+                    side_options = ["BUY", "SELL"]
+                else:
+                    side_options = ["BUY"]
+                
+                side = random.choice(side_options)
+                if side == "SELL":
+                    qty = min(qty, current_holding)
+                
+                # Generate trade time within simulation period
+                # More trades at month boundaries (rebalancing behavior)
+                if random.random() < 0.3:  # 30% chance of month-end trade
+                    trade_day = start_month + timedelta(days=random.randint(0, months * 30))
+                    # Move to end of month
+                    if trade_day.month == 12:
+                        trade_day = date(trade_day.year, 12, 31)
+                    else:
+                        next_month = date(trade_day.year, trade_day.month + 1, 1)
+                        trade_day = next_month - timedelta(days=1)
+                else:
+                    trade_day = start_month + timedelta(days=random.randint(0, months * 30))
+                
+                trade_time = datetime.combine(trade_day, datetime.min.time().replace(
+                    hour=random.randint(9, 16), 
+                    minute=random.randint(0, 59)
+                ))
+                
+                trade_rows.append({
                     "ext_id": trade_id.next(),
                     "account_ext_id": person.checking_account.replace("-CHK", "-BRK"),
                     "instrument_ext_id": instrument["ext_id"],
@@ -591,27 +703,13 @@ def generate_trades(individuals: Sequence[Individual]) -> tuple[list[dict[str, o
                     "trade_time": trade_time.isoformat(),
                     "settle_dt": (trade_time.date() + timedelta(days=2)).isoformat(),
                     "currency": instrument["currency"],
-                }
-            )
-            holdings[instrument["ext_id"]] = holdings.get(instrument["ext_id"], 0) + (qty if side == "BUY" else -qty)
-    price_rows = [
-        {
-            "instrument_ext_id": instrument_id,
-            "price_date": price_date,
-            "close_price": f"{price:.2f}",
-            "currency": next(inst["currency"] for inst in INSTRUMENTS if inst["ext_id"] == instrument_id),
-        }
-        for price_date, snapshot in PRICE_POINTS
-        for instrument_id, price in snapshot.items()
-    ]
-    return trade_rows, price_rows
+                })
+                holdings[instrument["ext_id"]] = holdings.get(instrument["ext_id"], 0) + (qty if side == "BUY" else -qty)
+    
+    return trade_rows
 
 
-def generate_fx_rows() -> list[dict[str, object]]:
-    return [
-        {"base": base, "quote": quote, "rate_date": rate_date, "rate": f"{rate:.4f}"}
-        for rate_date, base, quote, rate in FX_POINTS
-    ]
+# FX data is now handled by fetch_stock_prices.py
 
 
 def write_core_tables(individuals: list[Individual], companies: list[Company], currency: str) -> None:
@@ -734,7 +832,7 @@ def write_transactions(rows: Iterator[dict[str, object]]) -> int:
     return count
 
 
-def write_trades(trades: Sequence[dict[str, object]], prices: Sequence[dict[str, object]]) -> None:
+def write_trades(trades: Sequence[dict[str, object]]) -> None:
     write_csv(
         SEED_DIR / "instruments.csv",
         ["ext_id", "symbol", "name", "type", "currency", "isin", "mic"],
@@ -745,16 +843,7 @@ def write_trades(trades: Sequence[dict[str, object]], prices: Sequence[dict[str,
         ["ext_id", "account_ext_id", "instrument_ext_id", "side", "qty", "price", "fees", "tax", "trade_time", "settle_dt", "currency"],
         trades,
     )
-    write_csv(
-        SEED_DIR / "price_daily.csv",
-        ["instrument_ext_id", "price_date", "close_price", "currency"],
-        prices,
-    )
-    write_csv(
-        SEED_DIR / "fx_rate_daily.csv",
-        ["base", "quote", "rate_date", "rate"],
-        generate_fx_rows(),
-    )
+    # Price and FX data are now handled by fetch_stock_prices.py
 
 
 def live_stream(
@@ -854,9 +943,9 @@ def main() -> None:
     )
     total_transactions = write_transactions(txn_iter)
 
-    trades, prices = generate_trades(individuals)
-    logger.info("Writing trade and market data CSVs")
-    write_trades(trades, prices)
+    trades = generate_trades(individuals, start_month_date, args.months)
+    logger.info("Writing trade data CSV")
+    write_trades(trades)
 
     logger.info(
         "Generated %s users, %s organisations, %s transactions",

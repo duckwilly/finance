@@ -125,6 +125,9 @@ PY
 step "Running database smoketest"
 python scripts/db_smoketest.py
 
+step "Fetching historical stock prices and FX rates"
+python scripts/fetch_stock_prices.py
+
 step "Generating seed CSV data"
 python scripts/gen_seed_data.py
 
