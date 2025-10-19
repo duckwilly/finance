@@ -56,52 +56,5 @@ jobs:
           DB_PASSWORD: root
           DB_NAME: finance
         run: python scripts/load_csvs.py
-      - name: Verify web dashboards
-        env:
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_USER: root
-          DB_PASSWORD: root
-          DB_NAME: finance
-        run: |
-          uvicorn app.web.app:app --host 127.0.0.1 --port 8000 &
-          SERVER_PID=$!
-          trap "kill $SERVER_PID" EXIT
-
-          READY=0
-          for i in $(seq 1 30); do
-            if curl -sSf http://127.0.0.1:8000/admin/dashboard > /dev/null; then
-              READY=1
-              break
-            fi
-            sleep 2
-          done
-
-          if [ "$READY" -ne 1 ]; then
-            echo "Web server did not become ready" >&2
-            exit 1
-          fi
-
-          curl -sSfL http://127.0.0.1:8000/admin > /tmp/admin.html
-          curl -sSf http://127.0.0.1:8000/admin/dashboard > /tmp/dashboard.html
-          curl -sSf http://127.0.0.1:8000/admin/companies > /tmp/companies.html
-
-          ORG_ID=$(python - <<'PY'
-          from app.config import get_settings
-          from sqlalchemy import create_engine, text
-
-          settings = get_settings()
-          engine = create_engine(settings.database.sqlalchemy_url)
-
-          with engine.connect() as connection:
-              result = connection.execute(text("SELECT id FROM org ORDER BY id LIMIT 1"))
-              row = result.first()
-
-          if row is None:
-              raise SystemExit("No organisations found to test detail page")
-
-          print(row[0])
-          PY
-          )
-
-          curl -sSf http://127.0.0.1:8000/admin/companies/$ORG_ID > /tmp/company_detail.html
+      - name: Run unit tests
+        run: pytest
