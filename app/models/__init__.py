@@ -4,6 +4,7 @@ from __future__ import annotations
 from .base import Base
 from .companies import Company
 from .individuals import Individual
+from .memberships import Membership
 from .transactions import (
     Account,
     AccountOwnerType,
@@ -19,6 +20,7 @@ __all__ = [
     "Base",
     "Company",
     "Individual",
+    "Membership",
     "Account",
     "AccountOwnerType",
     "AccountType",
