@@ -1,211 +1,118 @@
-# Finance Dashboard — Simulated Wealth Manager
+# Finance Platform (Rebuild)
 
-A compact Python + MariaDB project that ingests CSV data, simulates multi-user
-banking and brokerage activity, and exposes analytics/dashboards for
-individuals, companies, and a bank admin view.
+This repository hosts the reboot of a FastAPI-driven finance platform. The
+previous admin dashboards have been removed so the application can be rebuilt
+around a cleaner architecture that separates APIs, services, models, and data
+access. The data-generation and database tooling remain intact, enabling the new
+application code to reuse the same rich dataset once the APIs are implemented.
 
----
-
-## Purpose
-- Model real-world money flows (checking/savings) and basic brokerage (equities)
-  for **multiple user types**: bank admin, corporate, individual.
-- Support **internal transfers** (user↔user inside the system) and **external**
-  (to/from outside counterparties).
-- Track **positions**, **average acquisition cost**, **realized/unrealized P&L**,
-  and show useful summaries.
-
----
+## Status
+- ✅ New application scaffold under `app/` with routers, services, schemas,
+  models, and database utilities stubbed for future development.
+- ✅ Shared logging utilities preserved under `app/core/log` and re-exported via
+  `app.core.logger` and `app.log` for backwards compatibility.
+- ✅ CI, Makefile, and quickstart script updated to focus on database seeding and
+  automated tests instead of launching the now-removed dashboards.
+- 🚧 API routes, business logic, and templates will be implemented in follow-up
+  work.
 
 ## Tech Stack
-- **Python** (3.11+) — ETL, business logic, future FastAPI services
-- **MariaDB** (via Docker) — persistence
-- **SQLAlchemy** — ORM / DB access
-- **Pandas** — CSV ingest & transforms
-- Optional clients: **DBeaver** (DB GUI)
+- Python 3.11+
+- FastAPI (application framework)
+- SQLAlchemy (database access)
+- MariaDB via Docker Compose
+- Alembic (migrations placeholder)
+- Pytest (tests)
+- Faker & CSV scripts for synthetic data generation
 
-Logging helpers live in `app/logger.py` and can be reused by scripts as well as
-future API processes.
-
----
-
-## Repository Layout
+## Project Layout
 ```
-finance/
-**UPDATE THIS**
+app/
+├── README.md               # Overview of the application scaffold
+├── __init__.py             # Re-exports create_app/get_logger helpers
+├── config/                 # Backwards-compatible configuration entrypoint
+├── core/
+│   ├── config.py           # Environment-driven settings loader
+│   ├── logger.py           # Wrapper around the shared logging utilities
+│   ├── log/                # Logging implementation (init, progress, timing)
+│   └── security.py         # Stub security helpers
+├── db/
+│   ├── __init__.py         # Convenience exports for database helpers
+│   ├── database.py         # Engine and session factory helpers
+│   ├── engine.py           # Legacy-compatible engine constructors
+│   ├── migrations/         # Placeholder for Alembic migrations
+│   └── session.py          # Context-managed SQLAlchemy sessions
+├── log.py                  # Legacy import path for logging helpers
+├── main.py                 # FastAPI application factory (includes stub router)
+├── middleware/             # Placeholder package for custom middleware
+├── models/                 # Stub SQLAlchemy models
+├── routers/                # FastAPI routers (currently a dashboard placeholder)
+├── schemas/                # Stub Pydantic schemas
+├── services/               # Stub service layer modules
+├── static/                 # Static asset directories (.gitkeep placeholders)
+└── templates/              # Template directory (.gitkeep placeholder)
 ```
 
----
+Additional top-level directories provide SQL schema, scripts for generating seed
+CSV data, Docker Compose definitions, and automated tests.
 
-## Quick Start
+## Getting Started
 
-### One-command bootstrap (recommended)
-
-The repository includes a helper that mirrors the CI workflow locally—creating a
-virtual environment, installing dependencies, starting MariaDB via Docker
-Compose, loading the schema + demo data, smoke testing the connection, and
-finally booting the FastAPI admin UI:
+### Quickstart (recommended)
+The quickest way to replicate the CI workflow locally is:
 
 ```bash
 make quickstart
 ```
 
-When the script finishes you can head to
-[http://localhost:8000/admin](http://localhost:8000/admin) to explore the
-dashboard. Press `Ctrl+C` in the terminal to stop the FastAPI server.
+The script will:
+1. Create a Python virtual environment (if missing).
+2. Install the dependencies listed in `requirements.txt`.
+3. Launch MariaDB using Docker Compose.
+4. Wait for the database to become available.
+5. Apply `sql/schema.sql`.
+6. Run the database smoketest and generate seed CSV files.
+7. Load the seed data into MariaDB.
 
-If a `.env` file already exists, the script leaves it untouched; otherwise it
-copies `.env.example` automatically so Docker Compose and the Python helpers
-share a consistent configuration.
+Because the web frontend is being rebuilt, the script stops after preparing the
+infrastructure and prints a reminder about running `uvicorn app.main:app`
+manually once routes are implemented. Install `uvicorn` separately when you are
+ready to iterate on the API.
 
-**Prerequisites**
-- Docker Desktop (or a compatible Docker engine)
-- Python 3.11+
+### Running Tests
 
-### Manual setup (if you prefer step-by-step)
-
-#### 1) Configure environment
-Create `.env` from the example (or rely on the baked-in defaults) and adjust as needed:
-```ini
-# .env example
-MARIADB_ROOT_PASSWORD=devroot
-MARIADB_DATABASE=finance
-MARIADB_USER=app
-MARIADB_PASSWORD=apppwd
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_NAME=finance
-DB_USER=app
-DB_PASSWORD=apppwd
-DB_DRIVER=mysql+pymysql
-SQLALCHEMY_ECHO=false
-```
-
-> **Tip:** Run `docker compose` from the repository root and Compose will read
-> `.env` automatically. If the file is missing, the service falls back to the
-> defaults baked into `docker/docker-compose.yaml`, so the container still
-> starts. Customize the values above when you need something different.
-
-#### 2) Start MariaDB (Docker)
-Using Compose (recommended):
 ```bash
-docker compose -f docker/docker-compose.yaml up -d
-```
-The Compose file maps the database port using `DB_PORT` from your `.env` (default
-`3306`), so updating that value keeps local tooling and scripts aligned.
-
-#### 3) Create a virtual environment & install deps
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -U pip
-pip install -r requirements.txt
+pytest
 ```
 
-#### 4) Initialize the database
-Pick one:
-- Execute `sql/schema.sql` in DBeaver/VS Code SQL editor; or
-- Provide Alembic migrations (TODO) and run `alembic upgrade head`.
+The new tests validate that the FastAPI application factory wires the placeholder
+router and that configuration defaults are loaded from the environment.
 
-#### 5) Smoke test the connection
-```bash
-python scripts/db_smoketest.py
-```
-The script uses PyMySQL by default; override `DB_DRIVER` if you prefer
-`mysqlclient`.
+### Manual Setup (optional)
+If you prefer to perform the steps yourself:
+1. Create a `.env` file (or copy `.env.example`) with the database credentials
+   used by Docker Compose.
+2. Start MariaDB: `docker compose -f docker/docker-compose.yaml up -d`.
+3. Create & activate a virtual environment, then install dependencies.
+4. Apply the schema: `mysql -h 127.0.0.1 -uroot -proot finance < sql/schema.sql`
+   (or run the statements in your SQL client).
+5. Smoke test connectivity: `python scripts/db_smoketest.py`.
+6. Generate and load seed data using `python scripts/gen_seed_data.py` followed by
+   `python scripts/load_csvs.py`.
 
-#### 6) Launch the FastAPI admin dashboard
+Once API endpoints exist, install `uvicorn` and launch the application with
+`uvicorn app.main:app` (the Makefile no longer starts a server automatically).
 
-With the database running and populated, you can start the new web frontend to
-explore the administrator landing page:
+## Synthetic Data & Tooling
+The data generation scripts continue to provide a comprehensive dataset covering
+individuals, companies, transactions, and stock trades. Adjust the parameters in
+`scripts/gen_seed_data.py` to create lighter or heavier workloads, then reload
+with `scripts/load_csvs.py`. These scripts rely on the shared configuration and
+logging modules preserved during the rebuild.
 
-1. Activate your virtual environment (see step 3) and ensure dependencies are installed.
-2. Export any database overrides if you are not using the defaults described in
-   step 1 (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`,
-   `DB_DRIVER`). The FastAPI layer reuses the same settings module as the ETL
-   scripts, so the environment only needs to be configured once.
-3. From the repository root, run Uvicorn:
-
-   ```bash
-   uvicorn app.web.app:app --reload
-   ```
-
-   Add `--host 0.0.0.0 --port 8080` (or similar) if you want to change the bind
-   address for containers/cloud deployments. In production you can drop
-   `--reload` and let a process manager (e.g., gunicorn with `uvicorn.workers`) handle restarts.
-4. Open [http://localhost:8000/admin](http://localhost:8000/admin) in your
-   browser. The page renders aggregated metrics and recent-account activity by
-   calling `AdminDashboardService`, which in turn queries the MariaDB instance.
-
-> **Troubleshooting:** The server logs any database connectivity errors on
-> startup. Double-check that the database container is running, credentials
-> match, and the schema has been initialized.
-
----
-
-## Synthetic Data Generation
-
-`scripts/gen_seed_data.py` now produces an expansive, story-driven dataset:
-
-- **Defaults** (`--individuals 2500 --companies 120 --months 18`) yield roughly
-  700k transactions, 2.5k users, and 120 corporate accounts—sized to run on an
-  M4 MacBook Air (16 GB RAM) while leaving headroom for analytics.
-- All values are reproducible with `--seed <int>`.
-- Accounts cover checking, savings, and brokerage products so charts can show
-  both cash flow and investment performance.
-
-Common commands:
-```bash
-# Generate the default large dataset under data/seed/
-python scripts/gen_seed_data.py
-
-# Lighter run for local debugging
-python scripts/gen_seed_data.py --individuals 200 --companies 20 --months 6
-
-# Start an ongoing stream of fresh spend data (writes to data/stream/)
-python scripts/gen_seed_data.py --continuous --live-batch-size 150 --live-interval 1.5
-```
-
-### Live Streaming
-`--continuous` keeps the generator running after the historical snapshot and
-appends card-style spend events to `data/stream/transactions_live.csv`. Use this
-for real-time dashboard demos—watch charts update while the stream adds new
-rows every few seconds.
-
----
-
-## Narrative Ideas for Dashboards
-These scenarios are already embedded in the generator so you can craft charts
-or KPIs around them later.
-
-### Individuals
-- **Budgeting & cost of living** — monthly salary inflows, rent debits, and
-  utilities produce clear fixed-cost vs discretionary patterns.
-- **Savings habits** — internal transfers push 8–18% of each salary into savings
-  accounts, enabling trend lines for rainy-day funds.
-- **Lifestyle segments** — categories such as travel, dining, and subscriptions
-  let you cluster users into frugal vs experiential personas.
-
-### Companies
-- **Revenue vs. expenses** — recurring customer invoice inflows contrasted with
-  vendor, rent, payroll, and quarterly tax outflows provide classic P&L views.
-- **Payroll insights** — each employee’s salary hits their employer’s account as
-  a paired debit, making headcount cost analyses straightforward.
-- **Cash runway** — with 18 months of history, you can highlight seasonality,
-  burn rate, and forecast runway for different industries.
-
-### Bank Admin / Portfolio View
-- **System-wide spend mix** — aggregate card, SEPA, and internal transfer volumes
-  to show how money flows through the institution.
-- **Sector performance** — company industries unlock heatmaps (e.g. which sectors
-  drive inflows vs. cash burn).
-- **Investment trends** — hundreds of investors trade popular tickers (AAPL,
-  MSFT, NVDA, TSLA, VWRL, ASML), enabling holdings and P&L dashboards.
-
-Capture these stories in dashboards and docs to help reviewers connect the data
-with real-world use cases.
-
----
-
-## Roadmap Notes
-- Introduce Alembic migrations that mirror `sql/schema.sql`.
-- Live updates with new transaction data
+## Next Steps
+- Flesh out domain models in `app/models/` and their accompanying schemas.
+- Implement service-layer logic that aggregates financial metrics.
+- Introduce FastAPI routers for admin, company, and individual dashboards.
+- Add Alembic migrations to replace the raw SQL schema.
+- Expand automated tests alongside new features.

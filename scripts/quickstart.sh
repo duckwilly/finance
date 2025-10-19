@@ -121,5 +121,5 @@ python scripts/gen_seed_data.py
 step "Loading CSV data into MariaDB"
 python scripts/load_csvs.py
 
-step "Starting FastAPI admin dashboard (press Ctrl+C to stop)"
-exec uvicorn app.web.app:app --reload
+step "Quickstart complete"
+echo "Database seeded. Install uvicorn separately and run 'uvicorn app.main:app --reload' once the new application modules are implemented."
