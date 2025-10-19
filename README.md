@@ -31,18 +31,26 @@ app/
 │   ├── migrations/         # Placeholder for Alembic migrations
 │   └── session.py          # Context-managed SQLAlchemy sessions
 ├── log.py                  # Legacy import path for logging helpers
-├── main.py                 # FastAPI application factory (includes stub router)
+├── main.py                 # FastAPI application factory (includes dashboard router)
 ├── middleware/             # Placeholder package for custom middleware
 ├── models/                 # Stub SQLAlchemy models
-├── routers/                # FastAPI routers (currently a dashboard placeholder)
+├── routers/                # FastAPI routers (admin dashboard + future modules)
 ├── schemas/                # Stub Pydantic schemas
 ├── services/               # Stub service layer modules
-├── static/                 # Static asset directories (.gitkeep placeholders)
-└── templates/              # Template directory (.gitkeep placeholder)
+├── static/                 # Static asset directories (e.g. css/admin.css theme)
+└── templates/              # Template directory (e.g. admin/dashboard.html)
 ```
 
 Additional top-level directories provide SQL schema, scripts for generating seed
 CSV data, Docker Compose definitions, and automated tests.
+
+## Admin Dashboard
+
+The `/dashboard/` route now renders a server-side Jinja2 template populated with
+metrics from the `AdminService`. A pastel SaaS-inspired theme lives in
+`app/static/css/admin.css`, making it easy to re-skin the layout by tweaking a
+handful of CSS custom properties. FastAPI serves these assets via the `/static`
+mount configured in `app/main.py`.
 
 ## Getting Started
 
@@ -61,11 +69,12 @@ The script will:
 5. Apply `sql/schema.sql`.
 6. Run the database smoketest and generate seed CSV files.
 7. Load the seed data into MariaDB.
+8. Start the FastAPI development server with `uvicorn` (running until you stop it).
 
-Because the web frontend is being rebuilt, the script stops after preparing the
-infrastructure and prints a reminder about running `uvicorn app.main:app`
-manually once routes are implemented. Install `uvicorn` separately when you are
-ready to iterate on the API.
+Set `QUICKSTART_SKIP_DOCKER=1` to reuse an existing MariaDB instance (as the CI
+workflow does) or `QUICKSTART_START_SERVER=0` if you only need to prepare the
+database without launching the API. The default behaviour assumes a fresh
+developer workstation and launches everything automatically.
 
 ### Running Tests
 
@@ -73,8 +82,9 @@ ready to iterate on the API.
 pytest
 ```
 
-The new tests validate that the FastAPI application factory wires the placeholder
-router and that configuration defaults are loaded from the environment.
+The test suite now exercises the admin dashboard template rendering (ensuring
+Jinja2 and the dependency overrides function correctly) alongside the existing
+application structure checks.
 
 ### Manual Setup (optional)
 If you prefer to perform the steps yourself:
@@ -88,8 +98,9 @@ If you prefer to perform the steps yourself:
 6. Generate and load seed data using `python scripts/gen_seed_data.py` followed by
    `python scripts/load_csvs.py`.
 
-Once API endpoints exist, install `uvicorn` and launch the application with
-`uvicorn app.main:app` (the Makefile no longer starts a server automatically).
+When you are ready to run the application manually, execute
+`uvicorn app.main:app --reload` (the quickstart already installs `uvicorn` and
+will launch the server for you unless disabled via environment variables).
 
 ## Synthetic Data & Tooling
 The data generation scripts continue to provide a comprehensive dataset covering

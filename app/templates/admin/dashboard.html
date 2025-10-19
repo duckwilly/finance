@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin Dashboard • Finance Platform</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
+  </head>
+  <body class="page">
+    <header class="page__header">
+      <div>
+        <p class="eyebrow">Administration</p>
+        <h1 class="page__title">Operations overview</h1>
+        <p class="page__subtitle">
+          A snapshot of platform health, customer adoption, and trading activity to guide your next actions.
+        </p>
+      </div>
+      <div class="badge">Updated {{ metrics.last_transaction_at or '—' }}</div>
+    </header>
+
+    <main class="page__content">
+      <section class="card-grid">
+        <article class="card">
+          <p class="card__label">Individuals</p>
+          <p class="card__value">{{ '{:,}'.format(metrics.total_individuals) }}</p>
+          <p class="card__hint">Accounts managed across the platform.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Companies</p>
+          <p class="card__value">{{ '{:,}'.format(metrics.total_companies) }}</p>
+          <p class="card__hint">Business relationships under administration.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Transactions</p>
+          <p class="card__value">{{ '{:,}'.format(metrics.total_transactions) }}</p>
+          <p class="card__hint">Lifecycle activity captured to date.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Assets under management</p>
+          <p class="card__value">${{ metrics.total_aum }}</p>
+          <p class="card__hint">Current net balance across all client accounts.</p>
+        </article>
+      </section>
+
+      <section class="details">
+        <div class="details__panel">
+          <h2 class="details__title">Lifecycle milestones</h2>
+          <dl class="timeline">
+            <div>
+              <dt>First recorded transaction</dt>
+              <dd>{{ metrics.first_transaction_at or 'Pending data import' }}</dd>
+            </div>
+            <div>
+              <dt>Most recent transaction</dt>
+              <dd>{{ metrics.last_transaction_at or 'Waiting for activity' }}</dd>
+            </div>
+          </dl>
+        </div>
+        <div class="details__panel">
+          <h2 class="details__title">Next best actions</h2>
+          <ul class="actions">
+            <li>Review top accounts for onboarding support.</li>
+            <li>Validate data synchronization jobs completed overnight.</li>
+            <li>Connect with compliance to approve pending transactions.</li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <footer class="page__footer">
+      <p>Need deeper insight? Explore company, individual, and transaction dashboards for granular analytics.</p>
+    </footer>
+  </body>
+</html>
