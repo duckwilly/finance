@@ -7,11 +7,65 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.routers.dashboard import get_admin_service, get_db_session
-from app.schemas.admin import AdminMetrics
+from app.schemas.admin import (
+    AdminMetrics,
+    ListView,
+    ListViewColumn,
+    ListViewRow,
+)
 
 
 class _StubAdminService:
     """Return a deterministic metrics payload for template rendering."""
+
+    def __init__(self) -> None:
+        self._individuals = ListView(
+            title="Individual users",
+            columns=[
+                ListViewColumn(key="name", title="Name"),
+                ListViewColumn(key="employer", title="Employer"),
+                ListViewColumn(
+                    key="monthly_income",
+                    title="Monthly income",
+                    column_type="currency",
+                    align="right",
+                ),
+                ListViewColumn(
+                    key="checking_aum",
+                    title="Checking AUM",
+                    column_type="currency",
+                    align="right",
+                ),
+                ListViewColumn(
+                    key="savings_aum",
+                    title="Savings AUM",
+                    column_type="currency",
+                    align="right",
+                ),
+                ListViewColumn(
+                    key="brokerage_aum",
+                    title="Brokerage AUM",
+                    column_type="currency",
+                    align="right",
+                ),
+            ],
+            rows=[
+                ListViewRow(
+                    key="1",
+                    values={
+                        "name": "Jane Example",
+                        "employer": "Acme Corp",
+                        "monthly_income": Decimal("4200.00"),
+                        "checking_aum": Decimal("15234.56"),
+                        "savings_aum": Decimal("50123.45"),
+                        "brokerage_aum": Decimal("7890.12"),
+                    },
+                    search_text="jane example acme corp",
+                )
+            ],
+            search_placeholder="Search individuals",
+            empty_message="No individual users found.",
+        )
 
     def get_metrics(self, session) -> AdminMetrics:  # pragma: no cover - exercised via endpoint
         return AdminMetrics(
@@ -22,6 +76,9 @@ class _StubAdminService:
             last_transaction_at=None,
             total_aum=Decimal("1234567.89"),
         )
+
+    def get_individual_overview(self, session) -> ListView:  # pragma: no cover - exercised via endpoint
+        return self._individuals
 
 
 def _override_get_db_session():  # pragma: no cover - exercised via dependency
@@ -43,6 +100,8 @@ def test_dashboard_template_renders() -> None:
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"].lower()
     body = response.text
-    assert "Operations overview" in body
+    assert "Finance dashboard" in body
     assert "42" in body
-    assert "$1234567.89" in body
+    assert "EUR 1.2 million" in body
+    assert "Jane Example" in body
+    assert "Acme Corp" in body

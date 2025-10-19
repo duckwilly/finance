@@ -16,7 +16,9 @@
           A snapshot of platform health, customer adoption, and trading activity to guide your next actions.
         </p>
       </div>
-      <div class="badge">Data simulated from {{ metrics.first_transaction_at.date() or '—' }} to {{ metrics.last_transaction_at.date() or '—' }}</div>
+      {% set first_date = metrics.first_transaction_at.date() if metrics.first_transaction_at else '—' %}
+      {% set last_date = metrics.last_transaction_at.date() if metrics.last_transaction_at else '—' %}
+      <div class="badge">Data simulated from {{ first_date }} to {{ last_date }}</div>
     </header>
 
     <main class="page__content">
