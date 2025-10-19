@@ -5,8 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Admin Dashboard • Finance Platform</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
+    <script src="{{ url_for('static', path='js/list-view.js') }}" defer></script>
   </head>
   <body class="page">
+    {% import 'components/list_view.html' as list_view %}
     <header class="page__header">
       <div>
         <h1 class="page__title">Finance dashboard</h1>
@@ -43,7 +45,7 @@
 
       <section class="details">
         <div class="details__panel">
-          <h2 class="details__title">Individual users</h2>
+          {{ list_view.render_list_view('individual-users', individuals_list) }}
         </div>
         <div class="details__panel">
           <h2 class="details__title">Corporate users</h2>

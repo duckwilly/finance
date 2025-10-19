@@ -143,6 +143,126 @@ body.page {
   color: var(--text-primary);
 }
 
+.list-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.list-view__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.list-view__title {
+  margin: 0;
+  font-size: 1.4rem;
+  color: var(--text-primary);
+}
+
+.list-view__meta {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.list-view__search {
+  flex: 0 1 260px;
+  position: relative;
+}
+
+.list-view__search-input {
+  width: 100%;
+  padding: 0.65rem 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.list-view__search-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(95, 106, 252, 0.2);
+}
+
+.list-view__table-wrapper {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  max-height: 360px;
+  overflow: auto;
+}
+
+.list-view__table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 100%;
+}
+
+.list-view__cell {
+  padding: 0.75rem 1rem;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid rgba(94, 101, 255, 0.12);
+  background: transparent;
+}
+
+.list-view__cell--head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-strong);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.list-view__cell--center {
+  text-align: center;
+}
+
+.list-view__cell--right {
+  text-align: right;
+}
+
+.list-view__row:hover .list-view__cell {
+  background: rgba(167, 180, 255, 0.16);
+}
+
+.list-view__row:last-child .list-view__cell,
+.list-view__row--empty .list-view__cell {
+  border-bottom: none;
+}
+
+.list-view__row--hidden {
+  display: none;
+}
+
+.list-view__cell--empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
 .timeline {
   margin: 0;
   display: grid;
