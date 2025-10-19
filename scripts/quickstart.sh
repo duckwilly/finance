@@ -17,12 +17,9 @@ step() {
   echo "==> $1"
 }
 
-SKIP_DOCKER="${QUICKSTART_SKIP_DOCKER:-0}"
 START_SERVER="${QUICKSTART_START_SERVER:-1}"
 
-if [[ "${SKIP_DOCKER}" != "1" ]]; then
-  require_command docker
-fi
+require_command docker
 
 if [[ ! -f .env ]]; then
   if [[ -f .env.example ]]; then
@@ -53,12 +50,8 @@ step "Installing Python dependencies"
 pip install -q -U pip
 pip install -q -r requirements.txt
 
-if [[ "${SKIP_DOCKER}" != "1" ]]; then
-  step "Starting MariaDB with Docker Compose"
-  docker compose -f docker/docker-compose.yaml up -d
-else
-  echo "Skipping Docker Compose startup (QUICKSTART_SKIP_DOCKER=${SKIP_DOCKER})"
-fi
+step "Starting MariaDB with Docker Compose"
+docker compose -f docker/docker-compose.yaml up -d
 
 step "Waiting for the database to become available"
 python - <<'PY'
