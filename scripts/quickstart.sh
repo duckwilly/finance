@@ -86,6 +86,9 @@ while True:
         break
 PY
 
+step "Clearing existing database data"
+python scripts/clear_database.py
+
 step "Applying database schema"
 python - <<'PY'
 from pathlib import Path
@@ -125,11 +128,26 @@ PY
 step "Running database smoketest"
 python scripts/db_smoketest.py
 
+step "Clearing existing seed data"
+python - <<'PY'
+import os
+from pathlib import Path
+
+seed_dir = Path("data/seed")
+if seed_dir.exists():
+    for file in seed_dir.glob("*.csv"):
+        file.unlink()
+        print(f"Removed: {file}")
+    print("Cleared existing seed data files")
+else:
+    print("No existing seed data to clear")
+PY
+
 step "Fetching historical stock prices and FX rates"
 python scripts/fetch_stock_prices.py
 
 step "Generating seed CSV data"
-python scripts/gen_seed_data.py
+python scripts/gen_seed_data.py --seed $(date +%s)
 
 step "Loading CSV data into MariaDB"
 python scripts/load_csvs.py

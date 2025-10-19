@@ -35,9 +35,11 @@
         };
         
         let multiplier = 1;
+        // Check for suffixes at the end of the string (case insensitive)
         for (const [suffix, mult] of Object.entries(multipliers)) {
-          if (numStr.toLowerCase().includes(suffix)) {
-            numStr = numStr.toLowerCase().replace(suffix, '').trim();
+          const regex = new RegExp(suffix + '$', 'i');
+          if (regex.test(numStr)) {
+            numStr = numStr.replace(regex, '').trim();
             multiplier = mult;
             break;
           }

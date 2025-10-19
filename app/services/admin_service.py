@@ -222,3 +222,55 @@ class AdminService:
         LOGGER.debug("Prepared %d individual overview rows", len(rows))
 
         return list_view
+
+    def get_company_overview(self, session: Session) -> ListView:
+        """Return a reusable list view model for corporate users."""
+
+        LOGGER.debug("Collecting company overview data for admin dashboard")
+
+        # Query all companies
+        companies_query = select(Company.id, Company.name).order_by(Company.name)
+        companies = session.execute(companies_query).all()
+
+        rows = []
+        for company in companies:
+            # Get metrics for this company
+            employee_count = Company.get_employee_count(session, company.id)
+            monthly_salary_cost = Company.get_monthly_salary_cost(session, company.id)
+            monthly_income = Company.get_monthly_income(session, company.id)
+            monthly_expenses = Company.get_monthly_expenses(session, company.id)
+            profit_total = Company.get_total_profit(session, company.id)
+
+            rows.append(
+                ListViewRow(
+                    key=str(company.id),
+                    values={
+                        "name": company.name,
+                        "employee_count": employee_count,
+                        "monthly_salary_cost": monthly_salary_cost,
+                        "monthly_income": monthly_income,
+                        "monthly_expenses": monthly_expenses,
+                        "profit_total": profit_total,
+                    },
+                    search_text=company.name.lower(),
+                )
+            )
+
+        list_view = ListView(
+            title="Corporate users",
+            columns=[
+                ListViewColumn(key="name", title="Company name"),
+                ListViewColumn(key="employee_count", title="Employees", align="right"),
+                ListViewColumn(key="monthly_salary_cost", title="Monthly salary cost", column_type="currency", align="right"),
+                ListViewColumn(key="monthly_income", title="Monthly income", column_type="currency", align="right"),
+                ListViewColumn(key="monthly_expenses", title="Monthly expenses", column_type="currency", align="right"),
+                ListViewColumn(key="profit_total", title="Profit YTD", column_type="currency", align="right"),
+            ],
+            rows=rows,
+            search_placeholder="Search companies",
+            empty_message="No corporate users found.",
+        )
+
+        LOGGER.debug("Prepared %d company overview rows", len(rows))
+
+        return list_view
