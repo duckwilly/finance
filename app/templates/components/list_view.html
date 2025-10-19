@@ -27,6 +27,7 @@
               scope="col"
               class="list-view__cell list-view__cell--head list-view__cell--{{ column.align }}"
               data-column-key="{{ column.key }}"
+              data-column-type="{{ column.column_type or 'text' }}"
             >
               {{ column.title }}
             </th>
@@ -45,7 +46,7 @@
             <td class="list-view__cell list-view__cell--{{ column.align }}" data-column-key="{{ column.key }}">
               {% if column.column_type == 'currency' %}
                 {% if value is not none %}
-                  {{ humanize_currency(value) }}
+                  {{ humanize_currency(value, short=true, decimals=1) }}
                 {% else %}
                   &mdash;
                 {% endif %}

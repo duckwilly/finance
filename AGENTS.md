@@ -103,4 +103,37 @@ The admin should be able to browse all other views. The admin should be able to 
 An overview of the stock holdings of all clients, which includes statistics about profits/losses for different users and a leaderboard for biggest profits/losses.
 
 ### Transactions
-A searchable overview for the admin of all transactions, that allows the admin to click through to the different users involved. 
+A searchable overview for the admin of all transactions, that allows the admin to click through to the different users involved.
+
+# Common Development Workflows
+
+## Environment Setup
+- Use ``python3`` to run python commands.
+- **Virtual Environment**: Located at `.venv/` in the project root
+- **Environment Variables**: Database credentials and configuration are stored in `.env` file (not committed to VCS)
+- **Database**: MariaDB running via Docker Compose with connection details in `.env`
+- **Quick Setup**: Use `make quickstart` for automated setup (see README.md for details). note that in most cases, everything will already be running, so test whether you can connect to the database before trying to build from scratch.
+- **Requirements**: See requirements.txt for python requirements. If you add any new requirements, make sure to update it. 
+
+## Development Commands
+- `make quickstart` - Complete automated setup (venv, deps, database, seed data, server)
+
+## Key Files for Development
+- **Main App**: `app/main.py` - FastAPI application entry point
+- **Database Config**: `app/db/database.py` - SQLAlchemy session management
+- **Environment**: `.env` - Database credentials and configuration
+- **Schema**: `sql/schema.sql` - Database structure
+- **Seed Data**: `data/seed/` - CSV files with synthetic data
+- **Scripts**: `scripts/` - Data generation and loading utilities
+
+## Testing
+- Run tests: `pytest`
+- Test database connectivity: `python scripts/db_smoketest.py`
+- Generate fresh data: `python scripts/gen_seed_data.py`
+
+## Server Development
+- Start development server: `uvicorn app.main:app --reload`
+- Admin dashboard: Available at `/dashboard/` route
+- Static assets: Served from `app/static/` directory
+
+For more detailed setup instructions and project information, see `README.md`. 

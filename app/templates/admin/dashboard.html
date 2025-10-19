@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Admin Dashboard • Finance Platform</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
-    <script src="{{ url_for('static', path='js/list-view.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/list-view.js') }}?v={{ range(1000, 9999) | random }}" defer></script>
   </head>
   <body class="page">
     {% import 'components/list_view.html' as list_view %}
@@ -40,8 +40,8 @@
         </article>
         <article class="card">
           <p class="card__label">Assets under management</p>
-          <p class="card__value">EUR {{ humanize_number(metrics.total_aum) }}</p>
-          <p class="card__hint">Current net balance across all client accounts (EUR {{ humanize_number(metrics.total_cash) }}) and stock holdings (EUR {{ humanize_number(metrics.total_holdings) }}).</p>
+          <p class="card__value">{{ humanize_currency(metrics.total_aum, decimals=1) }}</p>
+          <p class="card__hint">Current net balance across all client accounts ({{ humanize_currency(metrics.total_cash, short=true, decimals=1) }}) and stock holdings ({{ humanize_currency(metrics.total_holdings, short=true, decimals=1) }}).</p>
         </article>
       </section>
 

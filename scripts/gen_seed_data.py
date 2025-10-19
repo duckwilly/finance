@@ -123,6 +123,7 @@ class Individual:
     checking_account: str
     savings_account: str
     landlord: str
+    wealth_tier: str
 
 
 class IdFactory:
@@ -237,30 +238,44 @@ def build_companies(n: int) -> list[Company]:
 
 
 def build_individuals(n: int, companies: Sequence[Company]) -> list[Individual]:
-    individuals: list[Individual] = []
-    for i in range(1, n + 1):
-        first, last = random_name()
-        name = f"{first} {last}"
-        email = sanitize_email(name, i)
-        employer = random.choice(companies)
-        salary = round(random.uniform(2800, 9200), 2)
-        rent = round(salary * random.uniform(0.24, 0.32), 2)
-        checking_account = f"A-U{i:05d}-CHK"
-        savings_account = f"A-U{i:05d}-SAV"
-        landlord = random.choice(PROPERTY_MANAGERS)
-        individuals.append(
-            Individual(
-                ext_id=f"U-{i:05d}",
-                name=name,
-                email=email,
-                employer=employer,
+    """Create individuals with wealth-tier-based distribution."""
+    
+    # Define wealth tiers with their proportions and characteristics
+    WEALTH_TIERS = {
+        "low_income": {"pct": 0.30, "salary_range": (2200, 3800), "rent_pct": (0.28, 0.35)},
+        "small_investor": {"pct": 0.28, "salary_range": (3200, 5500), "rent_pct": (0.24, 0.30)},
+        "medium_investor": {"pct": 0.28, "salary_range": (4800, 8500), "rent_pct": (0.20, 0.26)},
+        "high_investor": {"pct": 0.14, "salary_range": (7500, 18000), "rent_pct": (0.15, 0.22)},
+    }
+    
+    individuals = []
+    user_id = 1
+    
+    for tier_name, config in WEALTH_TIERS.items():
+        count = int(n * config["pct"])
+        min_salary, max_salary = config["salary_range"]
+        min_rent_pct, max_rent_pct = config["rent_pct"]
+        
+        for _ in range(count):
+            first, last = random_name()
+            salary = round(random.uniform(min_salary, max_salary), 2)
+            rent = round(salary * random.uniform(min_rent_pct, max_rent_pct), 2)
+            
+            individuals.append(Individual(
+                ext_id=f"U-{user_id:05d}",
+                name=f"{first} {last}",
+                email=sanitize_email(f"{first} {last}", user_id),
+                employer=random.choice(companies),
                 salary=salary,
                 rent=rent,
-                checking_account=checking_account,
-                savings_account=savings_account,
-                landlord=landlord,
-            )
-        )
+                checking_account=f"A-U{user_id:05d}-CHK",
+                savings_account=f"A-U{user_id:05d}-SAV",
+                landlord=random.choice(PROPERTY_MANAGERS),
+                wealth_tier=tier_name,
+            ))
+            user_id += 1
+    
+    random.shuffle(individuals)
     return individuals
 
 
@@ -561,8 +576,16 @@ def generate_historical_positions(individuals: Sequence[Individual], start_month
     trade_id = IdFactory("TR-HIST-", start=1)
     
     for person in individuals:
-        # Generate 1-5 historical trades 6-18 months before simulation start
-        num_historical = random.randint(1, 5)
+        # Generate historical trades based on wealth tier
+        if person.wealth_tier == "small_investor":
+            num_historical = random.randint(1, 3)
+        elif person.wealth_tier == "medium_investor":
+            num_historical = random.randint(2, 4)
+        elif person.wealth_tier == "high_investor":
+            num_historical = random.randint(3, 6)
+        else:
+            num_historical = 0  # No historical trades for low_income tier
+        
         historical_start = start_month - timedelta(days=random.randint(180, 540))  # 6-18 months before
         
         holdings: dict[str, float] = {}
@@ -608,103 +631,77 @@ def generate_historical_positions(individuals: Sequence[Individual], start_month
 
 
 def generate_trades(individuals: Sequence[Individual], start_month: date, months: int) -> list[dict[str, object]]:
-    """Generate trades for the simulation period with enhanced portfolio distribution."""
+    """Generate trades for the simulation period with wealth-tier-based portfolio distribution."""
     if not individuals:
         return []
     
-    # Select ~70% of users for portfolios
-    portfolio_size = int(len(individuals) * 0.7)
-    random_investors = random.sample(individuals, k=portfolio_size)
+    # Define trading characteristics by wealth tier
+    TRADING_CONFIG = {
+        "small_investor": {"trades": (2, 5), "stocks": (1, 2), "qty_range": (1, 8)},
+        "medium_investor": {"trades": (6, 12), "stocks": (2, 4), "qty_range": (3, 15)},
+        "high_investor": {"trades": (13, 25), "stocks": (3, 6), "qty_range": (5, 35)},
+    }
+    
+    # Price ranges for different instruments
+    PRICE_RANGES = {
+        "I-AAPL": (120, 200), "I-MSFT": (300, 450), "I-NVDA": (200, 600),
+        "I-TSLA": (150, 300), "I-VWRL": (80, 130), "I-ASM": (400, 800)
+    }
+    
+    # Get investors (exclude low_income tier)
+    investors = [p for p in individuals if p.wealth_tier in TRADING_CONFIG]
     
     trade_rows: list[dict[str, object]] = []
     trade_id = IdFactory("TR-", start=1)
     
     # Generate historical positions first
-    historical_trades = generate_historical_positions(random_investors, start_month)
+    historical_trades = generate_historical_positions(investors, start_month)
     trade_rows.extend(historical_trades)
     
-    # Assign portfolio tiers
-    small_investors = random_investors[:int(len(random_investors) * 0.4)]  # 40%
-    medium_investors = random_investors[int(len(random_investors) * 0.4):int(len(random_investors) * 0.8)]  # 40%
-    large_investors = random_investors[int(len(random_investors) * 0.8):]  # 20%
-    
-    # Generate trades for each tier
-    for tier_name, investors, min_trades, max_trades, min_stocks, max_stocks in [
-        ("small", small_investors, 2, 5, 1, 2),
-        ("medium", medium_investors, 6, 12, 2, 4),
-        ("large", large_investors, 13, 25, 3, 6),
-    ]:
-        for person in investors:
-            num_trades = random.randint(min_trades, max_trades)
-            num_stocks = random.randint(min_stocks, max_stocks)
-            selected_stocks = random.sample(INSTRUMENTS, k=num_stocks)
+    # Generate trades for each investor
+    for person in investors:
+        config = TRADING_CONFIG[person.wealth_tier]
+        num_trades = random.randint(*config["trades"])
+        num_stocks = random.randint(*config["stocks"])
+        selected_stocks = random.sample(INSTRUMENTS, k=num_stocks)
+        
+        holdings: dict[str, float] = {}
+        
+        for _ in range(num_trades):
+            instrument = random.choice(selected_stocks)
+            qty = round(random.uniform(*config["qty_range"]), 2)
             
-            holdings: dict[str, float] = {}
+            # Get price based on instrument
+            price_range = PRICE_RANGES.get(instrument["ext_id"], (50, 300))
+            price = round(random.uniform(*price_range), 2)
             
-            # Generate trades throughout the simulation period
-            for _ in range(num_trades):
-                instrument = random.choice(selected_stocks)
-                qty = round(random.uniform(1, 25), 2)
-                
-                # Use realistic price ranges
-                if instrument["ext_id"] == "I-AAPL":
-                    price = round(random.uniform(120, 200), 2)
-                elif instrument["ext_id"] == "I-MSFT":
-                    price = round(random.uniform(300, 450), 2)
-                elif instrument["ext_id"] == "I-NVDA":
-                    price = round(random.uniform(200, 600), 2)
-                elif instrument["ext_id"] == "I-TSLA":
-                    price = round(random.uniform(150, 300), 2)
-                elif instrument["ext_id"] == "I-VWRL":
-                    price = round(random.uniform(80, 130), 2)
-                elif instrument["ext_id"] == "I-ASM":
-                    price = round(random.uniform(400, 800), 2)
-                else:
-                    price = round(random.uniform(50, 300), 2)
-                
-                # Determine if this should be a BUY or SELL
-                current_holding = holdings.get(instrument["ext_id"], 0)
-                if current_holding > qty * 2:  # Can sell if we have enough
-                    side_options = ["BUY", "SELL"]
-                else:
-                    side_options = ["BUY"]
-                
-                side = random.choice(side_options)
-                if side == "SELL":
-                    qty = min(qty, current_holding)
-                
-                # Generate trade time within simulation period
-                # More trades at month boundaries (rebalancing behavior)
-                if random.random() < 0.3:  # 30% chance of month-end trade
-                    trade_day = start_month + timedelta(days=random.randint(0, months * 30))
-                    # Move to end of month
-                    if trade_day.month == 12:
-                        trade_day = date(trade_day.year, 12, 31)
-                    else:
-                        next_month = date(trade_day.year, trade_day.month + 1, 1)
-                        trade_day = next_month - timedelta(days=1)
-                else:
-                    trade_day = start_month + timedelta(days=random.randint(0, months * 30))
-                
-                trade_time = datetime.combine(trade_day, datetime.min.time().replace(
-                    hour=random.randint(9, 16), 
-                    minute=random.randint(0, 59)
-                ))
-                
-                trade_rows.append({
-                    "ext_id": trade_id.next(),
-                    "account_ext_id": person.checking_account.replace("-CHK", "-BRK"),
-                    "instrument_ext_id": instrument["ext_id"],
-                    "side": side,
-                    "qty": f"{qty:.2f}",
-                    "price": f"{price:.2f}",
-                    "fees": f"{random.uniform(0.5, 4.5):.2f}",
-                    "tax": f"{random.uniform(0, 2.0):.2f}",
-                    "trade_time": trade_time.isoformat(),
-                    "settle_dt": (trade_time.date() + timedelta(days=2)).isoformat(),
-                    "currency": instrument["currency"],
-                })
-                holdings[instrument["ext_id"]] = holdings.get(instrument["ext_id"], 0) + (qty if side == "BUY" else -qty)
+            # Determine if this should be a BUY or SELL
+            current_holding = holdings.get(instrument["ext_id"], 0)
+            side = "SELL" if current_holding > qty * 2 and random.random() < 0.3 else "BUY"
+            if side == "SELL":
+                qty = min(qty, current_holding)
+            
+            # Generate trade time within simulation period
+            trade_day = start_month + timedelta(days=random.randint(0, months * 30))
+            trade_time = datetime.combine(trade_day, datetime.min.time().replace(
+                hour=random.randint(9, 16), 
+                minute=random.randint(0, 59)
+            ))
+            
+            trade_rows.append({
+                "ext_id": trade_id.next(),
+                "account_ext_id": person.checking_account.replace("-CHK", "-BRK"),
+                "instrument_ext_id": instrument["ext_id"],
+                "side": side,
+                "qty": f"{qty:.2f}",
+                "price": f"{price:.2f}",
+                "fees": f"{random.uniform(0.5, 4.5):.2f}",
+                "tax": f"{random.uniform(0, 2.0):.2f}",
+                "trade_time": trade_time.isoformat(),
+                "settle_dt": (trade_time.date() + timedelta(days=2)).isoformat(),
+                "currency": instrument["currency"],
+            })
+            holdings[instrument["ext_id"]] = holdings.get(instrument["ext_id"], 0) + (qty if side == "BUY" else -qty)
     
     return trade_rows
 

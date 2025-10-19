@@ -80,30 +80,34 @@ class AdminService:
 
         LOGGER.debug("Collecting individual overview data for admin dashboard")
 
-        # Determine the time window for monthly income (rolling 30 days)
-        income_cutoff = date.today() - timedelta(days=30)
-
-        income_subquery = (
+        # Find the most recent salary transaction per user to get their monthly income
+        latest_salary_subquery = (
             select(
                 Account.owner_id.label("user_id"),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (Transaction.direction == TransactionDirection.CREDIT, Transaction.amount),
-                            else_=-Transaction.amount,
-                        )
-                    ),
-                    0,
-                ).label("monthly_income"),
+                Transaction.amount.label("salary_amount"),
+                func.row_number().over(
+                    partition_by=Account.owner_id,
+                    order_by=Transaction.txn_date.desc()
+                ).label("rn")
             )
+            .select_from(Account)
             .join(Transaction, Transaction.account_id == Account.id)
             .join(Section, Section.id == Transaction.section_id)
             .where(
                 Account.owner_type == AccountOwnerType.USER,
                 Section.name == "income",
-                Transaction.txn_date >= income_cutoff,
+                Transaction.direction == TransactionDirection.CREDIT,
             )
-            .group_by(Account.owner_id)
+            .subquery()
+        )
+
+        income_subquery = (
+            select(
+                latest_salary_subquery.c.user_id,
+                func.coalesce(latest_salary_subquery.c.salary_amount, 0).label("monthly_income"),
+            )
+            .select_from(latest_salary_subquery)
+            .where(latest_salary_subquery.c.rn == 1)
             .subquery()
         )
 
@@ -121,11 +125,12 @@ class AdminService:
                     0,
                 ).label("balance"),
             )
+            .select_from(Account)
+            .join(Transaction, Transaction.account_id == Account.id, isouter=True)
             .where(
                 Account.owner_type == AccountOwnerType.USER,
                 Account.type.in_([AccountType.CHECKING, AccountType.SAVINGS]),
             )
-            .join(Transaction, Transaction.account_id == Account.id, isouter=True)
             .group_by(Account.owner_id, Account.type)
             .cte("account_balances")
         )
@@ -168,6 +173,7 @@ class AdminService:
                 func.coalesce(balance_totals.c.savings_balance, 0).label("savings_balance"),
                 func.coalesce(brokerage_aum_cte.c.brokerage_aum, 0).label("brokerage_aum"),
             )
+            .select_from(Individual)
             .outerjoin(income_subquery, income_subquery.c.user_id == Individual.id)
             .outerjoin(balance_totals, balance_totals.c.user_id == Individual.id)
             .outerjoin(brokerage_aum_cte, brokerage_aum_cte.c.owner_id == Individual.id)

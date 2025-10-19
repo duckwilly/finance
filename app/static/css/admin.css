@@ -223,6 +223,34 @@ body.page {
   font-size: 0.85rem;
   letter-spacing: 0.03em;
   text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition);
+  user-select: none;
+}
+
+.list-view__cell--head:hover {
+  background: rgba(167, 180, 255, 0.2);
+  color: var(--primary);
+}
+
+.list-view__cell--head::after {
+  content: "↕";
+  margin-left: 0.5rem;
+  opacity: 0.3;
+  font-size: 0.8rem;
+  transition: opacity var(--transition), transform var(--transition);
+}
+
+.list-view__cell--sort-asc::after {
+  content: "↑";
+  opacity: 1;
+  color: var(--primary);
+}
+
+.list-view__cell--sort-desc::after {
+  content: "↓";
+  opacity: 1;
+  color: var(--primary);
 }
 
 .list-view__cell--center {
