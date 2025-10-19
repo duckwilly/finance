@@ -1,20 +1,8 @@
 # Finance Platform (Rebuild)
 
-This repository hosts the reboot of a FastAPI-driven finance platform. The
-previous admin dashboards have been removed so the application can be rebuilt
-around a cleaner architecture that separates APIs, services, models, and data
-access. The data-generation and database tooling remain intact, enabling the new
-application code to reuse the same rich dataset once the APIs are implemented.
-
-## Status
-- ✅ New application scaffold under `app/` with routers, services, schemas,
-  models, and database utilities stubbed for future development.
-- ✅ Shared logging utilities preserved under `app/core/log` and re-exported via
-  `app.core.logger` and `app.log` for backwards compatibility.
-- ✅ CI, Makefile, and quickstart script updated to focus on database seeding and
-  automated tests instead of launching the now-removed dashboards.
-- 🚧 API routes, business logic, and templates will be implemented in follow-up
-  work.
+This project is a finance dashboard that simulates the clients of a bank and their transactions.
+The application is built using an architecture that separates APIs, services, models, and data
+access. 
 
 ## Tech Stack
 - Python 3.11+
