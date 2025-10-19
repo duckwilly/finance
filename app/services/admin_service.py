@@ -20,6 +20,7 @@ from app.models import (
     Transaction,
     TransactionDirection,
 )
+from app.services.stocks_service import brokerage_aum_select
 from app.schemas.admin import AdminMetrics, ListView, ListViewColumn, ListViewRow
 
 LOGGER = get_logger(__name__)
@@ -120,7 +121,10 @@ class AdminService:
                     0,
                 ).label("balance"),
             )
-            .where(Account.owner_type == AccountOwnerType.USER)
+            .where(
+                Account.owner_type == AccountOwnerType.USER,
+                Account.type.in_([AccountType.CHECKING, AccountType.SAVINGS]),
+            )
             .join(Transaction, Transaction.account_id == Account.id, isouter=True)
             .group_by(Account.owner_id, Account.type)
             .cte("account_balances")
@@ -147,19 +151,12 @@ class AdminService:
                     ),
                     0,
                 ).label("savings_balance"),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (balance_cte.c.account_type == AccountType.BROKERAGE.value, balance_cte.c.balance),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ).label("brokerage_balance"),
             )
             .group_by(balance_cte.c.user_id)
             .subquery()
         )
+
+        brokerage_aum_cte = brokerage_aum_select(AccountOwnerType.USER).subquery()
 
 
         overview_query = (
@@ -169,10 +166,11 @@ class AdminService:
                 func.coalesce(income_subquery.c.monthly_income, 0).label("monthly_income"),
                 func.coalesce(balance_totals.c.checking_balance, 0).label("checking_balance"),
                 func.coalesce(balance_totals.c.savings_balance, 0).label("savings_balance"),
-                func.coalesce(balance_totals.c.brokerage_balance, 0).label("brokerage_balance"),
+                func.coalesce(brokerage_aum_cte.c.brokerage_aum, 0).label("brokerage_aum"),
             )
             .outerjoin(income_subquery, income_subquery.c.user_id == Individual.id)
             .outerjoin(balance_totals, balance_totals.c.user_id == Individual.id)
+            .outerjoin(brokerage_aum_cte, brokerage_aum_cte.c.owner_id == Individual.id)
             .order_by(Individual.name)
         )
 
@@ -194,7 +192,7 @@ class AdminService:
                         "monthly_income": record.monthly_income,
                         "checking_aum": record.checking_balance,
                         "savings_aum": record.savings_balance,
-                        "brokerage_aum": record.brokerage_balance,
+                        "brokerage_aum": record.brokerage_aum,
                     },
                     search_text=" ".join(filter(None, search_terms)).lower(),
                 )
