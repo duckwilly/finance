@@ -196,7 +196,7 @@ body.page {
   border: 1px solid var(--border-soft);
   background: var(--surface);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
-  max-height: 360px;
+  max-height: 480px;
   overflow: auto;
 }
 

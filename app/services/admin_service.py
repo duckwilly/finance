@@ -161,20 +161,11 @@ class AdminService:
             .subquery()
         )
 
-        employer_subquery = (
-            select(Company.name)
-            .join(Membership, Membership.org_id == Company.id)
-            .where(Membership.user_id == Individual.id)
-            .order_by(Membership.id)
-            .limit(1)
-            .scalar_subquery()
-        )
 
         overview_query = (
             select(
                 Individual.id.label("individual_id"),
                 Individual.name,
-                employer_subquery.label("employer_name"),
                 func.coalesce(income_subquery.c.monthly_income, 0).label("monthly_income"),
                 func.coalesce(balance_totals.c.checking_balance, 0).label("checking_balance"),
                 func.coalesce(balance_totals.c.savings_balance, 0).label("savings_balance"),
@@ -187,16 +178,19 @@ class AdminService:
 
         rows = []
         for record in session.execute(overview_query).all():
+            employer = Membership.find_employer_for_user(session, record.individual_id)
+            employer_name = employer.name if employer else None
+            
             search_terms = [record.name]
-            if record.employer_name:
-                search_terms.append(record.employer_name)
+            if employer_name:
+                search_terms.append(employer_name)
 
             rows.append(
                 ListViewRow(
                     key=str(record.individual_id),
                     values={
                         "name": record.name,
-                        "employer": record.employer_name,
+                        "employer": employer_name,
                         "monthly_income": record.monthly_income,
                         "checking_aum": record.checking_balance,
                         "savings_aum": record.savings_balance,
