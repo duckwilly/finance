@@ -16,9 +16,11 @@ from app.models import (
     Counterparty,
     Company,
     Individual,
+    Instrument,
     Membership,
     UserSalaryMonthly,
     PositionAgg,
+    PriceDaily,
     Section,
     Transaction,
     TransactionDirection,
@@ -429,6 +431,176 @@ class AdminService:
             )
 
             LOGGER.debug("Prepared %d company overview rows", len(rows))
+
+        return list_view
+
+    def get_stock_holdings_overview(self, session: Session) -> ListView:
+        """Return a list view representation of stock holdings by product."""
+
+        LOGGER.debug("Collecting stock holdings overview data for admin dashboard")
+
+        with timeit(
+            "Stock holdings list loading",
+            logger=LOGGER,
+            track_db_calls=True,
+            session=session,
+            unit="products",
+        ) as timer:
+            user_positions = (
+                select(
+                    PositionAgg.instrument_id.label("instrument_id"),
+                    func.coalesce(func.sum(PositionAgg.qty), 0).label("total_qty"),
+                    func.coalesce(
+                        func.sum(PositionAgg.qty * PositionAgg.last_price), 0
+                    ).label("market_value"),
+                )
+                .select_from(PositionAgg)
+                .join(Account, Account.id == PositionAgg.account_id)
+                .where(
+                    Account.owner_type == AccountOwnerType.USER,
+                    Account.type == AccountType.BROKERAGE,
+                )
+                .group_by(PositionAgg.instrument_id)
+                .cte("user_positions")
+            )
+
+            price_extents = (
+                select(
+                    PriceDaily.instrument_id.label("instrument_id"),
+                    func.min(PriceDaily.price_date).label("start_date"),
+                    func.max(PriceDaily.price_date).label("end_date"),
+                )
+                .group_by(PriceDaily.instrument_id)
+                .subquery()
+            )
+
+            start_prices = (
+                select(
+                    PriceDaily.instrument_id.label("instrument_id"),
+                    PriceDaily.close_price.label("start_price"),
+                )
+                .select_from(PriceDaily)
+                .join(
+                    price_extents,
+                    and_(
+                        PriceDaily.instrument_id == price_extents.c.instrument_id,
+                        PriceDaily.price_date == price_extents.c.start_date,
+                    ),
+                )
+                .subquery()
+            )
+
+            end_prices = (
+                select(
+                    PriceDaily.instrument_id.label("instrument_id"),
+                    PriceDaily.close_price.label("end_price"),
+                )
+                .select_from(PriceDaily)
+                .join(
+                    price_extents,
+                    and_(
+                        PriceDaily.instrument_id == price_extents.c.instrument_id,
+                        PriceDaily.price_date == price_extents.c.end_date,
+                    ),
+                )
+                .subquery()
+            )
+
+            holdings_query = (
+                select(
+                    Instrument.id.label("instrument_id"),
+                    Instrument.symbol,
+                    Instrument.name,
+                    start_prices.c.start_price,
+                    end_prices.c.end_price,
+                    user_positions.c.total_qty,
+                    user_positions.c.market_value,
+                )
+                .select_from(user_positions)
+                .join(Instrument, Instrument.id == user_positions.c.instrument_id)
+                .outerjoin(start_prices, start_prices.c.instrument_id == Instrument.id)
+                .outerjoin(end_prices, end_prices.c.instrument_id == Instrument.id)
+                .order_by(Instrument.symbol)
+            )
+
+            records = session.execute(holdings_query).all()
+
+            rows: list[ListViewRow] = []
+
+            for record in records:
+                start_price = (
+                    Decimal(record.start_price)
+                    if record.start_price is not None
+                    else None
+                )
+                end_price = (
+                    Decimal(record.end_price) if record.end_price is not None else None
+                )
+                total_qty = (
+                    Decimal(record.total_qty)
+                    if record.total_qty is not None
+                    else Decimal(0)
+                )
+                market_value = (
+                    Decimal(record.market_value)
+                    if record.market_value is not None
+                    else Decimal(0)
+                )
+
+                product_label = (
+                    f"{record.symbol} • {record.name}"
+                    if record.name and record.symbol
+                    else record.symbol or record.name
+                )
+
+                search_terms = list(filter(None, [record.symbol, record.name]))
+
+                rows.append(
+                    ListViewRow(
+                        key=str(record.instrument_id),
+                        values={
+                            "product": product_label,
+                            "start_price": start_price,
+                            "end_price": end_price,
+                            "shares": f"{total_qty:,.2f}",
+                            "market_value": market_value,
+                        },
+                        search_text=" ".join(search_terms).lower(),
+                    )
+                )
+
+            timer.set_total(len(rows))
+
+            list_view = ListView(
+                title="Stock holdings",
+                columns=[
+                    ListViewColumn(key="product", title="Product"),
+                    ListViewColumn(
+                        key="start_price",
+                        title="Start price",
+                        column_type="currency",
+                        align="right",
+                    ),
+                    ListViewColumn(
+                        key="end_price",
+                        title="End price",
+                        column_type="currency",
+                        align="right",
+                    ),
+                    ListViewColumn(key="shares", title="Shares held", align="right"),
+                    ListViewColumn(
+                        key="market_value",
+                        title="Value held",
+                        column_type="currency",
+                        align="right",
+                    ),
+                ],
+                rows=rows,
+                search_placeholder="Search financial products",
+                empty_message="No stock holdings found.",
+            )
+
+            LOGGER.debug("Prepared %d stock holding rows", len(rows))
 
         return list_view
 
