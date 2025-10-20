@@ -51,6 +51,7 @@ async def read_dashboard(
     companies_list = admin_service.get_company_overview(session)
     stock_holdings_list = admin_service.get_stock_holdings_overview(session)
     transactions_list = admin_service.get_transaction_overview(session)
+    charts = admin_service.get_dashboard_charts(session)
     context = {
         "request": request,
         "metrics": metrics,
@@ -58,6 +59,7 @@ async def read_dashboard(
         "companies_list": companies_list,
         "stock_holdings_list": stock_holdings_list,
         "transactions_list": transactions_list,
+        "charts": charts,
     }
     return templates.TemplateResponse(
         request=request,

@@ -1,8 +1,10 @@
 """Service implementation for admin tooling."""
 from __future__ import annotations
 
+from collections import Counter
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Sequence
 
 from sqlalchemy import case, func, select, extract, tuple_, and_
 from sqlalchemy.orm import Session, aliased
@@ -26,13 +28,83 @@ from app.models import (
     TransactionDirection,
 )
 from app.services.stocks_service import brokerage_aum_select
-from app.schemas.admin import AdminMetrics, ListView, ListViewColumn, ListViewRow
+from app.schemas.admin import (
+    AdminMetrics,
+    DashboardCharts,
+    LineChartData,
+    ListView,
+    ListViewColumn,
+    ListViewRow,
+    PieChartData,
+)
 
 LOGGER = get_logger(__name__)
 
 
 class AdminService:
     """Service encapsulating administrator dashboard workflows."""
+
+    INCOME_BUCKETS: tuple[tuple[str, Decimal | None, Decimal | None], ...] = (
+        ("Under $50k", Decimal("0"), Decimal("50000")),
+        ("$50k-$100k", Decimal("50000"), Decimal("100000")),
+        ("$100k-$200k", Decimal("100000"), Decimal("200000")),
+        ("$200k+", Decimal("200000"), None),
+    )
+    PROFIT_MARGIN_BUCKETS: tuple[tuple[str, Decimal | None, Decimal | None], ...] = (
+        ("Loss or no revenue", None, Decimal("0")),
+        ("0-10% margin", Decimal("0"), Decimal("0.10")),
+        ("10-20% margin", Decimal("0.10"), Decimal("0.20")),
+        ("20-35% margin", Decimal("0.20"), Decimal("0.35")),
+        ("35%+ margin", Decimal("0.35"), None),
+    )
+    TRANSACTION_SIZE_BUCKETS: tuple[tuple[str, Decimal | None, Decimal | None], ...] = (
+        ("<$250", None, Decimal("250")),
+        ("$250-$1k", Decimal("250"), Decimal("1000")),
+        ("$1k-$5k", Decimal("1000"), Decimal("5000")),
+        ("$5k+", Decimal("5000"), None),
+    )
+
+    def __init__(self) -> None:
+        self._income_distribution: dict[str, int] | None = None
+        self._profit_margin_distribution: dict[str, int] | None = None
+        self._transaction_amount_distribution: dict[str, int] | None = None
+        self._stock_price_series: list[tuple[str, float]] | None = None
+        self._stock_price_series_label: str | None = None
+        self._stock_price_series_hint: str | None = None
+
+    @staticmethod
+    def _bucketize(
+        value: Decimal,
+        buckets: Sequence[tuple[str, Decimal | None, Decimal | None]],
+    ) -> str:
+        """Return the label matching ``value`` using inclusive lower bounds."""
+
+        for label, lower, upper in buckets:
+            lower_ok = lower is None or value >= lower
+            upper_ok = upper is None or value < upper
+            if lower_ok and upper_ok:
+                return label
+        # Fallback for any values that might fall outside configured ranges.
+        return buckets[-1][0]
+
+    def _categorize_income(self, annual_income: Decimal) -> str:
+        """Bucketize annual income into configured brackets."""
+
+        return self._bucketize(annual_income, self.INCOME_BUCKETS)
+
+    def _categorize_margin(
+        self, monthly_income: Decimal, margin_ratio: Decimal | None
+    ) -> str:
+        """Bucketize profit margin, capturing edge cases for no revenue."""
+
+        if monthly_income <= 0 or margin_ratio is None:
+            return self.PROFIT_MARGIN_BUCKETS[0][0]
+        return self._bucketize(margin_ratio, self.PROFIT_MARGIN_BUCKETS)
+
+    def _categorize_transaction_amount(self, amount: Decimal) -> str:
+        """Bucketize a transaction amount by absolute value."""
+
+        return self._bucketize(amount, self.TRANSACTION_SIZE_BUCKETS)
 
     def get_metrics(self, session: Session) -> AdminMetrics:
         """Return high level metrics for the administrative overview."""
@@ -185,6 +257,7 @@ class AdminService:
             )
 
             rows = []
+            income_counts: Counter[str] = Counter()
             for record in session.execute(overview_query).all():
                 employer_name = record.employer_name
 
@@ -193,6 +266,11 @@ class AdminService:
                     search_terms.append(employer_name)
                 if record.job_title:
                     search_terms.append(record.job_title)
+
+                monthly_income = Decimal(record.monthly_income or 0)
+                annual_income = monthly_income * Decimal(12)
+                income_bucket = self._categorize_income(annual_income)
+                income_counts[income_bucket] += 1
 
                 rows.append(
                     ListViewRow(
@@ -229,6 +307,11 @@ class AdminService:
             timer.set_total(len(rows))
             LOGGER.debug("Prepared %d individual overview rows", len(rows))
 
+            self._income_distribution = {
+                label: income_counts.get(label, 0)
+                for label, *_ in self.INCOME_BUCKETS
+            }
+
         return list_view
 
     def get_company_overview(self, session: Session) -> ListView:
@@ -250,6 +333,9 @@ class AdminService:
 
             if not companies:
                 timer.set_total(0)
+                self._profit_margin_distribution = {
+                    label: 0 for label, *_ in self.PROFIT_MARGIN_BUCKETS
+                }
                 return ListView(
                     title="Corporate users",
                     columns=[
@@ -394,9 +480,22 @@ class AdminService:
 
             # Build result rows
             rows = []
+            profit_margin_counts: Counter[str] = Counter()
             for company in companies:
                 company_id = company.id
                 company_name = company_names[company_id]
+
+                monthly_income = Decimal(monthly_income_map.get(company_id, 0))
+                monthly_expenses = Decimal(monthly_expenses_map.get(company_id, 0))
+                profit_total = Decimal(total_profit_map.get(company_id, 0))
+
+                margin_ratio: Decimal | None = None
+                if monthly_income > 0:
+                    monthly_profit = monthly_income - monthly_expenses
+                    margin_ratio = (monthly_profit / monthly_income)
+
+                margin_bucket = self._categorize_margin(monthly_income, margin_ratio)
+                profit_margin_counts[margin_bucket] += 1
 
                 rows.append(
                     ListViewRow(
@@ -405,9 +504,9 @@ class AdminService:
                             "name": company_name,
                             "employee_count": int(employee_count_map.get(company_id, 0)),
                             "monthly_salary_cost": Decimal(monthly_salary_map.get(company_id, 0)),
-                            "monthly_income": Decimal(monthly_income_map.get(company_id, 0)),
-                            "monthly_expenses": Decimal(monthly_expenses_map.get(company_id, 0)),
-                            "profit_total": Decimal(total_profit_map.get(company_id, 0)),
+                            "monthly_income": monthly_income,
+                            "monthly_expenses": monthly_expenses,
+                            "profit_total": profit_total,
                         },
                         search_text=company_name.lower(),
                     )
@@ -431,6 +530,11 @@ class AdminService:
             )
 
             LOGGER.debug("Prepared %d company overview rows", len(rows))
+
+            self._profit_margin_distribution = {
+                label: profit_margin_counts.get(label, 0)
+                for label, *_ in self.PROFIT_MARGIN_BUCKETS
+            }
 
         return list_view
 
@@ -553,7 +657,13 @@ class AdminService:
 
             records = session.execute(holdings_query).all()
 
+            if not records and self._stock_price_series is None:
+                self._stock_price_series = []
+                self._stock_price_series_label = "Top holding"
+                self._stock_price_series_hint = None
+
             rows: list[ListViewRow] = []
+            top_holding: tuple[int, str | None, str | None, Decimal] | None = None
 
             # Get the actual dates from the first record to use in column headers
             start_date_str = None
@@ -607,6 +717,14 @@ class AdminService:
                     )
                 )
 
+                if top_holding is None or market_value > top_holding[3]:
+                    top_holding = (
+                        record.instrument_id,
+                        record.symbol,
+                        record.name,
+                        market_value,
+                    )
+
             timer.set_total(len(rows))
 
             # Format column titles with dates
@@ -643,6 +761,33 @@ class AdminService:
             )
 
             LOGGER.debug("Prepared %d stock holding rows", len(rows))
+
+            if top_holding and self._stock_price_series is None:
+                instrument_id, symbol, name, _ = top_holding
+                label_parts = list(filter(None, [symbol, name]))
+                label = " • ".join(label_parts) if label_parts else "Top holding"
+                price_rows = session.execute(
+                    select(PriceDaily.price_date, PriceDaily.close_price)
+                    .where(PriceDaily.instrument_id == instrument_id)
+                    .order_by(PriceDaily.price_date.desc())
+                    .limit(90)
+                ).all()
+
+                if price_rows:
+                    series = list(reversed(price_rows))
+                    self._stock_price_series = [
+                        (row.price_date.isoformat(), float(row.close_price))
+                        for row in series
+                        if row.close_price is not None
+                    ]
+                    self._stock_price_series_label = label
+                    self._stock_price_series_hint = (
+                        f"{label} closing prices across {len(self._stock_price_series)} sessions"
+                    )
+                else:
+                    self._stock_price_series = []
+                    self._stock_price_series_label = label
+                    self._stock_price_series_hint = None
 
         return list_view
 
@@ -748,6 +893,7 @@ class AdminService:
             records = session.execute(transactions_query).all()
 
             rows: list[ListViewRow] = []
+            transaction_amount_counts: Counter[str] = Counter()
 
             for record in records:
                 owner_name = record.account_owner_name or "Unknown account"
@@ -771,6 +917,10 @@ class AdminService:
                     search_terms.append(record.category_name)
                 if record.description:
                     search_terms.append(record.description)
+
+                amount_value = Decimal(record.amount or 0)
+                amount_bucket = self._categorize_transaction_amount(abs(amount_value))
+                transaction_amount_counts[amount_bucket] += 1
 
                 rows.append(
                     ListViewRow(
@@ -806,4 +956,72 @@ class AdminService:
 
             LOGGER.debug("Prepared %d transaction overview rows", len(rows))
 
+            self._transaction_amount_distribution = {
+                label: transaction_amount_counts.get(label, 0)
+                for label, *_ in self.TRANSACTION_SIZE_BUCKETS
+            }
+
         return list_view
+
+    def get_dashboard_charts(self, session: Session) -> DashboardCharts:
+        """Aggregate chart payloads for the admin dashboard."""
+
+        if self._income_distribution is None:
+            self.get_individual_overview(session)
+        if self._profit_margin_distribution is None:
+            self.get_company_overview(session)
+        if self._transaction_amount_distribution is None:
+            self.get_transaction_overview(session)
+        if self._stock_price_series is None:
+            self.get_stock_holdings_overview(session)
+
+        income_labels = [label for label, *_ in self.INCOME_BUCKETS]
+        income_values = [
+            float(self._income_distribution.get(label, 0))
+            for label in income_labels
+        ]
+
+        margin_labels = [label for label, *_ in self.PROFIT_MARGIN_BUCKETS]
+        margin_values = [
+            float(self._profit_margin_distribution.get(label, 0))
+            for label in margin_labels
+        ]
+
+        transaction_labels = [label for label, *_ in self.TRANSACTION_SIZE_BUCKETS]
+        transaction_values = [
+            float(self._transaction_amount_distribution.get(label, 0))
+            for label in transaction_labels
+        ]
+
+        stock_series = self._stock_price_series or []
+        stock_labels = [point[0] for point in stock_series]
+        stock_values = [float(point[1]) for point in stock_series]
+        stock_label = self._stock_price_series_label or "Top holding"
+
+        return DashboardCharts(
+            individuals_income=PieChartData(
+                title="Users by income bracket",
+                labels=income_labels,
+                values=income_values,
+                hint="Annualized salaries from the latest payroll snapshot.",
+            ),
+            companies_profit_margin=PieChartData(
+                title="Companies by profit margin",
+                labels=margin_labels,
+                values=margin_values,
+                hint="Margin computed from the most recent income and expense month.",
+            ),
+            transactions_amounts=PieChartData(
+                title="Transactions by amount",
+                labels=transaction_labels,
+                values=transaction_values,
+                hint=f"Distribution across the latest {int(sum(transaction_values))} posted transactions.",
+            ),
+            stock_price_trend=LineChartData(
+                title=f"{stock_label} price trend",
+                labels=stock_labels,
+                values=stock_values,
+                series_label="Closing price",
+                hint=self._stock_price_series_hint,
+            ),
+        )
