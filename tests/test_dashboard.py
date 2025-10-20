@@ -66,6 +66,52 @@ class _StubAdminService:
             search_placeholder="Search individuals",
             empty_message="No individual users found.",
         )
+        self._transactions = ListView(
+            title="Recent transactions",
+            columns=[
+                ListViewColumn(key="date", title="Date"),
+                ListViewColumn(key="payer", title="Payer"),
+                ListViewColumn(key="payee", title="Payee"),
+                ListViewColumn(key="amount", title="Amount", column_type="currency", align="right"),
+                ListViewColumn(key="category", title="Category"),
+                ListViewColumn(key="description", title="Description"),
+            ],
+            rows=[
+                ListViewRow(
+                    key="txn-1",
+                    values={
+                        "date": "2024-04-01",
+                        "payer": "Jane Example",
+                        "payee": "Sushi Palace",
+                        "amount": Decimal("72.30"),
+                        "category": "Dining",
+                        "description": "Team dinner",
+                    },
+                    search_text="2024-04-01 jane example sushi palace dining team dinner",
+                )
+            ],
+            search_placeholder="Search transactions",
+            empty_message="No transactions found.",
+        )
+        self._companies = ListView(
+            title="Corporate users",
+            columns=[
+                ListViewColumn(key="name", title="Company name"),
+                ListViewColumn(key="employee_count", title="Employees", align="right"),
+            ],
+            rows=[
+                ListViewRow(
+                    key="c1",
+                    values={
+                        "name": "Acme Corp",
+                        "employee_count": 120,
+                    },
+                    search_text="acme corp",
+                )
+            ],
+            search_placeholder="Search companies",
+            empty_message="No corporate users found.",
+        )
 
     def get_metrics(self, session) -> AdminMetrics:  # pragma: no cover - exercised via endpoint
         return AdminMetrics(
@@ -79,6 +125,12 @@ class _StubAdminService:
 
     def get_individual_overview(self, session) -> ListView:  # pragma: no cover - exercised via endpoint
         return self._individuals
+
+    def get_company_overview(self, session) -> ListView:  # pragma: no cover - exercised via endpoint
+        return self._companies
+
+    def get_transaction_overview(self, session) -> ListView:  # pragma: no cover - exercised via endpoint
+        return self._transactions
 
 
 def _override_get_db_session():  # pragma: no cover - exercised via dependency
@@ -102,6 +154,8 @@ def test_dashboard_template_renders() -> None:
     body = response.text
     assert "Finance dashboard" in body
     assert "42" in body
-    assert "EUR 1.2 million" in body
+    assert "€ 1.2 million" in body
     assert "Jane Example" in body
     assert "Acme Corp" in body
+    assert "Recent transactions" in body
+    assert "Sushi Palace" in body

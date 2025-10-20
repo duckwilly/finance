@@ -49,11 +49,13 @@ async def read_dashboard(
     metrics = admin_service.get_metrics(session)
     individuals_list = admin_service.get_individual_overview(session)
     companies_list = admin_service.get_company_overview(session)
+    transactions_list = admin_service.get_transaction_overview(session)
     context = {
         "request": request,
         "metrics": metrics,
         "individuals_list": individuals_list,
         "companies_list": companies_list,
+        "transactions_list": transactions_list,
     }
     return templates.TemplateResponse(
         request=request,

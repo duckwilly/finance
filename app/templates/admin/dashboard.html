@@ -55,7 +55,7 @@
       </section>  
       <section class="details">
         <div class="details__panel">
-          <h2 class="details__title">Transactions</h2>
+          {{ list_view.render_list_view('transactions', transactions_list) }}
         </div>
 
         <div class="details__panel">
