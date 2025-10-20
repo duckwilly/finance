@@ -1,7 +1,9 @@
 """ORM model for linking individuals to organisations."""
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, String, select
+from datetime import date
+
+from sqlalchemy import BigInteger, Date, ForeignKey, Integer, String, select
 from sqlalchemy.orm import Mapped, mapped_column, Session
 
 from .base import Base
@@ -20,6 +22,9 @@ class Membership(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
     org_id: Mapped[int] = mapped_column(ForeignKey("org.id"), nullable=False, index=True)
     role: Mapped[str] = mapped_column(String(64), nullable=False, server_default="member")
+    is_primary: Mapped[bool] = mapped_column(default=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     @staticmethod
     def find_employer_for_user(session: Session, user_id: int) -> Company | None:

@@ -9,12 +9,14 @@ from .transactions import (
     Account,
     AccountOwnerType,
     AccountType,
+    Category,
     Section,
     Transaction,
     TransactionChannel,
     TransactionDirection,
 )
 from .stocks import PositionAgg
+from .salary import UserSalaryMonthly
 
 __all__ = [
     "Base",
@@ -24,9 +26,11 @@ __all__ = [
     "Account",
     "AccountOwnerType",
     "AccountType",
+    "Category",
     "Section",
     "Transaction",
     "TransactionChannel",
     "TransactionDirection",
     "PositionAgg"
+    , "UserSalaryMonthly"
 ]

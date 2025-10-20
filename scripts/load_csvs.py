@@ -231,6 +231,7 @@ def load_users_orgs_accounts_and_memberships():
     orgs  = read_rows("orgs.csv")
     accts = read_rows("accounts.csv")
     mems  = read_rows("account_memberships.csv")
+    employment = read_rows("memberships.csv")
 
     user_map, org_map, acct_map = {}, {}, {}
 
@@ -298,6 +299,33 @@ def load_users_orgs_accounts_and_memberships():
                     f"Membership references unknown account ext_id '{m['account_ext_id']}'"
                 ) from exc
             ensure_membership(cur, party_type, party_id, account_id, m["role"])
+
+        # employer memberships (user -> org)
+        for e in employment:
+            try:
+                uid = user_map[e["user_ext_id"]]
+            except KeyError as exc:
+                raise ValueError(f"Employment references unknown user '{e['user_ext_id']}'") from exc
+            try:
+                oid = org_map[e["org_ext_id"]]
+            except KeyError as exc:
+                raise ValueError(f"Employment references unknown org '{e['org_ext_id']}'") from exc
+
+            cur.execute(
+                """
+                INSERT INTO membership(user_id, org_id, role, is_primary, start_date, end_date)
+                VALUES (%s,%s,%s,%s,%s,%s)
+                ON DUPLICATE KEY UPDATE role=VALUES(role), is_primary=VALUES(is_primary), start_date=VALUES(start_date), end_date=VALUES(end_date)
+                """,
+                (
+                    uid,
+                    oid,
+                    e.get("role") or "employee",
+                    1 if str(e.get("is_primary")).lower() in ("1", "true", "t", "yes") else 0,
+                    e.get("start_date") or None,
+                    e.get("end_date") or None,
+                ),
+            )
 
     return user_map, org_map, acct_map
 
@@ -631,6 +659,37 @@ def load_trades_and_holdings(acct_map, inst_map):
                     raise ValueError(f"Unknown side {side}")
                 task.advance()
 
+def load_user_salary_monthly(user_map, org_map):
+    salaries = read_rows("user_salary_monthly.csv")
+    if not salaries:
+        return 0
+    inserted = 0
+    with conn() as c:
+        cur = c.cursor()
+        logger.info("Loading %s user_salary_monthly rows…", len(salaries))
+        for r in salaries:
+            user_ext = r["user_ext_id"]
+            org_ext = r["org_ext_id"]
+            year = int(r["year"])
+            month = int(r["month"])
+            amount = r["salary_amount"]
+            try:
+                uid = user_map[user_ext]
+                oid = org_map[org_ext]
+            except KeyError:
+                continue
+            cur.execute(
+                """
+                INSERT INTO user_salary_monthly(user_id, employer_org_id, year, month, salary_amount)
+                VALUES (%s,%s,%s,%s,%s)
+                ON DUPLICATE KEY UPDATE salary_amount=VALUES(salary_amount)
+                """,
+                (uid, oid, year, month, amount),
+            )
+            inserted += 1
+    return inserted
+
+
 def main():
     logger.info("Loading users/orgs/accounts/memberships…")
     user_map, org_map, acct_map = load_users_orgs_accounts_and_memberships()
@@ -639,6 +698,9 @@ def main():
     logger.info("Loading transactions…")
     inserted = load_transactions(acct_map)
     logger.info("Inserted %s transactions", inserted)
+    logger.info("Loading user monthly salaries…")
+    sal_inserted = load_user_salary_monthly(user_map, org_map)
+    logger.info("Inserted %s user_salary_monthly rows", sal_inserted)
     logger.info("Loading trades & updating holdings (WAC)…")
     load_trades_and_holdings(acct_map, inst_map)
     logger.info("Load complete.")

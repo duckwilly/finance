@@ -66,6 +66,8 @@ def clear_database():
         "transaction",
         "account_membership",
         "account",
+        "user_salary_monthly",  # References user and org
+        "membership",           # References user and org
         "counterparty",
         "category",
         "section",

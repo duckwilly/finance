@@ -978,6 +978,24 @@ def write_core_tables(individuals: list[Individual], companies: list[Company], c
         membership_rows,
     )
 
+    # Employment memberships (user -> org)
+    employment_rows = [
+        {
+            "user_ext_id": person.ext_id,
+            "org_ext_id": person.employer.ext_id,
+            "role": "employee",
+            "is_primary": True,
+            "start_date": "2023-01-01",
+            "end_date": "",
+        }
+        for person in individuals
+    ]
+    write_csv(
+        SEED_DIR / "memberships.csv",
+        ["user_ext_id", "org_ext_id", "role", "is_primary", "start_date", "end_date"],
+        employment_rows,
+    )
+
 
 def write_transactions(rows: Iterator[dict[str, object]]) -> int:
     count = 0
@@ -1011,6 +1029,28 @@ def write_trades(trades: Sequence[dict[str, object]]) -> None:
         trades,
     )
     # Price and FX data are now handled by fetch_stock_prices.py
+
+
+def write_user_salary_monthly(
+    individuals: Sequence[Individual], start_month: date, months: int
+) -> None:
+    rows: list[dict[str, object]] = []
+    for month_start in month_sequence(start_month, months):
+        for person in individuals:
+            rows.append(
+                {
+                    "user_ext_id": person.ext_id,
+                    "org_ext_id": person.employer.ext_id,
+                    "year": month_start.year,
+                    "month": month_start.month,
+                    "salary_amount": fmt_amount(person.salary),
+                }
+            )
+    write_csv(
+        SEED_DIR / "user_salary_monthly.csv",
+        ["user_ext_id", "org_ext_id", "year", "month", "salary_amount"],
+        rows,
+    )
 
 
 def live_stream(
@@ -1114,6 +1154,8 @@ def main() -> None:
     trades = generate_trades(individuals, start_month_date, args.months)
     logger.info("Writing trade data CSV")
     write_trades(trades)
+    # Write monthly salary summary and memberships
+    write_user_salary_monthly(individuals, start_month_date, args.months)
 
     logger.info(
         "Generated %s users, %s organisations, %s transactions",

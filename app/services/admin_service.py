@@ -4,17 +4,19 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, extract, tuple_
 from sqlalchemy.orm import Session
 
-from app.core.logger import get_logger
+from app.core.logger import get_logger, timeit
 from app.models import (
     Account,
     AccountOwnerType,
     AccountType,
+    Category,
     Company,
     Individual,
     Membership,
+    UserSalaryMonthly,
     PositionAgg,
     Section,
     Transaction,
@@ -34,44 +36,51 @@ class AdminService:
 
         LOGGER.debug("Collecting admin metrics from the database")
 
-        total_individuals = session.execute(select(func.count(Individual.id))).scalar_one()
-        total_companies = session.execute(select(func.count(Company.id))).scalar_one()
-        total_transactions = session.execute(select(func.count(Transaction.id))).scalar_one()
+        with timeit(
+            "Admin dashboard metrics loading",
+            logger=LOGGER,
+            track_db_calls=True,
+            session=session,
+            unit="metrics"
+        ) as timer:
+            total_individuals = session.execute(select(func.count(Individual.id))).scalar_one()
+            total_companies = session.execute(select(func.count(Company.id))).scalar_one()
+            total_transactions = session.execute(select(func.count(Transaction.id))).scalar_one()
 
-        first_transaction_at = session.execute(select(func.min(Transaction.posted_at))).scalar_one()
-        last_transaction_at = session.execute(select(func.max(Transaction.posted_at))).scalar_one()
+            first_transaction_at = session.execute(select(func.min(Transaction.posted_at))).scalar_one()
+            last_transaction_at = session.execute(select(func.max(Transaction.posted_at))).scalar_one()
 
-        # Cash balance across all accounts
-        cash_total = session.execute(
-            select(
-                func.sum(
-                    case(
-                        (Transaction.direction == TransactionDirection.CREDIT, Transaction.amount),
-                        else_=-Transaction.amount,
+            # Cash balance across all accounts
+            cash_total = session.execute(
+                select(
+                    func.sum(
+                        case(
+                            (Transaction.direction == TransactionDirection.CREDIT, Transaction.amount),
+                            else_=-Transaction.amount,
+                        )
                     )
                 )
+            ).scalar_one() or Decimal("0")
+
+            # Stock holdings total
+            holdings_total = session.execute(
+                select(func.coalesce(func.sum(PositionAgg.qty * PositionAgg.last_price), 0))
+            ).scalar_one() or Decimal("0")
+
+            total_aum = Decimal(cash_total) + Decimal(holdings_total)
+
+            metrics = AdminMetrics(
+                total_individuals=total_individuals,
+                total_companies=total_companies,
+                total_transactions=total_transactions,
+                first_transaction_at=first_transaction_at,
+                last_transaction_at=last_transaction_at,
+                total_aum=total_aum,
+                total_cash=cash_total,
+                total_holdings=holdings_total,
             )
-        ).scalar_one() or Decimal("0")
 
-        # Stock holdings total
-        holdings_total = session.execute(
-            select(func.coalesce(func.sum(PositionAgg.qty * PositionAgg.last_price), 0))
-        ).scalar_one() or Decimal("0")
-
-        total_aum = Decimal(cash_total) + Decimal(holdings_total)
-
-        metrics = AdminMetrics(
-            total_individuals=total_individuals,
-            total_companies=total_companies,
-            total_transactions=total_transactions,
-            first_transaction_at=first_transaction_at,
-            last_transaction_at=last_transaction_at,
-            total_aum=total_aum,
-            total_cash=cash_total,
-            total_holdings=holdings_total,
-        )
-
-        LOGGER.debug("Admin metrics computed: %s", metrics)
+            LOGGER.debug("Admin metrics computed: %s", metrics)
 
         return metrics
 
@@ -80,151 +89,142 @@ class AdminService:
 
         LOGGER.debug("Collecting individual overview data for admin dashboard")
 
-        # Find the most recent salary transaction per user to get their monthly income
-        latest_salary_subquery = (
-            select(
-                Account.owner_id.label("user_id"),
-                Transaction.amount.label("salary_amount"),
-                func.row_number().over(
-                    partition_by=Account.owner_id,
-                    order_by=Transaction.txn_date.desc()
-                ).label("rn")
-            )
-            .select_from(Account)
-            .join(Transaction, Transaction.account_id == Account.id)
-            .join(Section, Section.id == Transaction.section_id)
-            .where(
-                Account.owner_type == AccountOwnerType.USER,
-                Section.name == "income",
-                Transaction.direction == TransactionDirection.CREDIT,
-            )
-            .subquery()
-        )
-
-        income_subquery = (
-            select(
-                latest_salary_subquery.c.user_id,
-                func.coalesce(latest_salary_subquery.c.salary_amount, 0).label("monthly_income"),
-            )
-            .select_from(latest_salary_subquery)
-            .where(latest_salary_subquery.c.rn == 1)
-            .subquery()
-        )
-
-        balance_cte = (
-            select(
-                Account.owner_id.label("user_id"),
-                Account.type.label("account_type"),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (Transaction.direction == TransactionDirection.CREDIT, Transaction.amount),
-                            else_=-Transaction.amount,
-                        )
-                    ),
-                    0,
-                ).label("balance"),
-            )
-            .select_from(Account)
-            .join(Transaction, Transaction.account_id == Account.id, isouter=True)
-            .where(
-                Account.owner_type == AccountOwnerType.USER,
-                Account.type.in_([AccountType.CHECKING, AccountType.SAVINGS]),
-            )
-            .group_by(Account.owner_id, Account.type)
-            .cte("account_balances")
-        )
-
-        balance_totals = (
-            select(
-                balance_cte.c.user_id,
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (balance_cte.c.account_type == AccountType.CHECKING.value, balance_cte.c.balance),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ).label("checking_balance"),
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (balance_cte.c.account_type == AccountType.SAVINGS.value, balance_cte.c.balance),
-                            else_=0,
-                        )
-                    ),
-                    0,
-                ).label("savings_balance"),
-            )
-            .group_by(balance_cte.c.user_id)
-            .subquery()
-        )
-
-        brokerage_aum_cte = brokerage_aum_select(AccountOwnerType.USER).subquery()
-
-
-        overview_query = (
-            select(
-                Individual.id.label("individual_id"),
-                Individual.name,
-                Individual.job_title,
-                func.coalesce(income_subquery.c.monthly_income, 0).label("monthly_income"),
-                func.coalesce(balance_totals.c.checking_balance, 0).label("checking_balance"),
-                func.coalesce(balance_totals.c.savings_balance, 0).label("savings_balance"),
-                func.coalesce(brokerage_aum_cte.c.brokerage_aum, 0).label("brokerage_aum"),
-            )
-            .select_from(Individual)
-            .outerjoin(income_subquery, income_subquery.c.user_id == Individual.id)
-            .outerjoin(balance_totals, balance_totals.c.user_id == Individual.id)
-            .outerjoin(brokerage_aum_cte, brokerage_aum_cte.c.owner_id == Individual.id)
-            .order_by(Individual.name)
-        )
-
-        rows = []
-        for record in session.execute(overview_query).all():
-            employer = Membership.find_employer_for_user(session, record.individual_id)
-            employer_name = employer.name if employer else None
-            
-            search_terms = [record.name]
-            if employer_name:
-                search_terms.append(employer_name)
-            if record.job_title:
-                search_terms.append(record.job_title)
-
-            rows.append(
-                ListViewRow(
-                    key=str(record.individual_id),
-                    values={
-                        "name": record.name,
-                        "job_title": record.job_title or "",
-                        "employer": employer_name,
-                        "monthly_income": record.monthly_income,
-                        "checking_aum": record.checking_balance,
-                        "savings_aum": record.savings_balance,
-                        "brokerage_aum": record.brokerage_aum,
-                    },
-                    search_text=" ".join(filter(None, search_terms)).lower(),
+        with timeit(
+            "Individual user list loading",
+            logger=LOGGER,
+            track_db_calls=True,
+            session=session,
+            unit="users"
+        ) as timer:
+            # Latest monthly salary per user from precomputed table
+            salary_latest = (
+                select(
+                    UserSalaryMonthly.user_id.label("user_id"),
+                    UserSalaryMonthly.employer_org_id.label("employer_org_id"),
+                    UserSalaryMonthly.salary_amount.label("monthly_income"),
+                    func.row_number().over(
+                        partition_by=UserSalaryMonthly.user_id,
+                        order_by=(UserSalaryMonthly.year.desc(), UserSalaryMonthly.month.desc()),
+                    ).label("rn"),
                 )
+                .subquery()
             )
 
-        list_view = ListView(
-            title="Individual users",
-            columns=[
-                ListViewColumn(key="name", title="Name"),
-                ListViewColumn(key="employer", title="Employer"),
-                ListViewColumn(key="job_title", title="Job Title"),
-                ListViewColumn(key="monthly_income", title="Monthly income", column_type="currency", align="right"),
-                ListViewColumn(key="checking_aum", title="Checking AUM", column_type="currency", align="right"),
-                ListViewColumn(key="savings_aum", title="Savings AUM", column_type="currency", align="right"),
-                ListViewColumn(key="brokerage_aum", title="Brokerage AUM", column_type="currency", align="right"),
-            ],
-            rows=rows,
-            search_placeholder="Search individuals",
-            empty_message="No individual users found.",
-        )
+            balance_cte = (
+                select(
+                    Account.owner_id.label("user_id"),
+                    Account.type.label("account_type"),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (Transaction.direction == TransactionDirection.CREDIT, Transaction.amount),
+                                else_=-Transaction.amount,
+                            )
+                        ),
+                        0,
+                    ).label("balance"),
+                )
+                .select_from(Account)
+                .join(Transaction, Transaction.account_id == Account.id, isouter=True)
+                .where(
+                    Account.owner_type == AccountOwnerType.USER,
+                    Account.type.in_([AccountType.CHECKING, AccountType.SAVINGS]),
+                )
+                .group_by(Account.owner_id, Account.type)
+                .cte("account_balances")
+            )
 
-        LOGGER.debug("Prepared %d individual overview rows", len(rows))
+            balance_totals = (
+                select(
+                    balance_cte.c.user_id,
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (balance_cte.c.account_type == AccountType.CHECKING.value, balance_cte.c.balance),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ).label("checking_balance"),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (balance_cte.c.account_type == AccountType.SAVINGS.value, balance_cte.c.balance),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ).label("savings_balance"),
+                )
+                .group_by(balance_cte.c.user_id)
+                .subquery()
+            )
+
+            brokerage_aum_cte = brokerage_aum_select(AccountOwnerType.USER).subquery()
+
+            overview_query = (
+                select(
+                    Individual.id.label("individual_id"),
+                    Individual.name,
+                    Individual.job_title,
+                    func.coalesce(salary_latest.c.monthly_income, 0).label("monthly_income"),
+                    func.coalesce(balance_totals.c.checking_balance, 0).label("checking_balance"),
+                    func.coalesce(balance_totals.c.savings_balance, 0).label("savings_balance"),
+                    func.coalesce(brokerage_aum_cte.c.brokerage_aum, 0).label("brokerage_aum"),
+                    Company.name.label("employer_name"),
+                )
+                .select_from(Individual)
+                .outerjoin(salary_latest, (salary_latest.c.user_id == Individual.id) & (salary_latest.c.rn == 1))
+                .outerjoin(Company, Company.id == salary_latest.c.employer_org_id)
+                .outerjoin(balance_totals, balance_totals.c.user_id == Individual.id)
+                .outerjoin(brokerage_aum_cte, brokerage_aum_cte.c.owner_id == Individual.id)
+                .order_by(Individual.name)
+            )
+
+            rows = []
+            for record in session.execute(overview_query).all():
+                employer_name = record.employer_name
+
+                search_terms = [record.name]
+                if employer_name:
+                    search_terms.append(employer_name)
+                if record.job_title:
+                    search_terms.append(record.job_title)
+
+                rows.append(
+                    ListViewRow(
+                        key=str(record.individual_id),
+                        values={
+                            "name": record.name,
+                            "job_title": record.job_title or "",
+                            "employer": employer_name,
+                            "monthly_income": record.monthly_income,
+                            "checking_aum": record.checking_balance,
+                            "savings_aum": record.savings_balance,
+                            "brokerage_aum": record.brokerage_aum,
+                        },
+                        search_text=" ".join(filter(None, search_terms)).lower(),
+                    )
+                )
+
+            list_view = ListView(
+                title="Individual users",
+                columns=[
+                    ListViewColumn(key="name", title="Name"),
+                    ListViewColumn(key="employer", title="Employer"),
+                    ListViewColumn(key="job_title", title="Job Title"),
+                    ListViewColumn(key="monthly_income", title="Monthly income", column_type="currency", align="right"),
+                    ListViewColumn(key="checking_aum", title="Checking AUM", column_type="currency", align="right"),
+                    ListViewColumn(key="savings_aum", title="Savings AUM", column_type="currency", align="right"),
+                    ListViewColumn(key="brokerage_aum", title="Brokerage AUM", column_type="currency", align="right"),
+                ],
+                rows=rows,
+                search_placeholder="Search individuals",
+                empty_message="No individual users found.",
+            )
+
+            timer.set_total(len(rows))
+            LOGGER.debug("Prepared %d individual overview rows", len(rows))
 
         return list_view
 
@@ -233,49 +233,200 @@ class AdminService:
 
         LOGGER.debug("Collecting company overview data for admin dashboard")
 
-        # Query all companies
-        companies_query = select(Company.id, Company.name).order_by(Company.name)
-        companies = session.execute(companies_query).all()
+        with timeit(
+            "Company list loading",
+            logger=LOGGER,
+            track_db_calls=True,
+            session=session,
+            unit="companies"
+        ) as timer:
+            # Use batch processing to reduce N+1 queries while maintaining logic compatibility
+            # Get all companies first
+            companies_query = select(Company.id, Company.name).order_by(Company.name)
+            companies = session.execute(companies_query).all()
 
-        rows = []
-        for company in companies:
-            # Get metrics for this company
-            employee_count = Company.get_employee_count(session, company.id)
-            monthly_salary_cost = Company.get_monthly_salary_cost(session, company.id)
-            monthly_income = Company.get_monthly_income(session, company.id)
-            monthly_expenses = Company.get_monthly_expenses(session, company.id)
-            profit_total = Company.get_total_profit(session, company.id)
+            if not companies:
+                timer.set_total(0)
+                return ListView(
+                    title="Corporate users",
+                    columns=[
+                        ListViewColumn(key="name", title="Company name"),
+                        ListViewColumn(key="employee_count", title="Employees", align="right"),
+                        ListViewColumn(key="monthly_salary_cost", title="Monthly salary cost", column_type="currency", align="right"),
+                        ListViewColumn(key="monthly_income", title="Monthly income", column_type="currency", align="right"),
+                        ListViewColumn(key="monthly_expenses", title="Monthly expenses", column_type="currency", align="right"),
+                        ListViewColumn(key="profit_total", title="Profit YTD", column_type="currency", align="right"),
+                    ],
+                    rows=[],
+                    search_placeholder="Search companies",
+                    empty_message="No corporate users found.",
+                )
 
-            rows.append(
-                ListViewRow(
-                    key=str(company.id),
-                    values={
-                        "name": company.name,
-                        "employee_count": employee_count,
-                        "monthly_salary_cost": monthly_salary_cost,
-                        "monthly_income": monthly_income,
-                        "monthly_expenses": monthly_expenses,
-                        "profit_total": profit_total,
-                    },
-                    search_text=company.name.lower(),
+            # Batch the expensive operations by loading all company names first
+            company_ids = [company.id for company in companies]
+            company_names = {company.id: company.name for company in companies}
+
+            # Batch load latest months for all companies in one query
+            latest_months_query = (
+                select(
+                    Account.owner_id.label("company_id"),
+                    extract("year", Transaction.txn_date).label("year"),
+                    extract("month", Transaction.txn_date).label("month"),
+                    func.row_number().over(
+                        partition_by=Account.owner_id,
+                        order_by=Transaction.txn_date.desc()
+                    ).label("rn")
+                )
+                .select_from(Account)
+                .join(Transaction, Transaction.account_id == Account.id)
+                .where(
+                    Account.owner_type == AccountOwnerType.ORG,
+                    Account.owner_id.in_(company_ids)
                 )
             )
 
-        list_view = ListView(
-            title="Corporate users",
-            columns=[
-                ListViewColumn(key="name", title="Company name"),
-                ListViewColumn(key="employee_count", title="Employees", align="right"),
-                ListViewColumn(key="monthly_salary_cost", title="Monthly salary cost", column_type="currency", align="right"),
-                ListViewColumn(key="monthly_income", title="Monthly income", column_type="currency", align="right"),
-                ListViewColumn(key="monthly_expenses", title="Monthly expenses", column_type="currency", align="right"),
-                ListViewColumn(key="profit_total", title="Profit YTD", column_type="currency", align="right"),
-            ],
-            rows=rows,
-            search_placeholder="Search companies",
-            empty_message="No corporate users found.",
-        )
+            latest_months = session.execute(latest_months_query).all()
+            latest_month_map = {}
+            for row in latest_months:
+                if row.rn == 1:  # Only the most recent month
+                    latest_month_map[row.company_id] = (row.year, row.month)
 
-        LOGGER.debug("Prepared %d company overview rows", len(rows))
+            # Employee counts from membership
+            employee_counts = session.execute(
+                select(Membership.org_id, func.count(func.distinct(Membership.user_id)))
+                .where(Membership.org_id.in_(company_ids), Membership.is_primary == True)  # noqa: E712
+                .group_by(Membership.org_id)
+            ).all()
+            employee_count_map = {org_id: cnt for org_id, cnt in employee_counts}
+
+            # Monthly salary cost from precomputed table at latest month per company
+            monthly_salary_map: dict[int, Decimal] = {}
+            if latest_month_map:
+                # Query salaries filtered to latest ym per company
+                union_rows = []
+                for cid, (y, m) in latest_month_map.items():
+                    union_rows.append((cid, y, m))
+                # Build a single SELECT with IN filters
+                salary_rows = session.execute(
+                    select(
+                        UserSalaryMonthly.employer_org_id,
+                        func.sum(UserSalaryMonthly.salary_amount),
+                    )
+                    .where(
+                        tuple_(UserSalaryMonthly.employer_org_id, UserSalaryMonthly.year, UserSalaryMonthly.month).in_(
+                            union_rows
+                        )
+                    )
+                    .group_by(UserSalaryMonthly.employer_org_id)
+                ).all()
+                for org_id, total in salary_rows:
+                    monthly_salary_map[org_id] = Decimal(total)
+
+            # Batch load income/expense data for all companies
+            financial_query = (
+                select(
+                    Account.owner_id.label("company_id"),
+                    Section.name.label("section_name"),
+                    Transaction.direction,
+                    Transaction.amount,
+                    extract("year", Transaction.txn_date).label("year"),
+                    extract("month", Transaction.txn_date).label("month")
+                )
+                .select_from(Account)
+                .join(Transaction, Transaction.account_id == Account.id)
+                .join(Section, Section.id == Transaction.section_id)
+                .where(
+                    Account.owner_type == AccountOwnerType.ORG,
+                    Account.owner_id.in_(company_ids),
+                    Section.name.in_(["income", "expense"])
+                )
+            )
+
+            financial_data = session.execute(financial_query).all()
+
+            # Process financial data
+            monthly_income_map = {}
+            monthly_expenses_map = {}
+            total_profit_map = {}
+
+            for row in financial_data:
+                company_id = row.company_id
+                year = row.year
+                month = row.month
+
+                # Check if this is the latest month for this company
+                if company_id in latest_month_map:
+                    latest_year, latest_month = latest_month_map[company_id]
+                    is_latest_month = (year == latest_year and month == latest_month)
+                else:
+                    is_latest_month = False
+
+                amount = float(row.amount)
+
+                if row.section_name == "income":
+                    if row.direction == TransactionDirection.CREDIT:
+                        # Monthly income
+                        if is_latest_month:
+                            if company_id not in monthly_income_map:
+                                monthly_income_map[company_id] = 0
+                            monthly_income_map[company_id] += amount
+
+                        # Total profit (all time)
+                        if company_id not in total_profit_map:
+                            total_profit_map[company_id] = 0
+                        total_profit_map[company_id] += amount
+
+                elif row.section_name == "expense":
+                    if row.direction == TransactionDirection.DEBIT:
+                        # Monthly expenses
+                        if is_latest_month:
+                            if company_id not in monthly_expenses_map:
+                                monthly_expenses_map[company_id] = 0
+                            monthly_expenses_map[company_id] += amount
+
+                        # Total profit (all time) - expenses subtract
+                        if company_id not in total_profit_map:
+                            total_profit_map[company_id] = 0
+                        total_profit_map[company_id] -= amount
+
+            # Build result rows
+            rows = []
+            for company in companies:
+                company_id = company.id
+                company_name = company_names[company_id]
+
+                rows.append(
+                    ListViewRow(
+                        key=str(company_id),
+                        values={
+                            "name": company_name,
+                            "employee_count": int(employee_count_map.get(company_id, 0)),
+                            "monthly_salary_cost": Decimal(monthly_salary_map.get(company_id, 0)),
+                            "monthly_income": Decimal(monthly_income_map.get(company_id, 0)),
+                            "monthly_expenses": Decimal(monthly_expenses_map.get(company_id, 0)),
+                            "profit_total": Decimal(total_profit_map.get(company_id, 0)),
+                        },
+                        search_text=company_name.lower(),
+                    )
+                )
+
+            timer.set_total(len(rows))
+
+            list_view = ListView(
+                title="Corporate users",
+                columns=[
+                    ListViewColumn(key="name", title="Company name"),
+                    ListViewColumn(key="employee_count", title="Employees", align="right"),
+                    ListViewColumn(key="monthly_salary_cost", title="Monthly salary cost", column_type="currency", align="right"),
+                    ListViewColumn(key="monthly_income", title="Monthly income", column_type="currency", align="right"),
+                    ListViewColumn(key="monthly_expenses", title="Monthly expenses", column_type="currency", align="right"),
+                    ListViewColumn(key="profit_total", title="Profit YTD", column_type="currency", align="right"),
+                ],
+                rows=rows,
+                search_placeholder="Search companies",
+                empty_message="No corporate users found.",
+            )
+
+            LOGGER.debug("Prepared %d company overview rows", len(rows))
 
         return list_view

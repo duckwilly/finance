@@ -235,7 +235,11 @@ step "Fetching historical stock prices and FX rates"
 python scripts/fetch_stock_prices.py
 
 step "Generating seed CSV data"
-python scripts/gen_seed_data.py --seed $(date +%s) --individuals "$FINAL_INDIVIDUALS" --companies "$FINAL_COMPANIES" --months "$FINAL_MONTHS"
+# Compute start month so simulation ends in current month (portable date arithmetic)
+START_YM=$(python3 -c "from datetime import date; today = date.today(); year = today.year; month = today.month - $FINAL_MONTHS + 1; 
+while month <= 0: month += 12; year -= 1
+print(f'{year}-{month:02d}')")
+python scripts/gen_seed_data.py --seed $(date +%s) --individuals "$FINAL_INDIVIDUALS" --companies "$FINAL_COMPANIES" --months "$FINAL_MONTHS" --start "$START_YM"
 
 step "Loading CSV data into MariaDB"
 python scripts/load_csvs.py

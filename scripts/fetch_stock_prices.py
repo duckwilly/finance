@@ -170,7 +170,7 @@ def write_csv_files(prices: List[Dict[str, str]], fx_rates: List[Dict[str, str]]
 def main() -> None:
     args = parse_args()
     
-    # Set default end date to today if not provided
+    # Set default end date to today if not provided, and clamp to end of current day
     end_date = args.end_date or date.today().isoformat()
     
     # Check if we need to refresh files
