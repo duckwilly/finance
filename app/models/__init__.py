@@ -10,6 +10,7 @@ from .transactions import (
     AccountOwnerType,
     AccountType,
     Category,
+    Counterparty,
     Section,
     Transaction,
     TransactionChannel,
@@ -27,10 +28,11 @@ __all__ = [
     "AccountOwnerType",
     "AccountType",
     "Category",
+    "Counterparty",
     "Section",
     "Transaction",
     "TransactionChannel",
     "TransactionDirection",
-    "PositionAgg"
-    , "UserSalaryMonthly"
+    "PositionAgg",
+    "UserSalaryMonthly",
 ]

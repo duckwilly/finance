@@ -4,8 +4,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import case, func, select, extract, tuple_
-from sqlalchemy.orm import Session
+from sqlalchemy import case, func, select, extract, tuple_, and_
+from sqlalchemy.orm import Session, aliased
 
 from app.core.logger import get_logger, timeit
 from app.models import (
@@ -13,6 +13,7 @@ from app.models import (
     AccountOwnerType,
     AccountType,
     Category,
+    Counterparty,
     Company,
     Individual,
     Membership,
@@ -428,5 +429,167 @@ class AdminService:
             )
 
             LOGGER.debug("Prepared %d company overview rows", len(rows))
+
+        return list_view
+
+    def get_transaction_overview(self, session: Session, limit: int = 500) -> ListView:
+        """Return a reusable list view model for recent transactions."""
+
+        LOGGER.debug("Collecting transaction overview data for admin dashboard")
+
+        with timeit(
+            "Transaction list loading",
+            logger=LOGGER,
+            track_db_calls=True,
+            session=session,
+            unit="transactions"
+        ) as timer:
+            latest_transactions = (
+                select(
+                    Transaction.id,
+                    Transaction.account_id,
+                    Transaction.txn_date,
+                    Transaction.posted_at,
+                    Transaction.amount,
+                    Transaction.currency,
+                    Transaction.direction,
+                    Transaction.category_id,
+                    Transaction.description,
+                    Transaction.counterparty_id,
+                    Transaction.transfer_group_id,
+                )
+                .order_by(Transaction.posted_at.desc())
+                .limit(limit)
+                .cte("latest_transactions")
+            )
+
+            account_alias = aliased(Account)
+            partner_account = aliased(Account)
+            partner_txn = aliased(Transaction)
+            owner_individual = aliased(Individual)
+            owner_company = aliased(Company)
+            partner_individual = aliased(Individual)
+            partner_company = aliased(Company)
+            category_alias = aliased(Category)
+            counterparty_alias = aliased(Counterparty)
+
+            transactions_query = (
+                select(
+                    latest_transactions.c.id.label("transaction_id"),
+                    latest_transactions.c.txn_date,
+                    latest_transactions.c.posted_at,
+                    latest_transactions.c.direction,
+                    latest_transactions.c.amount,
+                    latest_transactions.c.currency,
+                    latest_transactions.c.description,
+                    category_alias.name.label("category_name"),
+                    counterparty_alias.name.label("counterparty_name"),
+                    func.coalesce(owner_individual.name, owner_company.name).label("account_owner_name"),
+                    func.coalesce(partner_individual.name, partner_company.name).label("partner_owner_name"),
+                )
+                .select_from(latest_transactions)
+                .join(account_alias, account_alias.id == latest_transactions.c.account_id)
+                .outerjoin(
+                    owner_individual,
+                    and_(
+                        account_alias.owner_type == AccountOwnerType.USER,
+                        owner_individual.id == account_alias.owner_id,
+                    ),
+                )
+                .outerjoin(
+                    owner_company,
+                    and_(
+                        account_alias.owner_type == AccountOwnerType.ORG,
+                        owner_company.id == account_alias.owner_id,
+                    ),
+                )
+                .outerjoin(category_alias, category_alias.id == latest_transactions.c.category_id)
+                .outerjoin(counterparty_alias, counterparty_alias.id == latest_transactions.c.counterparty_id)
+                .outerjoin(
+                    partner_txn,
+                    and_(
+                        latest_transactions.c.transfer_group_id.isnot(None),
+                        partner_txn.transfer_group_id == latest_transactions.c.transfer_group_id,
+                        partner_txn.id != latest_transactions.c.id,
+                    ),
+                )
+                .outerjoin(partner_account, partner_account.id == partner_txn.account_id)
+                .outerjoin(
+                    partner_individual,
+                    and_(
+                        partner_account.owner_type == AccountOwnerType.USER,
+                        partner_individual.id == partner_account.owner_id,
+                    ),
+                )
+                .outerjoin(
+                    partner_company,
+                    and_(
+                        partner_account.owner_type == AccountOwnerType.ORG,
+                        partner_company.id == partner_account.owner_id,
+                    ),
+                )
+                .order_by(latest_transactions.c.posted_at.desc())
+            )
+
+            records = session.execute(transactions_query).all()
+
+            rows: list[ListViewRow] = []
+
+            for record in records:
+                owner_name = record.account_owner_name or "Unknown account"
+                counterparty_name = record.counterparty_name
+                partner_name = record.partner_owner_name
+
+                if record.direction == TransactionDirection.DEBIT:
+                    payer = owner_name
+                    payee = counterparty_name or partner_name or "External counterparty"
+                else:
+                    payer = counterparty_name or partner_name or "External counterparty"
+                    payee = owner_name
+
+                search_terms = [
+                    str(record.txn_date),
+                    payer,
+                    payee,
+                ]
+
+                if record.category_name:
+                    search_terms.append(record.category_name)
+                if record.description:
+                    search_terms.append(record.description)
+
+                rows.append(
+                    ListViewRow(
+                        key=str(record.transaction_id),
+                        values={
+                            "date": record.txn_date.strftime("%Y-%m-%d"),
+                            "payer": payer,
+                            "payee": payee,
+                            "amount": record.amount,
+                            "category": record.category_name or "Uncategorized",
+                            "description": record.description or "",
+                        },
+                        search_text=" ".join(filter(None, search_terms)).lower(),
+                    )
+                )
+
+            timer.set_total(len(rows))
+
+            list_view = ListView(
+                title="Recent transactions",
+                columns=[
+                    ListViewColumn(key="date", title="Date"),
+                    ListViewColumn(key="payer", title="Payer"),
+                    ListViewColumn(key="payee", title="Payee"),
+                    ListViewColumn(key="amount", title="Amount", column_type="currency", align="right"),
+                    ListViewColumn(key="category", title="Category"),
+                    ListViewColumn(key="description", title="Description"),
+                ],
+                rows=rows,
+                search_placeholder="Search transactions",
+                empty_message="No transactions found.",
+            )
+
+            LOGGER.debug("Prepared %d transaction overview rows", len(rows))
 
         return list_view
