@@ -446,6 +446,14 @@ class AdminService:
             session=session,
             unit="products",
         ) as timer:
+            # Get simulation period from transaction data
+            first_transaction_at = session.execute(select(func.min(Transaction.posted_at))).scalar_one()
+            last_transaction_at = session.execute(select(func.max(Transaction.posted_at))).scalar_one()
+            
+            # Convert to dates for price lookup
+            simulation_start_date = first_transaction_at.date() if first_transaction_at else None
+            simulation_end_date = last_transaction_at.date() if last_transaction_at else None
+
             user_positions = (
                 select(
                     PositionAgg.instrument_id.label("instrument_id"),
@@ -464,45 +472,63 @@ class AdminService:
                 .cte("user_positions")
             )
 
-            price_extents = (
-                select(
-                    PriceDaily.instrument_id.label("instrument_id"),
-                    func.min(PriceDaily.price_date).label("start_date"),
-                    func.max(PriceDaily.price_date).label("end_date"),
-                )
-                .group_by(PriceDaily.instrument_id)
-                .subquery()
-            )
-
+            # Use window functions for efficient price lookup
+            # Get the earliest price >= simulation start date
             start_prices = (
                 select(
                     PriceDaily.instrument_id.label("instrument_id"),
                     PriceDaily.close_price.label("start_price"),
+                    PriceDaily.price_date.label("start_date"),
+                    func.row_number().over(
+                        partition_by=PriceDaily.instrument_id,
+                        order_by=PriceDaily.price_date
+                    ).label("rn")
                 )
                 .select_from(PriceDaily)
-                .join(
-                    price_extents,
-                    and_(
-                        PriceDaily.instrument_id == price_extents.c.instrument_id,
-                        PriceDaily.price_date == price_extents.c.start_date,
-                    ),
+                .where(
+                    PriceDaily.price_date >= simulation_start_date
                 )
                 .subquery()
             )
 
+            # Get the latest price <= simulation end date
             end_prices = (
                 select(
                     PriceDaily.instrument_id.label("instrument_id"),
                     PriceDaily.close_price.label("end_price"),
+                    PriceDaily.price_date.label("end_date"),
+                    func.row_number().over(
+                        partition_by=PriceDaily.instrument_id,
+                        order_by=PriceDaily.price_date.desc()
+                    ).label("rn")
                 )
                 .select_from(PriceDaily)
-                .join(
-                    price_extents,
-                    and_(
-                        PriceDaily.instrument_id == price_extents.c.instrument_id,
-                        PriceDaily.price_date == price_extents.c.end_date,
-                    ),
+                .where(
+                    PriceDaily.price_date <= simulation_end_date
                 )
+                .subquery()
+            )
+
+            # Filter to get only the first row for each instrument
+            start_prices_filtered = (
+                select(
+                    start_prices.c.instrument_id,
+                    start_prices.c.start_price,
+                    start_prices.c.start_date,
+                )
+                .select_from(start_prices)
+                .where(start_prices.c.rn == 1)
+                .subquery()
+            )
+
+            end_prices_filtered = (
+                select(
+                    end_prices.c.instrument_id,
+                    end_prices.c.end_price,
+                    end_prices.c.end_date,
+                )
+                .select_from(end_prices)
+                .where(end_prices.c.rn == 1)
                 .subquery()
             )
 
@@ -511,21 +537,33 @@ class AdminService:
                     Instrument.id.label("instrument_id"),
                     Instrument.symbol,
                     Instrument.name,
-                    start_prices.c.start_price,
-                    end_prices.c.end_price,
+                    start_prices_filtered.c.start_price,
+                    start_prices_filtered.c.start_date,
+                    end_prices_filtered.c.end_price,
+                    end_prices_filtered.c.end_date,
                     user_positions.c.total_qty,
                     user_positions.c.market_value,
                 )
                 .select_from(user_positions)
                 .join(Instrument, Instrument.id == user_positions.c.instrument_id)
-                .outerjoin(start_prices, start_prices.c.instrument_id == Instrument.id)
-                .outerjoin(end_prices, end_prices.c.instrument_id == Instrument.id)
+                .outerjoin(start_prices_filtered, start_prices_filtered.c.instrument_id == Instrument.id)
+                .outerjoin(end_prices_filtered, end_prices_filtered.c.instrument_id == Instrument.id)
                 .order_by(Instrument.symbol)
             )
 
             records = session.execute(holdings_query).all()
 
             rows: list[ListViewRow] = []
+
+            # Get the actual dates from the first record to use in column headers
+            start_date_str = None
+            end_date_str = None
+            if records:
+                first_record = records[0]
+                if first_record.start_date:
+                    start_date_str = first_record.start_date.strftime("%d/%m/%y")
+                if first_record.end_date:
+                    end_date_str = first_record.end_date.strftime("%d/%m/%y")
 
             for record in records:
                 start_price = (
@@ -571,19 +609,23 @@ class AdminService:
 
             timer.set_total(len(rows))
 
+            # Format column titles with dates
+            start_price_title = f"Price {start_date_str}" if start_date_str else "Start price"
+            end_price_title = f"Price {end_date_str}" if end_date_str else "End price"
+
             list_view = ListView(
                 title="Stock holdings",
                 columns=[
                     ListViewColumn(key="product", title="Product"),
                     ListViewColumn(
                         key="start_price",
-                        title="Start price",
+                        title=start_price_title,
                         column_type="currency",
                         align="right",
                     ),
                     ListViewColumn(
                         key="end_price",
-                        title="End price",
+                        title=end_price_title,
                         column_type="currency",
                         align="right",
                     ),
