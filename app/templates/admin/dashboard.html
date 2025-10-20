@@ -59,7 +59,7 @@
         </div>
 
         <div class="details__panel">
-          <h2 class="details__title">Stock holdings</h2>
+          {{ list_view.render_list_view('stock-holdings', stock_holdings_list) }}
         </div>
       </section>
     </main>

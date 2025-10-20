@@ -16,7 +16,7 @@ from .transactions import (
     TransactionChannel,
     TransactionDirection,
 )
-from .stocks import PositionAgg
+from .stocks import Instrument, InstrumentType, PositionAgg, PriceDaily
 from .salary import UserSalaryMonthly
 
 __all__ = [
@@ -33,6 +33,9 @@ __all__ = [
     "Transaction",
     "TransactionChannel",
     "TransactionDirection",
+    "Instrument",
+    "InstrumentType",
     "PositionAgg",
+    "PriceDaily",
     "UserSalaryMonthly",
 ]
