@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Admin Dashboard • Finance Platform</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+    <script src="{{ url_for('static', path='js/admin-charts.js') }}?v={{ range(1000, 9999) | random }}" defer></script>
     <script src="{{ url_for('static', path='js/list-view.js') }}?v={{ range(1000, 9999) | random }}" defer></script>
   </head>
   <body class="page">
@@ -47,18 +49,91 @@
 
       <section class="details">
         <div class="details__panel">
+          <div
+            class="chart-card"
+            data-chart-type="pie"
+            data-chart-config='{{ charts.individuals_income.model_dump() | tojson }}'
+          >
+            <div class="chart-card__header">
+              <h3 class="chart-card__title">{{ charts.individuals_income.title }}</h3>
+              {% if charts.individuals_income.hint %}
+              <p class="chart-card__hint">{{ charts.individuals_income.hint }}</p>
+              {% endif %}
+            </div>
+            <div class="chart-card__canvas">
+              <canvas aria-label="{{ charts.individuals_income.title }}" role="img"></canvas>
+            </div>
+          </div>
           {{ list_view.render_list_view('individual-users', individuals_list) }}
         </div>
         <div class="details__panel">
+          <div
+            class="chart-card"
+            data-chart-type="pie"
+            data-chart-config='{{ charts.companies_profit_margin.model_dump() | tojson }}'
+          >
+            <div class="chart-card__header">
+              <h3 class="chart-card__title">{{ charts.companies_profit_margin.title }}</h3>
+              {% if charts.companies_profit_margin.hint %}
+              <p class="chart-card__hint">{{ charts.companies_profit_margin.hint }}</p>
+              {% endif %}
+            </div>
+            <div class="chart-card__canvas">
+              <canvas aria-label="{{ charts.companies_profit_margin.title }}" role="img"></canvas>
+            </div>
+          </div>
           {{ list_view.render_list_view('corporate-users', companies_list) }}
         </div>
-      </section>  
+      </section>
       <section class="details">
         <div class="details__panel">
+          <div
+            class="chart-card"
+            data-chart-type="pie"
+            data-chart-config='{{ charts.transactions_amounts.model_dump() | tojson }}'
+          >
+            <div class="chart-card__header">
+              <h3 class="chart-card__title">{{ charts.transactions_amounts.title }}</h3>
+              {% if charts.transactions_amounts.hint %}
+              <p class="chart-card__hint">{{ charts.transactions_amounts.hint }}</p>
+              {% endif %}
+            </div>
+            <div class="chart-card__canvas">
+              <canvas aria-label="{{ charts.transactions_amounts.title }}" role="img"></canvas>
+            </div>
+          </div>
           {{ list_view.render_list_view('transactions', transactions_list) }}
         </div>
 
         <div class="details__panel">
+          <div
+            class="chart-card"
+            data-chart-type="line"
+            data-chart-config='{{ charts.stock_price_trend.model_dump() | tojson }}'
+          >
+            <div class="chart-card__header">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
+                <div style="flex: 1;">
+                  <h3 class="chart-card__title">{{ charts.stock_price_trend.title }}</h3>
+                  {% if charts.stock_price_trend.hint %}
+                  <p class="chart-card__hint">{{ charts.stock_price_trend.hint }}</p>
+                  {% endif %}
+                </div>
+                <div style="min-width: 200px;">
+                  <select 
+                    id="stock-selector" 
+                    class="stock-selector"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-soft, #e0e0e0); border-radius: 4px; background: white; font-size: 0.875rem; color: var(--text-primary, #1a1a1a);"
+                  >
+                    <option value="">Select a stock...</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div class="chart-card__canvas">
+              <canvas aria-label="{{ charts.stock_price_trend.title }}" role="img"></canvas>
+            </div>
+          </div>
           {{ list_view.render_list_view('stock-holdings', stock_holdings_list) }}
         </div>
       </section>

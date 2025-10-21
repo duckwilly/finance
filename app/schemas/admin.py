@@ -50,3 +50,31 @@ class ListView(BaseModel):
     rows: list[ListViewRow]
     search_placeholder: str = "Search"
     empty_message: str = "No records found."
+
+
+class PieChartData(BaseModel):
+    """Simple representation for pie or doughnut charts."""
+
+    title: str
+    labels: list[str]
+    values: list[float]
+    hint: str | None = None
+
+
+class LineChartData(BaseModel):
+    """Representation of a single-series line chart."""
+
+    title: str
+    labels: list[str]
+    values: list[float]
+    series_label: str
+    hint: str | None = None
+
+
+class DashboardCharts(BaseModel):
+    """Container for admin dashboard chart payloads."""
+
+    individuals_income: PieChartData
+    companies_profit_margin: PieChartData
+    transactions_amounts: PieChartData
+    stock_price_trend: LineChartData
