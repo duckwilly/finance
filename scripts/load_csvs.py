@@ -4,7 +4,8 @@ import os
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Iterator, Optional, Sequence, Tuple
+from itertools import islice
+from typing import Dict, Iterable, Iterator, Optional, Sequence, Tuple, TypeVar, Union
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -83,30 +84,47 @@ def count_rows(name: str) -> int:
             return 0
         return sum(1 for _ in f)
 
-def upsert_user(cur, name, email, job_title=None):
-    # Unique by email (schema has UNIQUE email)
-    cur.execute("SELECT id FROM `user` WHERE email=%s", (email,))
-    row = cur.fetchone()
-    if row:
-        return row["id"]
-    cur.execute("INSERT INTO `user`(name, email, job_title) VALUES (%s,%s,%s)", (name, email, job_title))
-    return cur.lastrowid
+T = TypeVar("T")
 
-def upsert_org(cur, name):
-    # No unique key on name; emulate idempotency by lookup
-    cur.execute("SELECT id FROM `org` WHERE name=%s", (name,))
-    row = cur.fetchone()
-    if row:
-        return row["id"]
-    cur.execute("INSERT INTO `org`(name) VALUES (%s)", (name,))
-    return cur.lastrowid
 
-def get_section_id(cur, section_name):
-    cur.execute("SELECT id FROM section WHERE name=%s", (section_name,))
-    r = cur.fetchone()
-    if not r:
-        raise ValueError(f"Unknown section: {section_name}")
-    return r["id"]
+def chunked(iterable: Union[Sequence[T], Iterable[T]], size: int) -> Iterator[list[T]]:
+    if size <= 0:
+        raise ValueError("size must be positive")
+    if isinstance(iterable, Sequence):
+        for start in range(0, len(iterable), size):
+            yield list(iterable[start : start + size])
+        return
+
+    iterator = iter(iterable)
+    while True:
+        chunk = list(islice(iterator, size))
+        if not chunk:
+            break
+        yield chunk
+
+
+def executemany_in_chunks(cur, sql: str, rows: Union[Sequence[Tuple], Iterable[Tuple]], batch_size: int = 1000) -> None:
+    for chunk_rows in chunked(rows, batch_size):
+        cur.executemany(sql, chunk_rows)
+
+
+def insertmany_with_ids(
+    cur,
+    sql: str,
+    rows: Union[Sequence[Tuple], Iterable[Tuple]],
+    batch_size: int = 1000,
+) -> list[int]:
+    inserted_ids: list[int] = []
+    for chunk_rows in chunked(rows, batch_size):
+        cur.executemany(sql, chunk_rows)
+        last_id = cur.lastrowid
+        if last_id is None:
+            raise RuntimeError("Unable to determine lastrowid after batch insert")
+        chunk_size = len(chunk_rows)
+        first_id = last_id - chunk_size + 1
+        inserted_ids.extend(range(first_id, last_id + 1))
+    return inserted_ids
+
 
 CATEGORY_CACHE: Dict[Tuple[int, str], int] = {}
 
@@ -131,36 +149,6 @@ def get_or_create_category(cur, section_id, category_name):
         (section_id, category_name),
     )
     CATEGORY_CACHE[key] = cur.lastrowid
-    return cur.lastrowid
-
-def upsert_account(cur, owner_type, owner_id, acct):
-    # Try to find an existing account by owner + name + type (safe for seed)
-    cur.execute("""
-        SELECT id FROM account
-        WHERE owner_type=%s AND owner_id=%s AND type=%s AND name<=>%s
-    """, (owner_type, owner_id, acct["type"], acct["name"] or None))
-    r = cur.fetchone()
-    if r:
-        return r["id"]
-    cur.execute("""
-        INSERT INTO account (owner_type, owner_id, type, currency, name, iban, opened_at)
-        VALUES (%s,%s,%s,%s,%s,%s,%s)
-    """, (owner_type, owner_id, acct["type"], acct["currency"], acct["name"] or None,
-          acct["iban"] or None, acct["opened_at"]))
-    return cur.lastrowid
-
-def ensure_membership(cur, party_type, party_id, account_id, role):
-    cur.execute("""
-        SELECT id FROM account_membership
-        WHERE party_type=%s AND party_id=%s AND account_id=%s
-    """, (party_type, party_id, account_id))
-    r = cur.fetchone()
-    if r:
-        return r["id"]
-    cur.execute("""
-        INSERT INTO account_membership(party_type, party_id, account_id, role)
-        VALUES (%s,%s,%s,%s)
-    """, (party_type, party_id, account_id, role))
     return cur.lastrowid
 
 COUNTERPARTY_CACHE: Dict[Tuple[str, str, str], int] = {}
@@ -192,40 +180,6 @@ def get_or_create_counterparty(cur, name, account_ref, bic, country_code=None):
     COUNTERPARTY_CACHE[key] = cur.lastrowid
     return cur.lastrowid
 
-def upsert_instrument(cur, symbol, mic, name, typ, currency, isin):
-    cur.execute("SELECT id FROM instrument WHERE symbol=%s AND mic<=>%s", (symbol, mic or None))
-    r = cur.fetchone()
-    if r:
-        return r["id"]
-    cur.execute("""
-        INSERT INTO instrument(symbol, mic, name, type, currency, isin)
-        VALUES (%s,%s,%s,%s,%s,%s)
-    """, (symbol, mic or None, name, typ, currency, isin or None))
-    return cur.lastrowid
-
-def get_holding(cur, account_id, instrument_id):
-    cur.execute("""
-        SELECT id, qty, avg_cost FROM holding
-        WHERE account_id=%s AND instrument_id=%s
-    """, (account_id, instrument_id))
-    return cur.fetchone()
-
-def ensure_holding(cur, account_id, instrument_id):
-    h = get_holding(cur, account_id, instrument_id)
-    if h:
-        return h
-    cur.execute("""
-        INSERT INTO holding(account_id, instrument_id, qty, avg_cost)
-        VALUES (%s,%s,0,0)
-    """, (account_id, instrument_id))
-    return {"id": cur.lastrowid, "qty": 0.0, "avg_cost": 0.0}
-
-def insert_lot(cur, holding_id, trade_id, qty, cost_basis):
-    cur.execute("""
-        INSERT INTO lot(holding_id, trade_id, qty, cost_basis)
-        VALUES (%s,%s,%s,%s)
-    """, (holding_id, trade_id, qty, cost_basis))
-
 def load_users_orgs_accounts_and_memberships():
     users = read_rows("users.csv")
     orgs  = read_rows("orgs.csv")
@@ -237,24 +191,86 @@ def load_users_orgs_accounts_and_memberships():
 
     with conn() as c:
         cur = c.cursor()
-
         # users
+        cur.execute("SELECT id, email FROM `user`")
+        existing_users = {row["email"]: row["id"] for row in cur.fetchall()}
+        pending_user_rows: list[tuple] = []
+        pending_user_emails: list[str] = []
+        pending_user_exts: Dict[str, list[str]] = {}
         for u in users:
-            uid = upsert_user(cur, u["name"], u["email"], u.get("job_title"))
-            user_map[u["ext_id"]] = uid
+            email = u["email"]
+            uid = existing_users.get(email)
+            if uid:
+                user_map[u["ext_id"]] = uid
+                continue
+            ext_list = pending_user_exts.setdefault(email, [])
+            if ext_list:
+                ext_list.append(u["ext_id"])
+                continue
+            ext_list.append(u["ext_id"])
+            pending_user_rows.append((u["name"], email, u.get("job_title")))
+            pending_user_emails.append(email)
+
+        if pending_user_rows:
+            inserted = insertmany_with_ids(
+                cur,
+                "INSERT INTO `user`(name, email, job_title) VALUES (%s,%s,%s)",
+                ((name, email, job or None) for name, email, job in pending_user_rows),
+            )
+            for email, new_id in zip(pending_user_emails, inserted):
+                existing_users[email] = new_id
+                for ext in pending_user_exts[email]:
+                    user_map[ext] = new_id
 
         # orgs
+        cur.execute("SELECT id, name FROM org")
+        existing_orgs = {row["name"]: row["id"] for row in cur.fetchall()}
+        pending_org_rows: list[tuple] = []
+        pending_org_names: list[str] = []
+        pending_org_exts: Dict[str, list[str]] = {}
         for o in orgs:
-            oid = upsert_org(cur, o["name"])
-            org_map[o["ext_id"]] = oid
+            name = o["name"]
+            oid = existing_orgs.get(name)
+            if oid:
+                org_map[o["ext_id"]] = oid
+                continue
+            ext_list = pending_org_exts.setdefault(name, [])
+            if ext_list:
+                ext_list.append(o["ext_id"])
+                continue
+            ext_list.append(o["ext_id"])
+            pending_org_rows.append((name,))
+            pending_org_names.append(name)
+
+        if pending_org_rows:
+            inserted_orgs = insertmany_with_ids(
+                cur,
+                "INSERT INTO org(name) VALUES (%s)",
+                pending_org_rows,
+            )
+            for name, new_id in zip(pending_org_names, inserted_orgs):
+                existing_orgs[name] = new_id
+                for ext in pending_org_exts[name]:
+                    org_map[ext] = new_id
 
         # accounts
+        cur.execute("SELECT id, owner_type, owner_id, type, name FROM account")
+        existing_accounts = {
+            (row["owner_type"], row["owner_id"], row["type"], row["name"] or None): row["id"]
+            for row in cur.fetchall()
+        }
+        pending_accounts: list[tuple] = []
+        pending_account_keys: list[tuple] = []
+        pending_account_exts: Dict[tuple, list[str]] = {}
+
         for a in accts:
             owner_type = a["owner_type"]
-            owner_ext  = a["owner_ext_id"]
+            owner_ext = a["owner_ext_id"]
 
             if owner_type not in ("user", "org"):
-                raise ValueError(f"Unknown owner_type '{owner_type}' in accounts.csv for ext_id {a['ext_id']}")
+                raise ValueError(
+                    f"Unknown owner_type '{owner_type}' in accounts.csv for ext_id {a['ext_id']}"
+                )
 
             if a["type"] not in ALLOWED_ACCOUNT_TYPES:
                 raise ValueError(
@@ -263,22 +279,61 @@ def load_users_orgs_accounts_and_memberships():
                 )
 
             try:
-                if owner_type == "user":
-                    owner_id = user_map[owner_ext]
-                else:
-                    owner_id = org_map[owner_ext]
+                owner_id = user_map[owner_ext] if owner_type == "user" else org_map[owner_ext]
             except KeyError as exc:
                 raise ValueError(
                     f"Account owner reference '{owner_ext}' (type {owner_type}) not found while loading accounts"
                 ) from exc
 
-            aid = upsert_account(cur, owner_type, owner_id, a)
-            acct_map[a["ext_id"]] = aid
+            name = a.get("name") or None
+            key = (owner_type, owner_id, a["type"], name)
+            existing_id = existing_accounts.get(key)
+            if existing_id:
+                acct_map[a["ext_id"]] = existing_id
+                continue
+
+            ext_list = pending_account_exts.setdefault(key, [])
+            if ext_list:
+                ext_list.append(a["ext_id"])
+                continue
+
+            ext_list.append(a["ext_id"])
+            pending_accounts.append(
+                (
+                    owner_type,
+                    owner_id,
+                    a["type"],
+                    a["currency"],
+                    name,
+                    a.get("iban") or None,
+                    a.get("opened_at") or None,
+                )
+            )
+            pending_account_keys.append(key)
+
+        if pending_accounts:
+            inserted_accounts = insertmany_with_ids(
+                cur,
+                """
+                INSERT INTO account (owner_type, owner_id, type, currency, name, iban, opened_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """,
+                pending_accounts,
+            )
+            for key, new_id in zip(pending_account_keys, inserted_accounts):
+                existing_accounts[key] = new_id
+                for ext in pending_account_exts[key]:
+                    acct_map[ext] = new_id
 
         # memberships
+        cur.execute("SELECT party_type, party_id, account_id FROM account_membership")
+        existing_memberships = {
+            (row["party_type"], row["party_id"], row["account_id"]) for row in cur.fetchall()
+        }
+        pending_memberships: list[tuple] = []
         for m in mems:
             party_type = m["party_type"]
-            party_ext  = m["party_ext_id"]
+            party_ext = m["party_ext_id"]
             if party_type == "user":
                 try:
                     party_id = user_map[party_ext]
@@ -298,9 +353,26 @@ def load_users_orgs_accounts_and_memberships():
                 raise ValueError(
                     f"Membership references unknown account ext_id '{m['account_ext_id']}'"
                 ) from exc
-            ensure_membership(cur, party_type, party_id, account_id, m["role"])
+
+            key = (party_type, party_id, account_id)
+            if key in existing_memberships:
+                continue
+
+            existing_memberships.add(key)
+            pending_memberships.append((party_type, party_id, account_id, m["role"]))
+
+        if pending_memberships:
+            executemany_in_chunks(
+                cur,
+                """
+                INSERT INTO account_membership(party_type, party_id, account_id, role)
+                VALUES (%s,%s,%s,%s)
+                """,
+                pending_memberships,
+            )
 
         # employer memberships (user -> org)
+        employment_rows: list[tuple] = []
         for e in employment:
             try:
                 uid = user_map[e["user_ext_id"]]
@@ -311,12 +383,7 @@ def load_users_orgs_accounts_and_memberships():
             except KeyError as exc:
                 raise ValueError(f"Employment references unknown org '{e['org_ext_id']}'") from exc
 
-            cur.execute(
-                """
-                INSERT INTO membership(user_id, org_id, role, is_primary, start_date, end_date)
-                VALUES (%s,%s,%s,%s,%s,%s)
-                ON DUPLICATE KEY UPDATE role=VALUES(role), is_primary=VALUES(is_primary), start_date=VALUES(start_date), end_date=VALUES(end_date)
-                """,
+            employment_rows.append(
                 (
                     uid,
                     oid,
@@ -324,7 +391,22 @@ def load_users_orgs_accounts_and_memberships():
                     1 if str(e.get("is_primary")).lower() in ("1", "true", "t", "yes") else 0,
                     e.get("start_date") or None,
                     e.get("end_date") or None,
-                ),
+                )
+            )
+
+        if employment_rows:
+            executemany_in_chunks(
+                cur,
+                """
+                INSERT INTO membership(user_id, org_id, role, is_primary, start_date, end_date)
+                VALUES (%s,%s,%s,%s,%s,%s)
+                ON DUPLICATE KEY UPDATE
+                  role=VALUES(role),
+                  is_primary=VALUES(is_primary),
+                  start_date=VALUES(start_date),
+                  end_date=VALUES(end_date)
+                """,
+                employment_rows,
             )
 
     return user_map, org_map, acct_map
@@ -333,40 +415,87 @@ def load_instruments_prices_fx():
     insts = read_rows("instruments.csv")
     prices = read_rows("price_daily.csv")
     fx = read_rows("fx_rate_daily.csv")
-    inst_map = {}
+    inst_map: Dict[str, int] = {}
 
     with conn() as c:
         cur = c.cursor()
-        for ins in insts:
-            iid = upsert_instrument(
-                cur,
-                ins["symbol"],
-                ins.get("mic"),
-                ins["name"],
-                ins["type"],
-                ins["currency"],
-                ins.get("isin"),
-            )
-            inst_map[ins["ext_id"]] = iid
 
-        # prices (optional)
+        cur.execute("SELECT id, symbol, mic FROM instrument")
+        existing_instruments = {
+            (row["symbol"], row["mic"] or None): row["id"] for row in cur.fetchall()
+        }
+        pending_instruments: list[tuple] = []
+        pending_inst_keys: list[tuple[str, Optional[str]]] = []
+        pending_inst_exts: Dict[tuple, list[str]] = {}
+
+        for ins in insts:
+            key = (ins["symbol"], ins.get("mic") or None)
+            iid = existing_instruments.get(key)
+            if iid:
+                inst_map[ins["ext_id"]] = iid
+                continue
+
+            ext_list = pending_inst_exts.setdefault(key, [])
+            if ext_list:
+                ext_list.append(ins["ext_id"])
+                continue
+
+            ext_list.append(ins["ext_id"])
+            pending_instruments.append(
+                (
+                    ins["symbol"],
+                    ins.get("mic") or None,
+                    ins["name"],
+                    ins["type"],
+                    ins["currency"],
+                    ins.get("isin") or None,
+                )
+            )
+            pending_inst_keys.append(key)
+
+        if pending_instruments:
+            inserted_instruments = insertmany_with_ids(
+                cur,
+                """
+                INSERT INTO instrument(symbol, mic, name, type, currency, isin)
+                VALUES (%s,%s,%s,%s,%s,%s)
+                """,
+                pending_instruments,
+            )
+            for key, new_id in zip(pending_inst_keys, inserted_instruments):
+                existing_instruments[key] = new_id
+                for ext in pending_inst_exts[key]:
+                    inst_map[ext] = new_id
+
+        price_rows: list[tuple] = []
         for pr in prices:
             iid = inst_map.get(pr["instrument_ext_id"])
             if not iid:
                 continue
-            cur.execute("""
+            price_rows.append((iid, pr["price_date"], pr["close_price"], pr["currency"]))
+
+        if price_rows:
+            executemany_in_chunks(
+                cur,
+                """
                 INSERT INTO price_daily(instrument_id, price_date, close_price, currency)
                 VALUES (%s,%s,%s,%s)
                 ON DUPLICATE KEY UPDATE close_price=VALUES(close_price), currency=VALUES(currency)
-            """, (iid, pr["price_date"], pr["close_price"], pr["currency"]))
+                """,
+                price_rows,
+            )
 
-        # fx (optional)
-        for r in fx:
-            cur.execute("""
+        fx_rows = [(r["base"], r["quote"], r["rate_date"], r["rate"]) for r in fx]
+        if fx_rows:
+            executemany_in_chunks(
+                cur,
+                """
                 INSERT INTO fx_rate_daily(base, quote, rate_date, rate)
                 VALUES (%s,%s,%s,%s)
                 ON DUPLICATE KEY UPDATE rate=VALUES(rate)
-            """, (r["base"], r["quote"], r["rate_date"], r["rate"]))
+                """,
+                fx_rows,
+            )
 
     return inst_map
 
@@ -588,6 +717,46 @@ def load_trades_and_holdings(acct_map, inst_map):
 
     with conn() as c:
         cur = c.cursor()
+        cur.execute("SELECT id, account_id, instrument_id, qty, avg_cost FROM holding")
+        holding_state: Dict[Tuple[int, int], Dict[str, Union[float, int]]] = {
+            (row["account_id"], row["instrument_id"]): {
+                "id": row["id"],
+                "qty": float(row["qty"]),
+                "avg_cost": float(row["avg_cost"]),
+            }
+            for row in cur.fetchall()
+        }
+
+        def get_or_create_holding(account_id: int, instrument_id: int) -> Dict[str, Union[float, int]]:
+            key = (account_id, instrument_id)
+            holding = holding_state.get(key)
+            if holding:
+                return holding
+            new_id = insertmany_with_ids(
+                cur,
+                "INSERT INTO holding(account_id, instrument_id, qty, avg_cost) VALUES (%s,%s,0,0)",
+                [(account_id, instrument_id)],
+                batch_size=1,
+            )[0]
+            holding = {"id": new_id, "qty": 0.0, "avg_cost": 0.0}
+            holding_state[key] = holding
+            return holding
+
+        trade_insert_stmt = """
+            INSERT INTO trade(account_id, instrument_id, trade_time, side, qty, price, fees, tax, currency, settle_dt)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """
+        lot_insert_stmt = """
+            INSERT INTO lot(holding_id, trade_id, qty, cost_basis)
+            VALUES (%s,%s,%s,%s)
+        """
+        trade_batch_size = 1000
+        commit_batch_size = 10000
+        rows_since_commit = 0
+        trade_batch: list[tuple] = []
+        trade_effects: list[tuple[int, float, float, float, float]] = []
+        processed_trades = 0
+
         with timeit(
             "trade import",
             logger=logger,
@@ -596,8 +765,48 @@ def load_trades_and_holdings(acct_map, inst_map):
         ) as timer, progress_manager.task(
             "Processing trades", total=len(trades), unit="rows"
         ) as task:
+            def flush_trade_batch(*, final: bool = False) -> None:
+                nonlocal rows_since_commit
+                if not trade_batch:
+                    return
+                trade_ids = insertmany_with_ids(
+                    cur,
+                    trade_insert_stmt,
+                    trade_batch,
+                    batch_size=trade_batch_size,
+                )
+                updates = [(new_qty, new_avg, holding_id) for holding_id, new_qty, new_avg, _, _ in trade_effects]
+                lots = [
+                    (holding_id, trade_id, lot_qty, lot_cost)
+                    for trade_id, (holding_id, _, _, lot_qty, lot_cost) in zip(trade_ids, trade_effects)
+                ]
+                if updates:
+                    executemany_in_chunks(
+                        cur,
+                        "UPDATE holding SET qty=%s, avg_cost=%s WHERE id=%s",
+                        updates,
+                        batch_size=trade_batch_size,
+                    )
+                if lots:
+                    executemany_in_chunks(
+                        cur,
+                        lot_insert_stmt,
+                        lots,
+                        batch_size=trade_batch_size,
+                    )
+                processed_now = len(trade_ids)
+                processed_trades += processed_now
+                timer.add(processed_now)
+                task.advance(processed_now)
+                rows_since_commit += processed_now
+                trade_batch.clear()
+                trade_effects.clear()
+                if rows_since_commit >= commit_batch_size or final:
+                    c.commit()
+                    rows_since_commit = 0
+                    logger.info("Committed %s trades", processed_trades)
+
             for tr in trades:
-                timer.add()
                 try:
                     account_id = acct_map[tr["account_ext_id"]]
                 except KeyError as exc:
@@ -640,26 +849,17 @@ def load_trades_and_holdings(acct_map, inst_map):
                 settle_dt  = tr.get("settle_dt") or None
                 currency   = tr.get("currency") or "EUR"
 
-                # Insert trade
-                cur.execute(
-                    """
-                    INSERT INTO trade(account_id, instrument_id, trade_time, side, qty, price, fees, tax, currency, settle_dt)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """,
-                    (account_id, instrument_id, trade_time, side, qty, price, fees, tax, currency, settle_dt),
-                )
-                trade_id = cur.lastrowid
-
-                # Update holding (WAC method)
-                h = ensure_holding(cur, account_id, instrument_id)
-                h_id, h_qty, h_avg = h["id"], float(h["qty"]), float(h["avg_cost"])
+                holding = get_or_create_holding(account_id, instrument_id)
+                h_id = int(holding["id"])
+                h_qty = float(holding["qty"])
+                h_avg = float(holding["avg_cost"])
 
                 if side == "BUY":
                     buy_cost = qty * price + fees + tax
                     new_qty = h_qty + qty
                     new_avg = (h_qty * h_avg + buy_cost) / new_qty if new_qty else 0.0
-                    cur.execute("UPDATE holding SET qty=%s, avg_cost=%s WHERE id=%s", (new_qty, new_avg, h_id))
-                    insert_lot(cur, h_id, trade_id, qty, buy_cost)
+                    lot_qty = qty
+                    lot_cost = buy_cost
                 elif side == "SELL":
                     if qty > h_qty + 1e-9:
                         logger.error(
@@ -670,44 +870,62 @@ def load_trades_and_holdings(acct_map, inst_map):
                             instrument_id,
                         )
                         raise ValueError(f"Sell qty {qty} exceeds holding qty {h_qty}")
-                    # Under WAC, avg stays constant; reduce qty and record a negative lot at WAC basis
                     new_qty = h_qty - qty
-                    cur.execute("UPDATE holding SET qty=%s WHERE id=%s", (new_qty, h_id))
-                    sell_basis = qty * h_avg
-                    insert_lot(cur, h_id, trade_id, -qty, -sell_basis)
+                    new_avg = h_avg
+                    lot_qty = -qty
+                    lot_cost = -(qty * h_avg)
                 else:
                     raise ValueError(f"Unknown side {side}")
-                task.advance()
+
+                holding["qty"] = new_qty
+                holding["avg_cost"] = new_avg
+
+                trade_batch.append(
+                    (account_id, instrument_id, trade_time, side, qty, price, fees, tax, currency, settle_dt)
+                )
+                trade_effects.append((h_id, new_qty, new_avg, lot_qty, lot_cost))
+
+                if len(trade_batch) >= trade_batch_size:
+                    flush_trade_batch()
+
+            flush_trade_batch(final=True)
 
 def load_user_salary_monthly(user_map, org_map):
     salaries = read_rows("user_salary_monthly.csv")
     if not salaries:
         return 0
-    inserted = 0
     with conn() as c:
         cur = c.cursor()
         logger.info("Loading %s user_salary_monthly rows…", len(salaries))
+        rows: list[tuple] = []
         for r in salaries:
             user_ext = r["user_ext_id"]
             org_ext = r["org_ext_id"]
-            year = int(r["year"])
-            month = int(r["month"])
-            amount = r["salary_amount"]
             try:
                 uid = user_map[user_ext]
                 oid = org_map[org_ext]
             except KeyError:
                 continue
-            cur.execute(
+            rows.append(
+                (
+                    uid,
+                    oid,
+                    int(r["year"]),
+                    int(r["month"]),
+                    r["salary_amount"],
+                )
+            )
+        if rows:
+            executemany_in_chunks(
+                cur,
                 """
                 INSERT INTO user_salary_monthly(user_id, employer_org_id, year, month, salary_amount)
                 VALUES (%s,%s,%s,%s,%s)
                 ON DUPLICATE KEY UPDATE salary_amount=VALUES(salary_amount)
                 """,
-                (uid, oid, year, month, amount),
+                rows,
             )
-            inserted += 1
-    return inserted
+    return len(rows)
 
 
 def main():
