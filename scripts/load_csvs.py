@@ -117,12 +117,11 @@ def insertmany_with_ids(
     inserted_ids: list[int] = []
     for chunk_rows in chunked(rows, batch_size):
         cur.executemany(sql, chunk_rows)
-        last_id = cur.lastrowid
-        if last_id is None:
+        first_id = cur.lastrowid
+        if not first_id:
             raise RuntimeError("Unable to determine lastrowid after batch insert")
         chunk_size = len(chunk_rows)
-        first_id = last_id - chunk_size + 1
-        inserted_ids.extend(range(first_id, last_id + 1))
+        inserted_ids.extend(range(first_id, first_id + chunk_size))
     return inserted_ids
 
 
