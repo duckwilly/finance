@@ -393,7 +393,37 @@ def load_transactions(acct_map):
 
         transfer_refs = set()
         processed = 0
-        batch_size = 5000
+        insert_batch_size = 1000
+        commit_batch_size = 20000
+        rows_since_commit = 0
+
+        insert_stmt = """
+            INSERT INTO `transaction`(
+              account_id, posted_at, txn_date, amount, currency, direction,
+              section_id, category_id, channel, description,
+              counterparty_id, transfer_group_id, ext_reference
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """
+
+        def flush_batch(*, final: bool = False) -> None:
+            nonlocal processed, rows_since_commit
+            if not batch:
+                return
+            cur.executemany(insert_stmt, batch)
+            inserted_now = len(batch)
+            processed += inserted_now
+            rows_since_commit += inserted_now
+            timer.add(inserted_now)
+            task.advance(inserted_now)
+            batch.clear()
+
+            if rows_since_commit >= commit_batch_size or final:
+                c.commit()
+                rows_since_commit = 0
+                logger.info("Committed %s transactions", processed)
+
+        batch: list[tuple] = []
 
         with timeit(
             "transaction import",
@@ -404,8 +434,6 @@ def load_transactions(acct_map):
             "Inserting transactions", total=total_rows, unit="rows"
         ) as task:
             for t in stream_rows("transactions.csv"):
-                processed += 1
-                timer.add()
                 try:
                     account_id = acct_map[t["account_ext_id"]]
                 except KeyError as exc:
@@ -469,15 +497,7 @@ def load_transactions(acct_map):
                 if any([cp_name, cp_acct, cp_bic]):
                     counterparty_id = get_or_create_counterparty(cur, cp_name, cp_acct, cp_bic)
 
-                cur.execute(
-                    """
-                    INSERT INTO `transaction`(
-                      account_id, posted_at, txn_date, amount, currency, direction,
-                      section_id, category_id, channel, description,
-                      counterparty_id, transfer_group_id, ext_reference
-                    )
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """,
+                batch.append(
                     (
                         account_id,
                         posted_at,
@@ -492,16 +512,16 @@ def load_transactions(acct_map):
                         counterparty_id,
                         transfer_ref,
                         ext_ref,
-                    ),
+                    )
                 )
 
                 if transfer_ref:
                     transfer_refs.add(transfer_ref)
 
-                if processed % batch_size == 0:
-                    c.commit()
-                    logger.info("Committed %s transactions", processed)
-                task.advance()
+                if len(batch) >= insert_batch_size:
+                    flush_batch()
+
+        flush_batch(final=True)
 
         # ensure final batch is committed before creating transfer links
         c.commit()
