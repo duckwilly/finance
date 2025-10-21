@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Generator
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.logger import get_logger
@@ -66,3 +66,42 @@ async def read_dashboard(
         name="admin/dashboard.html",
         context=context,
     )
+
+
+@router.get(
+    "/api/stocks",
+    summary="Get available stocks",
+)
+async def get_available_stocks(
+    admin_service: AdminService = Depends(get_admin_service),
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    """Return a list of all available stocks with price data."""
+    
+    stocks = admin_service.get_available_stocks(session)
+    return JSONResponse(content={"stocks": stocks})
+
+
+@router.get(
+    "/api/stocks/{instrument_id}/prices",
+    summary="Get stock price data",
+)
+async def get_stock_prices(
+    instrument_id: int,
+    admin_service: AdminService = Depends(get_admin_service),
+    session: Session = Depends(get_db_session),
+) -> JSONResponse:
+    """Return price series for a specific stock."""
+    
+    series, label, hint = admin_service.get_stock_price_data(session, instrument_id)
+    
+    labels = [point[0] for point in series]
+    values = [point[1] for point in series]
+    
+    return JSONResponse(content={
+        "title": f"{label} price trend",
+        "labels": labels,
+        "values": values,
+        "series_label": "Closing price",
+        "hint": hint,
+    })

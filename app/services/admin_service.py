@@ -45,23 +45,23 @@ class AdminService:
     """Service encapsulating administrator dashboard workflows."""
 
     INCOME_BUCKETS: tuple[tuple[str, Decimal | None, Decimal | None], ...] = (
-        ("Under $50k", Decimal("0"), Decimal("50000")),
-        ("$50k-$100k", Decimal("50000"), Decimal("100000")),
-        ("$100k-$200k", Decimal("100000"), Decimal("200000")),
-        ("$200k+", Decimal("200000"), None),
+        ("Under €50k", Decimal("0"), Decimal("50000")),
+        ("€50k-€150k", Decimal("50000"), Decimal("150000")),
+        ("€150k+", Decimal("150000"), None),
     )
     PROFIT_MARGIN_BUCKETS: tuple[tuple[str, Decimal | None, Decimal | None], ...] = (
-        ("Loss or no revenue", None, Decimal("0")),
-        ("0-10% margin", Decimal("0"), Decimal("0.10")),
+        ("Loss (< -5%)", None, Decimal("-0.05")),
+        ("-5% to 0%", Decimal("-0.05"), Decimal("0")),
+        ("0-5% margin", Decimal("0"), Decimal("0.05")),
+        ("5-10% margin", Decimal("0.05"), Decimal("0.10")),
         ("10-20% margin", Decimal("0.10"), Decimal("0.20")),
-        ("20-35% margin", Decimal("0.20"), Decimal("0.35")),
-        ("35%+ margin", Decimal("0.35"), None),
+        ("20%+ margin", Decimal("0.20"), None),
     )
     TRANSACTION_SIZE_BUCKETS: tuple[tuple[str, Decimal | None, Decimal | None], ...] = (
-        ("<$250", None, Decimal("250")),
-        ("$250-$1k", Decimal("250"), Decimal("1000")),
-        ("$1k-$5k", Decimal("1000"), Decimal("5000")),
-        ("$5k+", Decimal("5000"), None),
+        ("<€1k", None, Decimal("1000")),
+        ("€1k-€5k", Decimal("1000"), Decimal("5000")),
+        ("€5k-€10k", Decimal("5000"), Decimal("10000")),
+        ("€10k+", Decimal("10000"), None),
     )
 
     def __init__(self) -> None:
@@ -766,23 +766,32 @@ class AdminService:
                 instrument_id, symbol, name, _ = top_holding
                 label_parts = list(filter(None, [symbol, name]))
                 label = " • ".join(label_parts) if label_parts else "Top holding"
-                price_rows = session.execute(
+                
+                # Get price data for the entire simulation period
+                query = (
                     select(PriceDaily.price_date, PriceDaily.close_price)
                     .where(PriceDaily.instrument_id == instrument_id)
-                    .order_by(PriceDaily.price_date.desc())
-                    .limit(90)
-                ).all()
+                )
+                
+                if simulation_start_date:
+                    query = query.where(PriceDaily.price_date >= simulation_start_date)
+                if simulation_end_date:
+                    query = query.where(PriceDaily.price_date <= simulation_end_date)
+                
+                query = query.order_by(PriceDaily.price_date)
+                price_rows = session.execute(query).all()
 
                 if price_rows:
-                    series = list(reversed(price_rows))
                     self._stock_price_series = [
                         (row.price_date.isoformat(), float(row.close_price))
-                        for row in series
+                        for row in price_rows
                         if row.close_price is not None
                     ]
                     self._stock_price_series_label = label
+                    start_date_str = simulation_start_date.isoformat() if simulation_start_date else "start"
+                    end_date_str = simulation_end_date.isoformat() if simulation_end_date else "end"
                     self._stock_price_series_hint = (
-                        f"{label} closing prices across {len(self._stock_price_series)} sessions"
+                        f"{label} closing prices across {len(self._stock_price_series)} sessions ({start_date_str} to {end_date_str})"
                     )
                 else:
                     self._stock_price_series = []
@@ -790,6 +799,97 @@ class AdminService:
                     self._stock_price_series_hint = None
 
         return list_view
+
+    def get_available_stocks(self, session: Session) -> list[dict[str, str | int]]:
+        """Return a list of all available stocks with price data."""
+        
+        LOGGER.debug("Fetching available stocks with price data")
+        
+        # Get all instruments that have price data
+        stocks_query = (
+            select(
+                Instrument.id,
+                Instrument.symbol,
+                Instrument.name,
+            )
+            .select_from(Instrument)
+            .join(PriceDaily, PriceDaily.instrument_id == Instrument.id)
+            .distinct()
+            .order_by(Instrument.symbol)
+        )
+        
+        stocks = session.execute(stocks_query).all()
+        
+        return [
+            {
+                "id": stock.id,
+                "symbol": stock.symbol or "",
+                "name": stock.name or "",
+                "label": " • ".join(filter(None, [stock.symbol, stock.name])) or f"Stock {stock.id}"
+            }
+            for stock in stocks
+        ]
+
+    def get_stock_price_data(
+        self, session: Session, instrument_id: int
+    ) -> tuple[list[tuple[str, float]], str, str | None]:
+        """Return price series for a specific stock within the simulation period.
+        
+        Returns:
+            Tuple of (price_series, label, hint)
+        """
+        
+        LOGGER.debug("Fetching price data for instrument %d", instrument_id)
+        
+        # Get simulation period from transaction data
+        first_transaction_at = session.execute(select(func.min(Transaction.posted_at))).scalar_one()
+        last_transaction_at = session.execute(select(func.max(Transaction.posted_at))).scalar_one()
+        
+        # Convert to dates for price lookup
+        simulation_start_date = first_transaction_at.date() if first_transaction_at else None
+        simulation_end_date = last_transaction_at.date() if last_transaction_at else None
+        
+        # Get instrument details
+        instrument = session.execute(
+            select(Instrument.symbol, Instrument.name)
+            .where(Instrument.id == instrument_id)
+        ).first()
+        
+        if not instrument:
+            return [], f"Unknown stock ({instrument_id})", None
+        
+        symbol, name = instrument
+        label_parts = list(filter(None, [symbol, name]))
+        label = " • ".join(label_parts) if label_parts else f"Stock {instrument_id}"
+        
+        # Get price data for this instrument within the simulation period
+        query = (
+            select(PriceDaily.price_date, PriceDaily.close_price)
+            .where(PriceDaily.instrument_id == instrument_id)
+        )
+        
+        if simulation_start_date:
+            query = query.where(PriceDaily.price_date >= simulation_start_date)
+        if simulation_end_date:
+            query = query.where(PriceDaily.price_date <= simulation_end_date)
+        
+        query = query.order_by(PriceDaily.price_date)
+        price_rows = session.execute(query).all()
+        
+        if not price_rows:
+            return [], label, None
+        
+        series = [
+            (row.price_date.isoformat(), float(row.close_price))
+            for row in price_rows
+            if row.close_price is not None
+        ]
+        
+        start_date_str = simulation_start_date.isoformat() if simulation_start_date else "start"
+        end_date_str = simulation_end_date.isoformat() if simulation_end_date else "end"
+        hint = f"{label} closing prices across {len(series)} sessions ({start_date_str} to {end_date_str})"
+        
+        return series, label, hint
 
     def get_transaction_overview(self, session: Session, limit: int = 500) -> ListView:
         """Return a reusable list view model for recent transactions."""
@@ -1009,7 +1109,7 @@ class AdminService:
                 title="Companies by profit margin",
                 labels=margin_labels,
                 values=margin_values,
-                hint="Margin computed from the most recent income and expense month.",
+                hint="Margin computed from the most recent month's income and expenses.",
             ),
             transactions_amounts=PieChartData(
                 title="Transactions by amount",

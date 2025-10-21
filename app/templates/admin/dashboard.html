@@ -112,10 +112,23 @@
             data-chart-config='{{ charts.stock_price_trend.model_dump() | tojson }}'
           >
             <div class="chart-card__header">
-              <h3 class="chart-card__title">{{ charts.stock_price_trend.title }}</h3>
-              {% if charts.stock_price_trend.hint %}
-              <p class="chart-card__hint">{{ charts.stock_price_trend.hint }}</p>
-              {% endif %}
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
+                <div style="flex: 1;">
+                  <h3 class="chart-card__title">{{ charts.stock_price_trend.title }}</h3>
+                  {% if charts.stock_price_trend.hint %}
+                  <p class="chart-card__hint">{{ charts.stock_price_trend.hint }}</p>
+                  {% endif %}
+                </div>
+                <div style="min-width: 200px;">
+                  <select 
+                    id="stock-selector" 
+                    class="stock-selector"
+                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-soft, #e0e0e0); border-radius: 4px; background: white; font-size: 0.875rem; color: var(--text-primary, #1a1a1a);"
+                  >
+                    <option value="">Select a stock...</option>
+                  </select>
+                </div>
+              </div>
             </div>
             <div class="chart-card__canvas">
               <canvas aria-label="{{ charts.stock_price_trend.title }}" role="img"></canvas>
