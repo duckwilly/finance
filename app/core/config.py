@@ -4,6 +4,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env file from project root
+env_path = Path(__file__).parent.parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 
 @dataclass(slots=True)
