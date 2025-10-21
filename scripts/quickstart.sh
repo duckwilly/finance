@@ -5,6 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
+# Start overall timer
+QUICKSTART_START=$SECONDS
+
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Error: required command '$1' not found in PATH" >&2
@@ -13,8 +16,15 @@ require_command() {
 }
 
 step() {
+  # Print elapsed time for previous step if this isn't the first step
+  if [[ -n "${STEP_START:-}" ]]; then
+    STEP_ELAPSED=$((SECONDS - STEP_START))
+    echo "    (completed in ${STEP_ELAPSED}s)"
+  fi
+  
   echo
   echo "==> $1"
+  STEP_START=$SECONDS
 }
 
 # Default values
@@ -244,9 +254,23 @@ python scripts/gen_seed_data.py --seed $(date +%s) --individuals "$FINAL_INDIVID
 step "Loading CSV data into MariaDB"
 python scripts/load_csvs.py
 
+# Print final step timing
+if [[ -n "${STEP_START:-}" ]]; then
+  STEP_ELAPSED=$((SECONDS - STEP_START))
+  echo "    (completed in ${STEP_ELAPSED}s)"
+  unset STEP_START  # Clear to prevent duplicate timing in server start step
+fi
+
+# Print overall timing
+QUICKSTART_ELAPSED=$((SECONDS - QUICKSTART_START))
+echo
+echo "=========================================="
+echo "Quickstart setup completed in ${QUICKSTART_ELAPSED}s ($(printf '%d:%02d' $((QUICKSTART_ELAPSED/60)) $((QUICKSTART_ELAPSED%60))))"
+echo "=========================================="
+
 if [[ "${START_SERVER}" == "1" ]]; then
   require_command uvicorn
-  step "Quickstart complete"
+  echo
   step "Starting FastAPI development server"
   UVICORN_HOST="${QUICKSTART_HOST:-0.0.0.0}"
   UVICORN_PORT="${QUICKSTART_PORT:-8000}"
@@ -266,6 +290,5 @@ if [[ "${START_SERVER}" == "1" ]]; then
   echo "Press Ctrl+C to stop the server."
   wait "${UVICORN_PID}"
 else
-  step "Quickstart complete"
   echo "Server startup skipped (QUICKSTART_START_SERVER=${START_SERVER})."
 fi

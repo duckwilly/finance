@@ -765,7 +765,7 @@ def load_trades_and_holdings(acct_map, inst_map):
             "Processing trades", total=len(trades), unit="rows"
         ) as task:
             def flush_trade_batch(*, final: bool = False) -> None:
-                nonlocal rows_since_commit
+                nonlocal rows_since_commit, processed_trades
                 if not trade_batch:
                     return
                 trade_ids = insertmany_with_ids(
