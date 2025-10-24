@@ -4,8 +4,8 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-from app.config import get_settings
-from app.logger import get_logger
+from app.core.config import get_settings
+from app.core.logger import get_logger
 
 LOGGER = get_logger(__name__)
 
@@ -26,13 +26,17 @@ def create_sync_engine(url: str | None = None, **kwargs) -> Engine:
     options = dict(kwargs)
     options.setdefault("echo", settings.sqlalchemy_echo)
 
-    masked_url = "{driver}://{user}:{pwd}@{host}:{port}/{name}".format(
-        driver=settings.database.driver,
-        user=settings.database.user,
-        pwd="***" if settings.database.password else "",
-        host=settings.database.host,
-        port=settings.database.port,
-        name=settings.database.name,
+    LOGGER.debug(
+        "Creating SQLAlchemy engine",
+        extra={
+            "url": {
+                "driver": settings.database.driver,
+                "host": settings.database.host,
+                "port": settings.database.port,
+                "name": settings.database.name,
+                "user": settings.database.user,
+            },
+            "options": options,
+        },
     )
-    LOGGER.debug("Creating SQLAlchemy engine", extra={"url": masked_url, "options": options})
     return create_engine(resolved_url, future=True, **options)

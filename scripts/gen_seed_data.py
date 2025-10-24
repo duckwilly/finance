@@ -24,6 +24,7 @@ STREAM_DIR = Path("data/stream")
 
 from app.log import get_logger, init_logging, log_context, progress_manager, timeit
 from scripts.name_data import random_company_name, random_person_name
+from scripts.job_titles import get_job_titles_for_tier
 
 logger = get_logger(__name__)
 INDUSTRIES = [
@@ -100,17 +101,7 @@ INSTRUMENTS = [
     {"ext_id": "I-ASM", "symbol": "ASML", "name": "ASML Holding N.V.", "type": "EQUITY", "currency": "EUR", "isin": "NL0010273215", "mic": "XAMS"},
 ]
 
-PRICE_POINTS = [
-    ("2024-12-31", {"I-AAPL": 195.48, "I-MSFT": 389.25, "I-NVDA": 487.22, "I-TSLA": 253.50, "I-VWRL": 115.72, "I-ASM": 652.10}),
-    ("2025-01-31", {"I-AAPL": 199.11, "I-MSFT": 402.18, "I-NVDA": 512.02, "I-TSLA": 261.34, "I-VWRL": 118.64, "I-ASM": 671.92}),
-    ("2025-02-28", {"I-AAPL": 205.43, "I-MSFT": 410.55, "I-NVDA": 533.10, "I-TSLA": 275.11, "I-VWRL": 121.03, "I-ASM": 689.35}),
-]
-
-FX_POINTS = [
-    ("2024-12-31", "USD", "EUR", 0.92),
-    ("2025-01-31", "USD", "EUR", 0.93),
-    ("2025-02-28", "USD", "EUR", 0.94),
-]
+# Price and FX data are now fetched from real sources via fetch_stock_prices.py
 
 
 @dataclass
@@ -120,6 +111,9 @@ class Company:
     industry: str
     account_ext_id: str
     iban: str
+    size_tier: str
+    base_margin: float
+    margin_trend: float
 
 
 @dataclass
@@ -133,6 +127,8 @@ class Individual:
     checking_account: str
     savings_account: str
     landlord: str
+    wealth_tier: str
+    job_title: str
 
 
 class IdFactory:
@@ -167,11 +163,17 @@ TXN_HEADERS = [
 
 
 def parse_args() -> argparse.Namespace:
+    # Calculate default start and months based on current year
+    current_year = date.today().year
+    current_month = date.today().month
+    default_start = f"{current_year}-01"
+    default_months = current_month
+    
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--individuals", type=int, default=500, help="Number of individual users to create")
     parser.add_argument("--companies", type=int, default=50, help="Number of corporate organisations")
-    parser.add_argument("--months", type=int, default=6, help="How many months of history to generate")
-    parser.add_argument("--start", type=str, default="2025-01", help="Start month (YYYY-MM)")
+    parser.add_argument("--months", type=int, default=default_months, help="How many months of history to generate")
+    parser.add_argument("--start", type=str, default=default_start, help="Start month (YYYY-MM)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--currency", type=str, default="EUR", help="Base currency for cash accounts")
     parser.add_argument(
@@ -225,6 +227,19 @@ def sanitize_email(name: str, idx: int) -> str:
 
 
 def build_companies(n: int) -> list[Company]:
+    # Define size tiers with power-law distribution (more small, fewer large)
+    SIZE_TIERS = {
+        "micro": {"weight": 0.35, "revenue_multiplier": 1.0, "employee_multiplier": 1.0},
+        "small": {"weight": 0.30, "revenue_multiplier": 2.5, "employee_multiplier": 2.0},
+        "medium": {"weight": 0.20, "revenue_multiplier": 5.0, "employee_multiplier": 4.0},
+        "large": {"weight": 0.12, "revenue_multiplier": 7.5, "employee_multiplier": 6.0},
+        "enterprise": {"weight": 0.03, "revenue_multiplier": 10.0, "employee_multiplier": 8.0},
+    }
+    
+    # Create weighted list for random selection
+    tier_weights = list(SIZE_TIERS.keys())
+    tier_probs = [SIZE_TIERS[tier]["weight"] for tier in tier_weights]
+    
     companies: list[Company] = []
     seen_names: set[str] = set()
     for i in range(1, n + 1):
@@ -236,35 +251,105 @@ def build_companies(n: int) -> list[Company]:
         ext_id = f"C-{i:05d}"
         account_ext_id = f"A-C{i:05d}-OP"
         iban = f"NL{i % 90 + 10:02d}BANK{1000000000 + i:010d}"
-        companies.append(Company(ext_id, name, industry, account_ext_id, iban))
+        
+        # Assign size tier using power-law distribution
+        size_tier = random.choices(tier_weights, weights=tier_probs)[0]
+        
+        # Assign base profit margin (-5% to 20%)
+        base_margin = random.uniform(-0.05, 0.20)
+        
+        # Assign margin trend (-0.02 to +0.02 per month, representing improving/declining companies)
+        margin_trend = random.uniform(-0.02, 0.02)
+        
+        companies.append(Company(ext_id, name, industry, account_ext_id, iban, size_tier, base_margin, margin_trend))
     return companies
 
 
 def build_individuals(n: int, companies: Sequence[Company]) -> list[Individual]:
-    individuals: list[Individual] = []
-    for i in range(1, n + 1):
-        first, last = random_name()
-        name = f"{first} {last}"
-        email = sanitize_email(name, i)
-        employer = random.choice(companies)
-        salary = round(random.uniform(2800, 9200), 2)
-        rent = round(salary * random.uniform(0.24, 0.32), 2)
-        checking_account = f"A-U{i:05d}-CHK"
-        savings_account = f"A-U{i:05d}-SAV"
-        landlord = random.choice(PROPERTY_MANAGERS)
-        individuals.append(
-            Individual(
-                ext_id=f"U-{i:05d}",
-                name=name,
-                email=email,
+    """Create individuals with wealth-tier-based distribution and size-weighted employer assignment."""
+    
+    # Define wealth tiers with their proportions and characteristics
+    WEALTH_TIERS = {
+        "low_income": {"pct": 0.30, "salary_range": (2200, 3800), "rent_pct": (0.28, 0.35)},
+        "small_investor": {"pct": 0.28, "salary_range": (3200, 5500), "rent_pct": (0.24, 0.30)},
+        "medium_investor": {"pct": 0.28, "salary_range": (4800, 8500), "rent_pct": (0.20, 0.26)},
+        "high_investor": {"pct": 0.14, "salary_range": (15000, 50000), "rent_pct": (0.10, 0.18)},
+    }
+    
+    # Create company weights based on size tiers (larger companies get more employees)
+    SIZE_TIERS = {
+        "micro": 1.0,
+        "small": 2.0, 
+        "medium": 4.0,
+        "large": 6.0,
+        "enterprise": 8.0,
+    }
+    
+    company_weights = [SIZE_TIERS[company.size_tier] for company in companies]
+    
+    # Track used job titles per company to ensure uniqueness
+    company_used_titles = {company.ext_id: set() for company in companies}
+    
+    individuals = []
+    user_id = 1
+    
+    for tier_name, config in WEALTH_TIERS.items():
+        count = int(n * config["pct"])
+        min_salary, max_salary = config["salary_range"]
+        min_rent_pct, max_rent_pct = config["rent_pct"]
+        
+        for _ in range(count):
+            first, last = random_name()
+            salary = round(random.uniform(min_salary, max_salary), 2)
+            rent = round(salary * random.uniform(min_rent_pct, max_rent_pct), 2)
+            
+            # Assign employer based on company size weights
+            employer = random.choices(companies, weights=company_weights)[0]
+            
+            # Assign job title based on wealth tier, ensuring uniqueness within company
+            available_titles = get_job_titles_for_tier(tier_name)
+            used_titles = company_used_titles[employer.ext_id]
+            unused_titles = [title for title in available_titles if title not in used_titles]
+            
+            if unused_titles:
+                job_title = random.choice(unused_titles)
+            else:
+                # If all titles for this tier are used, pick any available title
+                job_title = random.choice(available_titles)
+            
+            # Track the used title
+            company_used_titles[employer.ext_id].add(job_title)
+            
+            individuals.append(Individual(
+                ext_id=f"U-{user_id:05d}",
+                name=f"{first} {last}",
+                email=sanitize_email(f"{first} {last}", user_id),
                 employer=employer,
                 salary=salary,
                 rent=rent,
-                checking_account=checking_account,
-                savings_account=savings_account,
-                landlord=landlord,
-            )
-        )
+                checking_account=f"A-U{user_id:05d}-CHK",
+                savings_account=f"A-U{user_id:05d}-SAV",
+                landlord=random.choice(PROPERTY_MANAGERS),
+                wealth_tier=tier_name,
+                job_title=job_title,
+            ))
+            user_id += 1
+    
+    # Ensure every company has at least one employee
+    company_employee_counts = {}
+    for individual in individuals:
+        company_id = individual.employer.ext_id
+        company_employee_counts[company_id] = company_employee_counts.get(company_id, 0) + 1
+    
+    # Find companies with no employees and assign one
+    for company in companies:
+        if company_employee_counts.get(company.ext_id, 0) == 0:
+            # Find a random individual to reassign
+            individual_to_reassign = random.choice(individuals)
+            individual_to_reassign.employer = company
+            company_employee_counts[company.ext_id] = 1
+    
+    random.shuffle(individuals)
     return individuals
 
 
@@ -457,172 +542,352 @@ def individual_transactions(
 
 def company_transactions(
     companies: Sequence[Company],
+    individuals: Sequence[Individual],
     txn_ids: IdFactory,
     start_month: date,
     months: int,
     currency: str,
     stats: dict[str, int],
 ) -> Iterator[dict[str, object]]:
+    # Size tier multipliers for revenue and expenses
+    SIZE_TIERS = {
+        "micro": {"revenue_multiplier": 1.0, "expense_multiplier": 1.0, "base_revenue": 50000, "base_expenses": 40000},
+        "small": {"revenue_multiplier": 2.5, "expense_multiplier": 2.0, "base_revenue": 125000, "base_expenses": 100000},
+        "medium": {"revenue_multiplier": 5.0, "expense_multiplier": 4.0, "base_revenue": 250000, "base_expenses": 200000},
+        "large": {"revenue_multiplier": 7.5, "expense_multiplier": 6.0, "base_revenue": 375000, "base_expenses": 300000},
+        "enterprise": {"revenue_multiplier": 10.0, "expense_multiplier": 8.0, "base_revenue": 500000, "base_expenses": 400000},
+    }
+    
+    # Calculate payroll costs per company
+    company_payroll = {}
+    for company in companies:
+        company_employees = [person for person in individuals if person.employer.ext_id == company.ext_id]
+        monthly_payroll = sum(person.salary for person in company_employees)
+        company_payroll[company.ext_id] = monthly_payroll
+    
     for month_start in month_sequence(start_month, months):
         month_finish = month_end(month_start)
         for company in companies:
-            rent_day = month_start + timedelta(days=random.randint(1, 5))
-            rent_amount = round(random.uniform(4500, 11000), 2)
-            stats["company"] += 1
-            yield {
-                "ext_id": txn_ids.next(),
-                "account_ext_id": company.account_ext_id,
-                "posted_at": iso_datetime(rent_day, 9, 12),
-                "txn_date": rent_day.isoformat(),
-                "amount": fmt_amount(rent_amount),
-                "currency": currency,
-                "direction": "DEBIT",
-                "section_name": "expense",
-                "category_name": "Rent",
-                "channel": "SEPA",
-                "description": "Office lease",
-                "counterparty_name": random.choice(PROPERTY_MANAGERS),
-                "counterparty_account": "",
-                "counterparty_bic": "",
-                "transfer_ref": "",
-                "ext_reference": "",
-            }
-
-            for vendor in random.sample(BUSINESS_VENDORS, k=3):
-                service_day = month_start + timedelta(days=random.randint(8, 20))
-                amount = round(random.uniform(600, 4200), 2)
+            # Calculate current margin with trend over time
+            months_elapsed = (month_start.year - start_month.year) * 12 + (month_start.month - start_month.month)
+            current_margin = company.base_margin + (company.margin_trend * months_elapsed)
+            current_margin = max(-0.10, min(0.25, current_margin))  # Clamp between -10% and 25%
+            
+            # Get size tier configuration
+            tier_config = SIZE_TIERS[company.size_tier]
+            
+            # Calculate base revenue and expenses for this month
+            base_revenue = tier_config["base_revenue"] * tier_config["revenue_multiplier"]
+            base_expenses = tier_config["base_expenses"] * tier_config["expense_multiplier"]
+            
+            # Add some monthly variation (±20%)
+            revenue_variation = random.uniform(0.8, 1.2)
+            expense_variation = random.uniform(0.8, 1.2)
+            
+            monthly_revenue = base_revenue * revenue_variation
+            monthly_expenses = base_expenses * expense_variation
+            
+            # Get payroll costs for this company
+            monthly_payroll = company_payroll[company.ext_id]
+            
+            # Calculate target total expenses (including payroll) to achieve margin
+            target_total_expenses = monthly_revenue * (1 - current_margin)
+            target_non_payroll_expenses = target_total_expenses - monthly_payroll
+            
+            # Adjust non-payroll expenses to achieve target margin
+            if target_non_payroll_expenses > 0:
+                expense_adjustment = target_non_payroll_expenses / monthly_expenses if monthly_expenses > 0 else 1.0
+                monthly_expenses *= expense_adjustment
+            else:
+                # If payroll alone exceeds target expenses, set non-payroll to minimum
+                monthly_expenses = max(1000, monthly_revenue * 0.05)  # Minimum 5% of revenue
+            
+            # Generate revenue transactions (customer payments)
+            num_customers = random.randint(8, 20)  # Vary customer count
+            customer_payments = []
+            remaining_revenue = monthly_revenue
+            
+            for i in range(num_customers):
+                if i == num_customers - 1:  # Last customer gets remaining revenue
+                    amount = remaining_revenue
+                else:
+                    # Distribute revenue among customers
+                    max_amount = remaining_revenue / (num_customers - i)
+                    amount = round(random.uniform(1000, max_amount), 2)
+                    remaining_revenue -= amount
+                
+                if amount > 0:
+                    client = random.choice(CUSTOMERS)
+                    invoice_day = month_start + timedelta(days=random.randint(1, month_finish.day - 1))
+                    customer_payments.append({
+                        "amount": amount,
+                        "client": client,
+                        "day": invoice_day
+                    })
+            
+            # Generate expense transactions
+            expenses = []
+            remaining_expenses = monthly_expenses
+            
+            # Rent (20-30% of expenses)
+            rent_pct = random.uniform(0.20, 0.30)
+            rent_amount = round(remaining_expenses * rent_pct, 2)
+            if rent_amount > 0:
+                expenses.append({
+                    "amount": rent_amount,
+                    "category": "Rent",
+                    "description": "Office lease",
+                    "counterparty": random.choice(PROPERTY_MANAGERS),
+                    "day": month_start + timedelta(days=random.randint(1, 5))
+                })
+                remaining_expenses -= rent_amount
+            
+            # Vendors (15-25% of expenses)
+            vendor_pct = random.uniform(0.15, 0.25)
+            vendor_amount = round(remaining_expenses * vendor_pct, 2)
+            if vendor_amount > 0:
+                num_vendors = random.randint(2, 5)
+                vendor_per_vendor = vendor_amount / num_vendors
+                for vendor in random.sample(BUSINESS_VENDORS, k=num_vendors):
+                    expenses.append({
+                        "amount": round(vendor_per_vendor, 2),
+                        "category": "Vendors",
+                        "description": f"Payment to {vendor}",
+                        "counterparty": vendor,
+                        "day": month_start + timedelta(days=random.randint(8, 20))
+                    })
+                remaining_expenses -= vendor_amount
+            
+            # Other expenses (remaining)
+            if remaining_expenses > 0:
+                expenses.append({
+                    "amount": round(remaining_expenses, 2),
+                    "category": "Other",
+                    "description": "Miscellaneous business expenses",
+                    "counterparty": "Various",
+                    "day": month_start + timedelta(days=random.randint(10, 25))
+                })
+            
+            # Quarterly taxes
+            if (month_start.month - 1) % 3 == 0:
+                tax_amount = round(monthly_revenue * random.uniform(0.15, 0.25), 2)  # 15-25% of revenue
+                expenses.append({
+                    "amount": tax_amount,
+                    "category": "Taxes",
+                    "description": "Quarterly VAT remittance",
+                    "counterparty": "Belastingdienst",
+                    "day": month_start + timedelta(days=random.randint(20, 27))
+                })
+            
+            # Yield revenue transactions
+            for payment in customer_payments:
                 stats["company"] += 1
                 yield {
                     "ext_id": txn_ids.next(),
                     "account_ext_id": company.account_ext_id,
-                    "posted_at": iso_datetime(service_day, random.randint(9, 14), random.randint(0, 59)),
-                    "txn_date": service_day.isoformat(),
-                    "amount": fmt_amount(amount),
-                    "currency": currency,
-                    "direction": "DEBIT",
-                    "section_name": "expense",
-                    "category_name": "Vendors",
-                    "channel": "SEPA",
-                    "description": f"Payment to {vendor}",
-                    "counterparty_name": vendor,
-                    "counterparty_account": "",
-                    "counterparty_bic": "",
-                    "transfer_ref": "",
-                    "ext_reference": "",
-                }
-
-            for _ in range(random.randint(12, 24)):
-                client = random.choice(CUSTOMERS)
-                invoice_day = month_start + timedelta(days=random.randint(1, month_finish.day - 1))
-                amount = round(random.uniform(8500, 97500), 2)
-                stats["company"] += 1
-                yield {
-                    "ext_id": txn_ids.next(),
-                    "account_ext_id": company.account_ext_id,
-                    "posted_at": iso_datetime(invoice_day, random.randint(8, 17), random.randint(0, 59)),
-                    "txn_date": invoice_day.isoformat(),
-                    "amount": fmt_amount(amount),
+                    "posted_at": iso_datetime(payment["day"], random.randint(8, 17), random.randint(0, 59)),
+                    "txn_date": payment["day"].isoformat(),
+                    "amount": fmt_amount(payment["amount"]),
                     "currency": currency,
                     "direction": "CREDIT",
                     "section_name": "income",
                     "category_name": "Customer payment",
                     "channel": "SEPA",
-                    "description": f"Invoice settlement from {client}",
-                    "counterparty_name": client,
+                    "description": f"Invoice settlement from {payment['client']}",
+                    "counterparty_name": payment["client"],
                     "counterparty_account": "",
                     "counterparty_bic": "",
                     "transfer_ref": "",
                     "ext_reference": "",
                 }
+            
+            # Yield expense transactions
+            for expense in expenses:
+                if expense["amount"] > 0:
+                    stats["company"] += 1
+                    yield {
+                        "ext_id": txn_ids.next(),
+                        "account_ext_id": company.account_ext_id,
+                        "posted_at": iso_datetime(expense["day"], random.randint(9, 14), random.randint(0, 59)),
+                        "txn_date": expense["day"].isoformat(),
+                        "amount": fmt_amount(expense["amount"]),
+                        "currency": currency,
+                        "direction": "DEBIT",
+                        "section_name": "expense",
+                        "category_name": expense["category"],
+                        "channel": "SEPA",
+                        "description": expense["description"],
+                        "counterparty_name": expense["counterparty"],
+                        "counterparty_account": "",
+                        "counterparty_bic": "",
+                        "transfer_ref": "",
+                        "ext_reference": "",
+                    }
 
-            if (month_start.month - 1) % 3 == 0:
-                tax_day = month_start + timedelta(days=random.randint(20, 27))
-                tax_amount = round(random.uniform(18000, 42000), 2)
-                stats["company"] += 1
-                yield {
-                    "ext_id": txn_ids.next(),
-                    "account_ext_id": company.account_ext_id,
-                    "posted_at": iso_datetime(tax_day, 11, random.randint(0, 59)),
-                    "txn_date": tax_day.isoformat(),
-                    "amount": fmt_amount(tax_amount),
-                    "currency": currency,
-                    "direction": "DEBIT",
-                    "section_name": "expense",
-                    "category_name": "Taxes",
-                    "channel": "SEPA",
-                    "description": "Quarterly VAT remittance",
-                    "counterparty_name": "Belastingdienst",
-                    "counterparty_account": "",
-                    "counterparty_bic": "",
-                    "transfer_ref": "",
-                    "ext_reference": "",
-                }
+
+def generate_historical_positions(individuals: Sequence[Individual], start_month: date) -> list[dict[str, object]]:
+    """Generate historical positions that exist before the simulation period."""
+    historical_trades = []
+    trade_id = IdFactory("TR-HIST-", start=1)
+    
+    for person in individuals:
+        # Generate historical trades based on wealth tier
+        if person.wealth_tier == "small_investor":
+            num_historical = random.randint(1, 3)
+        elif person.wealth_tier == "medium_investor":
+            num_historical = random.randint(2, 4)
+        elif person.wealth_tier == "high_investor":
+            num_historical = random.randint(4, 8)
+        else:
+            num_historical = 0  # No historical trades for low_income tier
+        
+        historical_start = start_month - timedelta(days=random.randint(180, 540))  # 6-18 months before
+        
+        holdings: dict[str, float] = {}
+        for _ in range(num_historical):
+            instrument = random.choice(INSTRUMENTS)
+            # Use wealth-tier based quantities for historical trades
+            if person.wealth_tier == "small_investor":
+                qty = round(random.uniform(1, 8), 2)
+            elif person.wealth_tier == "medium_investor":
+                qty = round(random.uniform(3, 15), 2)
+            elif person.wealth_tier == "high_investor":
+                qty = round(random.uniform(10, 500), 2)
+            else:
+                qty = round(random.uniform(1, 5), 2)
+            # Use realistic price ranges based on instrument
+            if instrument["ext_id"] == "I-AAPL":
+                price = round(random.uniform(120, 200), 2)
+            elif instrument["ext_id"] == "I-MSFT":
+                price = round(random.uniform(300, 450), 2)
+            elif instrument["ext_id"] == "I-NVDA":
+                price = round(random.uniform(200, 600), 2)
+            elif instrument["ext_id"] == "I-TSLA":
+                price = round(random.uniform(150, 300), 2)
+            elif instrument["ext_id"] == "I-VWRL":
+                price = round(random.uniform(80, 130), 2)
+            elif instrument["ext_id"] == "I-ASM":
+                price = round(random.uniform(400, 800), 2)
+            else:
+                price = round(random.uniform(50, 300), 2)
+            
+            # Historical trades are always BUY
+            trade_time = historical_start + timedelta(days=random.randint(0, 90))
+            trade_time = datetime.combine(trade_time, datetime.min.time().replace(hour=random.randint(9, 16)))
+            
+            historical_trades.append({
+                "ext_id": trade_id.next(),
+                "account_ext_id": person.checking_account.replace("-CHK", "-BRK"),
+                "instrument_ext_id": instrument["ext_id"],
+                "side": "BUY",
+                "qty": f"{qty:.2f}",
+                "price": f"{price:.2f}",
+                "fees": f"{random.uniform(0.5, 4.5):.2f}",
+                "tax": f"{random.uniform(0, 2.0):.2f}",
+                "trade_time": trade_time.isoformat(),
+                "settle_dt": (trade_time.date() + timedelta(days=2)).isoformat(),
+                "currency": instrument["currency"],
+            })
+            holdings[instrument["ext_id"]] = holdings.get(instrument["ext_id"], 0) + qty
+    
+    return historical_trades
 
 
-def generate_trades(individuals: Sequence[Individual]) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+def generate_trades(individuals: Sequence[Individual], start_month: date, months: int) -> list[dict[str, object]]:
+    """Generate trades for the simulation period with wealth-tier-based portfolio distribution."""
     if not individuals:
-        return [], []
-    sample_size = min(len(individuals), max(100, len(individuals) // 10))
-    random_investors = random.sample(individuals, k=sample_size)
+        return []
+    
+    # Define trading characteristics by wealth tier
+    TRADING_CONFIG = {
+        "small_investor": {"trades": (2, 5), "stocks": (1, 2), "qty_range": (1, 8)},
+        "medium_investor": {"trades": (6, 12), "stocks": (2, 4), "qty_range": (3, 15)},
+        "high_investor": {"trades": (13, 25), "stocks": (3, 6), "qty_range": (10, 500)},
+    }
+    
+    # Price ranges for different instruments
+    PRICE_RANGES = {
+        "I-AAPL": (120, 200), "I-MSFT": (300, 450), "I-NVDA": (200, 600),
+        "I-TSLA": (150, 300), "I-VWRL": (80, 130), "I-ASM": (400, 800)
+    }
+    
+    # Get investors (exclude low_income tier)
+    investors = [p for p in individuals if p.wealth_tier in TRADING_CONFIG]
+    
     trade_rows: list[dict[str, object]] = []
     trade_id = IdFactory("TR-", start=1)
-    for person in random_investors:
-        num_trades = random.randint(6, 18)
+    
+    # Generate historical positions first
+    historical_trades = generate_historical_positions(investors, start_month)
+    trade_rows.extend(historical_trades)
+    
+    # Generate trades for each investor
+    for person in investors:
+        config = TRADING_CONFIG[person.wealth_tier]
+        num_trades = random.randint(*config["trades"])
+        num_stocks = random.randint(*config["stocks"])
+        selected_stocks = random.sample(INSTRUMENTS, k=num_stocks)
+        
         holdings: dict[str, float] = {}
+        
         for _ in range(num_trades):
-            instrument = random.choice(INSTRUMENTS)
-            qty = round(random.uniform(1, 25), 2)
-            price = round(random.uniform(20, 500), 2)
-            side_options = ["BUY", "SELL"] if holdings.get(instrument["ext_id"], 0) > 2 else ["BUY"]
-            side = random.choice(side_options)
+            instrument = random.choice(selected_stocks)
+            qty = round(random.uniform(*config["qty_range"]), 2)
+            
+            # Get price based on instrument
+            price_range = PRICE_RANGES.get(instrument["ext_id"], (50, 300))
+            price = round(random.uniform(*price_range), 2)
+            
+            # Determine if this should be a BUY or SELL
+            current_holding = holdings.get(instrument["ext_id"], 0)
+            side = "SELL" if current_holding > qty * 2 and random.random() < 0.3 else "BUY"
             if side == "SELL":
-                qty = min(qty, holdings.get(instrument["ext_id"], qty))
-            trade_time = datetime(2024, random.randint(1, 12), random.randint(1, 28), random.randint(10, 16), random.randint(0, 59))
-            trade_rows.append(
-                {
-                    "ext_id": trade_id.next(),
-                    "account_ext_id": person.checking_account.replace("-CHK", "-BRK"),
-                    "instrument_ext_id": instrument["ext_id"],
-                    "side": side,
-                    "qty": f"{qty:.2f}",
-                    "price": f"{price:.2f}",
-                    "fees": f"{random.uniform(0.5, 4.5):.2f}",
-                    "tax": f"{random.uniform(0, 2.0):.2f}",
-                    "trade_time": trade_time.isoformat(),
-                    "settle_dt": (trade_time.date() + timedelta(days=2)).isoformat(),
-                    "currency": instrument["currency"],
-                }
-            )
+                qty = min(qty, current_holding)
+            
+            # Generate trade time within simulation period
+            trade_day = start_month + timedelta(days=random.randint(0, months * 30))
+            trade_time = datetime.combine(trade_day, datetime.min.time().replace(
+                hour=random.randint(9, 16), 
+                minute=random.randint(0, 59)
+            ))
+            
+            trade_rows.append({
+                "ext_id": trade_id.next(),
+                "account_ext_id": person.checking_account.replace("-CHK", "-BRK"),
+                "instrument_ext_id": instrument["ext_id"],
+                "side": side,
+                "qty": f"{qty:.2f}",
+                "price": f"{price:.2f}",
+                "fees": f"{random.uniform(0.5, 4.5):.2f}",
+                "tax": f"{random.uniform(0, 2.0):.2f}",
+                "trade_time": trade_time.isoformat(),
+                "settle_dt": (trade_time.date() + timedelta(days=2)).isoformat(),
+                "currency": instrument["currency"],
+            })
             holdings[instrument["ext_id"]] = holdings.get(instrument["ext_id"], 0) + (qty if side == "BUY" else -qty)
-    price_rows = [
-        {
-            "instrument_ext_id": instrument_id,
-            "price_date": price_date,
-            "close_price": f"{price:.2f}",
-            "currency": next(inst["currency"] for inst in INSTRUMENTS if inst["ext_id"] == instrument_id),
-        }
-        for price_date, snapshot in PRICE_POINTS
-        for instrument_id, price in snapshot.items()
-    ]
-    return trade_rows, price_rows
+    
+    return trade_rows
 
 
-def generate_fx_rows() -> list[dict[str, object]]:
-    return [
-        {"base": base, "quote": quote, "rate_date": rate_date, "rate": f"{rate:.4f}"}
-        for rate_date, base, quote, rate in FX_POINTS
-    ]
+# FX data is now handled by fetch_stock_prices.py
 
 
 def write_core_tables(individuals: list[Individual], companies: list[Company], currency: str) -> None:
     users_rows = [
-        {"ext_id": "U-ADMIN", "name": "Bank Admin", "email": "admin@simulatedbank.dev"},
+        {"ext_id": "U-ADMIN", "name": "Bank Admin", "email": "admin@simulatedbank.dev", "job_title": "System Administrator"},
     ] + [
-        {"ext_id": person.ext_id, "name": person.name, "email": person.email}
+        {"ext_id": person.ext_id, "name": person.name, "email": person.email, "job_title": person.job_title}
         for person in individuals
     ]
     org_rows = [
-        {"ext_id": company.ext_id, "name": company.name, "industry": company.industry}
+        {
+            "ext_id": company.ext_id, 
+            "name": company.name, 
+            "industry": company.industry,
+            "size_tier": company.size_tier,
+            "base_margin": company.base_margin,
+            "margin_trend": company.margin_trend
+        }
         for company in companies
     ]
     account_rows = [
@@ -694,12 +959,12 @@ def write_core_tables(individuals: list[Individual], companies: list[Company], c
 
     write_csv(
         SEED_DIR / "users.csv",
-        ["ext_id", "name", "email"],
+        ["ext_id", "name", "email", "job_title"],
         users_rows,
     )
     write_csv(
         SEED_DIR / "orgs.csv",
-        ["ext_id", "name", "industry"],
+        ["ext_id", "name", "industry", "size_tier", "base_margin", "margin_trend"],
         org_rows,
     )
     write_csv(
@@ -711,6 +976,24 @@ def write_core_tables(individuals: list[Individual], companies: list[Company], c
         SEED_DIR / "account_memberships.csv",
         ["party_type", "party_ext_id", "account_ext_id", "role"],
         membership_rows,
+    )
+
+    # Employment memberships (user -> org)
+    employment_rows = [
+        {
+            "user_ext_id": person.ext_id,
+            "org_ext_id": person.employer.ext_id,
+            "role": "employee",
+            "is_primary": True,
+            "start_date": "2023-01-01",
+            "end_date": "",
+        }
+        for person in individuals
+    ]
+    write_csv(
+        SEED_DIR / "memberships.csv",
+        ["user_ext_id", "org_ext_id", "role", "is_primary", "start_date", "end_date"],
+        employment_rows,
     )
 
 
@@ -734,7 +1017,7 @@ def write_transactions(rows: Iterator[dict[str, object]]) -> int:
     return count
 
 
-def write_trades(trades: Sequence[dict[str, object]], prices: Sequence[dict[str, object]]) -> None:
+def write_trades(trades: Sequence[dict[str, object]]) -> None:
     write_csv(
         SEED_DIR / "instruments.csv",
         ["ext_id", "symbol", "name", "type", "currency", "isin", "mic"],
@@ -745,15 +1028,28 @@ def write_trades(trades: Sequence[dict[str, object]], prices: Sequence[dict[str,
         ["ext_id", "account_ext_id", "instrument_ext_id", "side", "qty", "price", "fees", "tax", "trade_time", "settle_dt", "currency"],
         trades,
     )
+    # Price and FX data are now handled by fetch_stock_prices.py
+
+
+def write_user_salary_monthly(
+    individuals: Sequence[Individual], start_month: date, months: int
+) -> None:
+    rows: list[dict[str, object]] = []
+    for month_start in month_sequence(start_month, months):
+        for person in individuals:
+            rows.append(
+                {
+                    "user_ext_id": person.ext_id,
+                    "org_ext_id": person.employer.ext_id,
+                    "year": month_start.year,
+                    "month": month_start.month,
+                    "salary_amount": fmt_amount(person.salary),
+                }
+            )
     write_csv(
-        SEED_DIR / "price_daily.csv",
-        ["instrument_ext_id", "price_date", "close_price", "currency"],
-        prices,
-    )
-    write_csv(
-        SEED_DIR / "fx_rate_daily.csv",
-        ["base", "quote", "rate_date", "rate"],
-        generate_fx_rows(),
+        SEED_DIR / "user_salary_monthly.csv",
+        ["user_ext_id", "org_ext_id", "year", "month", "salary_amount"],
+        rows,
     )
 
 
@@ -845,6 +1141,7 @@ def main() -> None:
         ),
         company_transactions(
             companies=companies,
+            individuals=individuals,
             txn_ids=txn_ids,
             start_month=start_month_date,
             months=args.months,
@@ -854,9 +1151,11 @@ def main() -> None:
     )
     total_transactions = write_transactions(txn_iter)
 
-    trades, prices = generate_trades(individuals)
-    logger.info("Writing trade and market data CSVs")
-    write_trades(trades, prices)
+    trades = generate_trades(individuals, start_month_date, args.months)
+    logger.info("Writing trade data CSV")
+    write_trades(trades)
+    # Write monthly salary summary and memberships
+    write_user_salary_monthly(individuals, start_month_date, args.months)
 
     logger.info(
         "Generated %s users, %s organisations, %s transactions",

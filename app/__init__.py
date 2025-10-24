@@ -1,5 +1,6 @@
-"""Application package for the finance simulation."""
+"""Application package for the finance platform."""
 
-from .logger import get_logger  # re-export for convenience
+from .core import get_logger, get_settings
+from .main import create_app
 
-__all__ = ["get_logger"]
+__all__ = ["create_app", "get_logger", "get_settings"]

@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS user (
   id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
   name VARCHAR(120) NOT NULL,
   email VARCHAR(255) UNIQUE,
+  job_title VARCHAR(120) NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
@@ -20,10 +21,21 @@ CREATE TABLE IF NOT EXISTS membership (
   user_id BIGINT UNSIGNED NOT NULL,
   org_id BIGINT UNSIGNED NOT NULL,
   role VARCHAR(64) NOT NULL DEFAULT 'member',
+  is_primary BOOLEAN NOT NULL DEFAULT TRUE,
+  start_date DATE NULL,
+  end_date DATE NULL,
   UNIQUE KEY uniq_user_org (user_id, org_id),
+  INDEX ix_membership_user_active (user_id, is_primary, start_date, end_date),
+  INDEX ix_membership_org (org_id),
   FOREIGN KEY (user_id) REFERENCES user(id),
   FOREIGN KEY (org_id)  REFERENCES org(id)
 ) ENGINE=InnoDB;
+
+-- Safety: attempt to add new columns if schema pre-exists without them
+ALTER TABLE membership
+  ADD COLUMN IF NOT EXISTS is_primary BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS start_date DATE NULL,
+  ADD COLUMN IF NOT EXISTS end_date DATE NULL;
 
 CREATE TABLE IF NOT EXISTS account (
   id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
@@ -78,7 +90,7 @@ CREATE TABLE IF NOT EXISTS instrument (
   id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
   symbol VARCHAR(32) NOT NULL,
   name VARCHAR(160) NOT NULL,
-  type ENUM('EQUITY','ETF','BOND','CRYPTO') NOT NULL DEFAULT 'EQUITY',
+  type ENUM('EQUITY','ETF') NOT NULL DEFAULT 'EQUITY',
   isin VARCHAR(16) UNIQUE,
   mic VARCHAR(10) NULL,
   currency CHAR(3) NOT NULL DEFAULT 'EUR',
@@ -197,3 +209,16 @@ SELECT t.account_id,
        SUM(CASE WHEN t.direction='CREDIT' THEN t.amount ELSE -t.amount END) AS balance
 FROM `transaction` t
 GROUP BY t.account_id;
+
+-- Precomputed monthly salary per user and employer
+CREATE TABLE IF NOT EXISTS user_salary_monthly (
+  user_id BIGINT UNSIGNED NOT NULL,
+  employer_org_id BIGINT UNSIGNED NOT NULL,
+  year SMALLINT UNSIGNED NOT NULL,
+  month TINYINT UNSIGNED NOT NULL,
+  salary_amount DECIMAL(18,4) NOT NULL,
+  PRIMARY KEY (user_id, year, month),
+  INDEX ix_salary_employer_ym (employer_org_id, year, month),
+  FOREIGN KEY (user_id) REFERENCES user(id),
+  FOREIGN KEY (employer_org_id) REFERENCES org(id)
+) ENGINE=InnoDB;

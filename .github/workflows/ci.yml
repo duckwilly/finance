@@ -1,107 +1,60 @@
 name: CI
 
 on:
-  push: { branches: [ main ] }
+  push:
+    branches: [ main, develop ]
   pull_request:
+    branches: [ main ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    services:
-      mariadb:
-        image: mariadb:10.6
-        env:
-          MARIADB_ROOT_PASSWORD: root
-          MARIADB_DATABASE: finance
-          MARIADB_USER: finance
-          MARIADB_PASSWORD: finance
-        ports: [ "3306:3306" ]
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
+    
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
-      - name: Wait for DB
-        run: |
-          for i in `seq 1 60`; do
-            mysqladmin ping -h 127.0.0.1 -uroot -proot && break
-            sleep 2
-          done
-      - name: Install deps
-        run: |
-          python -m pip install -U pip
-          pip install -r requirements.txt
-      - name: Apply schema
-        run: |
-          mysql -h 127.0.0.1 -uroot -proot finance < sql/schema.sql
-      - name: Smoketest
-        env:
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_USER: root
-          DB_PASSWORD: root
-          DB_NAME: finance
-        run: python scripts/db_smoketest.py
-      - name: Generate seed CSVs
-        run: python scripts/gen_seed_data.py
-      - name: Load CSVs
-        env:
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_USER: root
-          DB_PASSWORD: root
-          DB_NAME: finance
-        run: python scripts/load_csvs.py
-      - name: Verify web dashboards
-        env:
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_USER: root
-          DB_PASSWORD: root
-          DB_NAME: finance
-        run: |
-          uvicorn app.web.app:app --host 127.0.0.1 --port 8000 &
-          SERVER_PID=$!
-          trap "kill $SERVER_PID" EXIT
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y mysql-client
+    
+    - name: Run quickstart with small dataset (CI optimized)
+      run: |
+        make quickstart-ci
+      env:
+        # Database credentials for CI
+        DB_HOST: 127.0.0.1
+        DB_PORT: 3306
+        DB_USER: finance
+        DB_PASSWORD: finance
+        DB_NAME: finance_test
+    
+    - name: Run tests
+      run: |
+        pytest tests/ -v
+    
+    - name: Run linting
+      run: |
+        # Add your linting commands here
+        echo "Linting would go here"
 
-          READY=0
-          for i in $(seq 1 30); do
-            if curl -sSf http://127.0.0.1:8000/admin/dashboard > /dev/null; then
-              READY=1
-              break
-            fi
-            sleep 2
-          done
+  # Example of different test configurations
+  test-small:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Test with small dataset
+      run: make quickstart-small --no-server
 
-          if [ "$READY" -ne 1 ]; then
-            echo "Web server did not become ready" >&2
-            exit 1
-          fi
-
-          curl -sSfL http://127.0.0.1:8000/admin > /tmp/admin.html
-          curl -sSf http://127.0.0.1:8000/admin/dashboard > /tmp/dashboard.html
-          curl -sSf http://127.0.0.1:8000/admin/companies > /tmp/companies.html
-
-          ORG_ID=$(python - <<'PY'
-          from app.config import get_settings
-          from sqlalchemy import create_engine, text
-
-          settings = get_settings()
-          engine = create_engine(settings.database.sqlalchemy_url)
-
-          with engine.connect() as connection:
-              result = connection.execute(text("SELECT id FROM org ORDER BY id LIMIT 1"))
-              row = result.first()
-
-          if row is None:
-              raise SystemExit("No organisations found to test detail page")
-
-          print(row[0])
-          PY
-          )
-
-          curl -sSf http://127.0.0.1:8000/admin/companies/$ORG_ID > /tmp/company_detail.html
+  test-large:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v4
+    - name: Test with large dataset (only on main branch)
+      run: make quickstart-large --no-server

@@ -1,1 +1,0 @@
-The files in this folder are from a previous iteration of this project and are to be used for inspiration

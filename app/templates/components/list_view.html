@@ -1,0 +1,79 @@
+{% macro render_list_view(id, view, enable_search=True) -%}
+  <div class="list-view" id="{{ id }}" data-list-view>
+    <div class="list-view__header">
+      <div>
+        <h3 class="list-view__title">{{ view.title }}</h3>
+        <p class="list-view__meta"><span data-list-view-count>{{ view.rows | length }}</span> entries</p>
+      </div>
+      {% if enable_search %}
+      <label class="list-view__search">
+        <span class="sr-only">Search {{ view.title|lower }}</span>
+        <input
+          type="search"
+          class="list-view__search-input"
+          placeholder="{{ view.search_placeholder }}"
+          data-list-view-search
+          autocomplete="off"
+        />
+      </label>
+      {% endif %}
+    </div>
+    <div class="list-view__table-wrapper">
+      <table class="list-view__table" role="grid" data-list-view-table>
+        <thead>
+          <tr>
+            {% for column in view.columns %}
+            <th
+              scope="col"
+              class="list-view__cell list-view__cell--head list-view__cell--{{ column.align }}"
+              data-column-key="{{ column.key }}"
+              data-column-type="{{ column.column_type or 'text' }}"
+            >
+              {{ column.title }}
+            </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in view.rows %}
+          <tr
+            class="list-view__row"
+            data-list-view-row
+            data-search-text="{{ row.search_text or '' }}"
+          >
+            {% for column in view.columns %}
+            {% set value = row.values.get(column.key) %}
+            {% set link_url = row.links.get(column.key) if row.links else none %}
+            <td class="list-view__cell list-view__cell--{{ column.align }}" data-column-key="{{ column.key }}">
+              {% if column.column_type == 'currency' %}
+                {% if value is not none %}
+                  {{ humanize_currency(value, short=true, decimals=1) }}
+                {% else %}
+                  &mdash;
+                {% endif %}
+              {% else %}
+                {% set display_value = value if value is not none and value != '' else '—' %}
+                {% if link_url %}
+                  <a href="{{ link_url }}">{{ display_value }}</a>
+                {% else %}
+                  {{ display_value }}
+                {% endif %}
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+          <tr
+            class="list-view__row list-view__row--empty"
+            data-list-view-empty
+            {% if view.rows %}hidden{% endif %}
+          >
+            <td class="list-view__cell list-view__cell--empty" colspan="{{ view.columns | length }}">
+              {{ view.empty_message }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+{%- endmacro %}
