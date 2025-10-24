@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ dashboard.profile.name }} • Company dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
+  </head>
+  <body class="page">
+    <header class="page__header">
+      <div>
+        <p class="eyebrow">Corporate dashboard</p>
+        <h1 class="page__title">{{ dashboard.profile.name }}</h1>
+        <p class="page__subtitle">
+          Key operating metrics and cash movements tailored to this organisation.
+        </p>
+      </div>
+      <div class="badge">{{ dashboard.period_label }}</div>
+    </header>
+
+    <main class="page__content">
+      <section class="card-grid">
+        <article class="card">
+          <p class="card__label">Net worth</p>
+          <p class="card__value">{{ humanize_currency(dashboard.summary.net_worth, decimals=2) }}</p>
+          <p class="card__hint">Total cash and investment positions.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Cash position</p>
+          <p class="card__value">{{ humanize_currency(dashboard.summary.cash_balance, decimals=2) }}</p>
+          <p class="card__hint">Operating and treasury account balances.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Holdings value</p>
+          <p class="card__value">{{ humanize_currency(dashboard.summary.holdings_value, decimals=2) }}</p>
+          <p class="card__hint">Market value of any investment holdings.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Income (period)</p>
+          <p class="card__value">{{ humanize_currency(dashboard.summary.period_income, decimals=2) }}</p>
+          <p class="card__hint">Revenue captured in this window.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Expenses (period)</p>
+          <p class="card__value">{{ humanize_currency(dashboard.summary.period_expenses, decimals=2) }}</p>
+          <p class="card__hint">Operating and capital expenses.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Net cash flow</p>
+          <p class="card__value">{{ humanize_currency(dashboard.summary.net_cash_flow, decimals=2) }}</p>
+          <p class="card__hint">Income minus expenses for the period.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Total profit to date</p>
+          <p class="card__value">{{ humanize_currency(dashboard.summary.total_profit, decimals=2) }}</p>
+          <p class="card__hint">Cumulative profit since tracking began.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Employees</p>
+          <p class="card__value">{{ humanize_number(dashboard.summary.employee_count) }}</p>
+          <p class="card__hint">Monthly payroll {{ humanize_currency(dashboard.summary.monthly_salary_cost, decimals=2) }}.</p>
+        </article>
+      </section>
+
+      <section class="details">
+        <div class="details__panel">
+          <h2 class="panel__title">Accounts</h2>
+          <p class="panel__hint">Liquidity split across operating and reserve accounts.</p>
+          {% if dashboard.accounts %}
+          <table class="data-table" role="grid">
+            <thead>
+              <tr>
+                <th scope="col">Account</th>
+                <th scope="col">Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for account in dashboard.accounts %}
+              <tr>
+                <td>
+                  <div class="cell-title">{{ account.name or 'Account #' ~ account.id }}</div>
+                  <div class="cell-subtitle">
+                    <span class="chip">{{ account.type.replace('_', ' ')|title }}</span>
+                    &nbsp;•&nbsp;{{ account.currency }}
+                  </div>
+                </td>
+                <td>{{ humanize_currency(account.balance, decimals=2) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="empty-state">No company accounts recorded.</p>
+          {% endif %}
+        </div>
+
+        <div class="details__panel">
+          <h2 class="panel__title">Payroll overview</h2>
+          <p class="panel__hint">Latest recorded salary per employee (up to 25 most recent).</p>
+          {% if dashboard.payroll %}
+          <table class="data-table" role="grid">
+            <thead>
+              <tr>
+                <th scope="col">Employee</th>
+                <th scope="col">Monthly salary</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for entry in dashboard.payroll %}
+              <tr>
+                <td>
+                  <div class="cell-title">{{ entry.name }}</div>
+                  <div class="cell-subtitle">User ID {{ entry.user_id }}</div>
+                </td>
+                <td>{{ humanize_currency(entry.salary_amount, decimals=2) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="empty-state">No salary records available for this organisation.</p>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="details">
+        <div class="details__panel">
+          <h2 class="panel__title">Income breakdown</h2>
+          <p class="panel__hint">Review incoming cash by revenue category and inspect recent activity.</p>
+          {% if dashboard.income_breakdown %}
+          <div class="expandable-list">
+            {% for category in dashboard.income_breakdown %}
+            <details class="expandable" {% if loop.first %}open{% endif %}>
+              <summary>
+                <span>{{ category.name }}</span>
+                <span class="expandable__amount">{{ humanize_currency(category.total, decimals=2) }}</span>
+              </summary>
+              <div class="expandable__transactions">
+                {% for txn in category.transactions %}
+                <div class="transaction-row">
+                  <div>
+                    <div class="cell-title">{{ txn.description or 'Transaction #' ~ loop.index }}</div>
+                    <div class="transaction-row__meta">{{ txn.txn_date.strftime('%d %b %Y') }}</div>
+                  </div>
+                  <div class="transaction-row__amount">{{ humanize_currency(txn.amount, decimals=2) }}</div>
+                </div>
+                {% endfor %}
+              </div>
+            </details>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty-state">No income captured during this window.</p>
+          {% endif %}
+        </div>
+
+        <div class="details__panel">
+          <h2 class="panel__title">Expense breakdown</h2>
+          <p class="panel__hint">Track outflows by category with quick access to recent transactions.</p>
+          {% if dashboard.expense_breakdown %}
+          <div class="expandable-list">
+            {% for category in dashboard.expense_breakdown %}
+            <details class="expandable">
+              <summary>
+                <span>{{ category.name }}</span>
+                <span class="expandable__amount">{{ humanize_currency(category.total, decimals=2) }}</span>
+              </summary>
+              <div class="expandable__transactions">
+                {% for txn in category.transactions %}
+                <div class="transaction-row">
+                  <div>
+                    <div class="cell-title">{{ txn.description or 'Transaction #' ~ loop.index }}</div>
+                    <div class="transaction-row__meta">{{ txn.txn_date.strftime('%d %b %Y') }}</div>
+                  </div>
+                  <div class="transaction-row__amount">{{ humanize_currency(txn.amount, decimals=2) }}</div>
+                </div>
+                {% endfor %}
+              </div>
+            </details>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty-state">No expenses captured during this window.</p>
+          {% endif %}
+        </div>
+      </section>
+    </main>
+
+    <footer class="page__footer">
+      <p>Consolidated corporate performance powered by platform data.</p>
+    </footer>
+  </body>
+</html>
