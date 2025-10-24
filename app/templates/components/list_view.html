@@ -43,6 +43,7 @@
           >
             {% for column in view.columns %}
             {% set value = row.values.get(column.key) %}
+            {% set link_url = row.links.get(column.key) if row.links else none %}
             <td class="list-view__cell list-view__cell--{{ column.align }}" data-column-key="{{ column.key }}">
               {% if column.column_type == 'currency' %}
                 {% if value is not none %}
@@ -51,7 +52,12 @@
                   &mdash;
                 {% endif %}
               {% else %}
-                {{ value if value is not none and value != '' else '—' }}
+                {% set display_value = value if value is not none and value != '' else '—' %}
+                {% if link_url %}
+                  <a href="{{ link_url }}">{{ display_value }}</a>
+                {% else %}
+                  {{ display_value }}
+                {% endif %}
               {% endif %}
             </td>
             {% endfor %}

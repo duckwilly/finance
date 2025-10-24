@@ -102,10 +102,13 @@ class Account(Base):
 
     id: Mapped[int] = mapped_column(_ID_TYPE, primary_key=True, autoincrement=True)
     owner_type: Mapped[AccountOwnerType] = mapped_column(
-        SQLEnum(AccountOwnerType, native_enum=False), nullable=False
+        SQLEnum(AccountOwnerType, native_enum=False, values_callable=lambda obj: [e.value for e in obj]), nullable=False
     )
     owner_id: Mapped[int] = mapped_column(_ID_TYPE, nullable=False)
-    type: Mapped[AccountType] = mapped_column(SQLEnum(AccountType, native_enum=False), nullable=False)
+    type: Mapped[AccountType] = mapped_column(
+        SQLEnum(AccountType, native_enum=False, values_callable=lambda obj: [e.value for e in obj]), 
+        nullable=False
+    )
     currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="EUR")
     name: Mapped[str | None] = mapped_column(String(120))
     iban: Mapped[str | None] = mapped_column(String(34))

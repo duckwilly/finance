@@ -285,6 +285,7 @@ class AdminService:
                             "brokerage_aum": record.brokerage_aum,
                         },
                         search_text=" ".join(filter(None, search_terms)).lower(),
+                        links={"name": f"/individuals/{record.individual_id}"},
                     )
                 )
 
@@ -509,6 +510,7 @@ class AdminService:
                             "profit_total": profit_total,
                         },
                         search_text=company_name.lower(),
+                        links={"name": f"/corporate/{company_id}"},
                     )
                 )
 
