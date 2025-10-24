@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ dashboard.profile.name }} • Individual dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
+  </head>
+  <body class="page">
+    <header class="page__header">
+      <div>
+        <p class="eyebrow">Individual dashboard</p>
+        <h1 class="page__title">{{ dashboard.profile.name }}</h1>
+        <p class="page__subtitle">
+          {% if dashboard.profile.job_title %}
+            {{ dashboard.profile.job_title }}{% if dashboard.employer_name %} at {{ dashboard.employer_name }}{% endif %}
+          {% elif dashboard.employer_name %}
+            Employed at {{ dashboard.employer_name }}
+          {% else %}
+            Personal finances overview tailored to this account.
+          {% endif %}
+        </p>
+      </div>
+      <div class="badge">{{ dashboard.period_label }}</div>
+    </header>
+
+    <main class="page__content">
+      <section class="card-grid">
+        <article class="card">
+          <p class="card__label">Net worth</p>
+          <p class="card__value">{{ humanize_currency(dashboard.summary.net_worth, decimals=2) }}</p>
+          <p class="card__hint">Cash and investment holdings combined.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Cash on hand</p>
+          <p class="card__value">{{ humanize_currency(dashboard.summary.cash_balance, decimals=2) }}</p>
+          <p class="card__hint">Across checking and savings accounts.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Brokerage holdings</p>
+          <p class="card__value">{{ humanize_currency(dashboard.summary.holdings_value, decimals=2) }}</p>
+          <p class="card__hint">Current market value of open positions.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Income (period)</p>
+          <p class="card__value">{{ humanize_currency(dashboard.summary.period_income, decimals=2) }}</p>
+          <p class="card__hint">Money in during the selected window.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Expenses (period)</p>
+          <p class="card__value">{{ humanize_currency(dashboard.summary.period_expenses, decimals=2) }}</p>
+          <p class="card__hint">Money out during the selected window.</p>
+        </article>
+        <article class="card">
+          <p class="card__label">Net cash flow</p>
+          <p class="card__value">{{ humanize_currency(dashboard.summary.net_cash_flow, decimals=2) }}</p>
+          <p class="card__hint">Income minus expenses for this period.</p>
+        </article>
+      </section>
+
+      <section class="details">
+        <div class="details__panel">
+          <h2 class="panel__title">Accounts</h2>
+          <p class="panel__hint">Balances across personal accounts grouped by institution.</p>
+          {% if dashboard.accounts %}
+          <table class="data-table" role="grid">
+            <thead>
+              <tr>
+                <th scope="col">Account</th>
+                <th scope="col">Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for account in dashboard.accounts %}
+              <tr>
+                <td>
+                  <div class="cell-title">{{ account.name or 'Account #' ~ account.id }}</div>
+                  <div class="cell-subtitle">
+                    <span class="chip">{{ account.type.replace('_', ' ')|title }}</span>
+                    &nbsp;•&nbsp;{{ account.currency }}
+                  </div>
+                </td>
+                <td>{{ humanize_currency(account.balance, decimals=2) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="empty-state">No accounts recorded for this user.</p>
+          {% endif %}
+        </div>
+
+        <div class="details__panel">
+          <h2 class="panel__title">Brokerage holdings</h2>
+          <p class="panel__hint">Open positions with their current valuation and unrealised P/L.</p>
+          {% if dashboard.holdings %}
+          <table class="data-table" role="grid">
+            <thead>
+              <tr>
+                <th scope="col">Instrument</th>
+                <th scope="col">Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for holding in dashboard.holdings %}
+              <tr>
+                <td>
+                  <div class="cell-title">{{ holding.instrument_symbol }} • {{ holding.instrument_name }}</div>
+                  <div class="cell-subtitle">
+                    {{ humanize_number(holding.quantity, decimals=2) }} @ {{ humanize_currency(holding.last_price, decimals=2) }}
+                    &nbsp;•&nbsp;Unrealised P/L: {{ humanize_currency(holding.unrealized_pl, decimals=2) }}
+                  </div>
+                </td>
+                <td>{{ humanize_currency(holding.market_value, decimals=2) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="empty-state">No active brokerage holdings.</p>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="details">
+        <div class="details__panel">
+          <h2 class="panel__title">Income breakdown</h2>
+          <p class="panel__hint">Category totals with the most recent transactions for quick inspection.</p>
+          {% if dashboard.income_breakdown %}
+          <div class="expandable-list">
+            {% for category in dashboard.income_breakdown %}
+            <details class="expandable" {% if loop.first %}open{% endif %}>
+              <summary>
+                <span>{{ category.name }}</span>
+                <span class="expandable__amount">{{ humanize_currency(category.total, decimals=2) }}</span>
+              </summary>
+              <div class="expandable__transactions">
+                {% for txn in category.transactions %}
+                <div class="transaction-row">
+                  <div>
+                    <div class="cell-title">{{ txn.description or 'Transaction #' ~ loop.index }}</div>
+                    <div class="transaction-row__meta">{{ txn.txn_date.strftime('%d %b %Y') }}</div>
+                  </div>
+                  <div class="transaction-row__amount">{{ humanize_currency(txn.amount, decimals=2) }}</div>
+                </div>
+                {% endfor %}
+              </div>
+            </details>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty-state">No income posted in this window.</p>
+          {% endif %}
+        </div>
+
+        <div class="details__panel">
+          <h2 class="panel__title">Expense breakdown</h2>
+          <p class="panel__hint">Monitor spending trends and drill down into recent payments.</p>
+          {% if dashboard.expense_breakdown %}
+          <div class="expandable-list">
+            {% for category in dashboard.expense_breakdown %}
+            <details class="expandable">
+              <summary>
+                <span>{{ category.name }}</span>
+                <span class="expandable__amount">{{ humanize_currency(category.total, decimals=2) }}</span>
+              </summary>
+              <div class="expandable__transactions">
+                {% for txn in category.transactions %}
+                <div class="transaction-row">
+                  <div>
+                    <div class="cell-title">{{ txn.description or 'Transaction #' ~ loop.index }}</div>
+                    <div class="transaction-row__meta">{{ txn.txn_date.strftime('%d %b %Y') }}</div>
+                  </div>
+                  <div class="transaction-row__amount">{{ humanize_currency(txn.amount, decimals=2) }}</div>
+                </div>
+                {% endfor %}
+              </div>
+            </details>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="empty-state">No expenses posted in this window.</p>
+          {% endif %}
+        </div>
+      </section>
+    </main>
+
+    <footer class="page__footer">
+      <p>Financial insights generated from platform activity.</p>
+    </footer>
+  </body>
+</html>

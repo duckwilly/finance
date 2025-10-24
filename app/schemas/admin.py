@@ -40,6 +40,7 @@ class ListViewRow(BaseModel):
     key: str
     values: dict[str, Any]
     search_text: str | None = None
+    links: dict[str, str] | None = None  # Maps column key to URL
 
 
 class ListView(BaseModel):
