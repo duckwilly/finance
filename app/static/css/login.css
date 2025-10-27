@@ -1,0 +1,122 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
+    "Helvetica Neue", sans-serif;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #0b1f3a, #142c4d);
+  color: #f4f6fb;
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  padding: 2.5rem 2.75rem;
+  max-width: 420px;
+  width: min(90vw, 420px);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+}
+
+.card h1 {
+  margin: 0 0 1.5rem;
+  font-size: 1.875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.card p {
+  margin: 0 0 1.75rem;
+  line-height: 1.5;
+  color: rgba(244, 246, 251, 0.78);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1.25rem;
+}
+
+.field label {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.field input {
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+  font-size: 1rem;
+}
+
+.field input:focus {
+  outline: 2px solid rgba(255, 255, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.actions button {
+  flex: 1;
+  border: none;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  background: #fcd34d;
+  color: #1f2937;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.actions button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 25px rgba(252, 211, 77, 0.35);
+}
+
+.note {
+  background: rgba(15, 23, 42, 0.65);
+  border-left: 3px solid #fcd34d;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  margin-top: 1.75rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.error {
+  background: rgba(248, 113, 113, 0.25);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: #fee2e2;
+  padding: 0.8rem 1rem;
+  border-radius: 10px;
+  margin-bottom: 1.2rem;
+  font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: 2rem 1.75rem;
+  }
+
+  .actions {
+    flex-direction: column;
+  }
+
+  .actions button {
+    width: 100%;
+  }
+}

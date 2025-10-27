@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.logger import get_logger
+from app.core.security import AuthenticatedUser, require_company_access
 from app.core.templates import templates
 from app.db.session import get_sessionmaker
 from app.services import CompaniesService
@@ -37,6 +38,7 @@ def get_companies_service() -> CompaniesService:
 async def read_company_dashboard(
     request: Request,
     company_id: int,
+    _: AuthenticatedUser = Depends(require_company_access),
     service: CompaniesService = Depends(get_companies_service),
     session: Session = Depends(get_db_session),
 ) -> HTMLResponse:

@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.logger import get_logger
+from app.core.security import AuthenticatedUser, require_individual_access
 from app.core.templates import templates
 from app.db.session import get_sessionmaker
 from app.services import IndividualsService
@@ -37,6 +38,7 @@ def get_individuals_service() -> IndividualsService:
 async def read_individual_dashboard(
     request: Request,
     user_id: int,
+    _: AuthenticatedUser = Depends(require_individual_access),
     service: IndividualsService = Depends(get_individuals_service),
     session: Session = Depends(get_db_session),
 ) -> HTMLResponse:

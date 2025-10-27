@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Finance Platform • Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/login.css') }}" />
+  </head>
+  <body>
+    <main class="card" role="main">
+      <h1>Sign in</h1>
+      <p>
+        Use the demo credentials to explore the admin, individual, or company
+        dashboards. Every user receives a tailored landing page right after
+        logging in.
+      </p>
+      {% if error %}
+      <div class="error" role="alert">{{ error }}</div>
+      {% endif %}
+      <form method="post" action="{{ request.url_for('login_submit') }}">
+        <input type="hidden" name="next" value="{{ next }}" />
+        <div class="field">
+          <label for="username">Username</label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            autocomplete="username"
+            required
+            autofocus
+            value="{{ username }}"
+          />
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+        <div class="actions">
+          <button type="submit">Access dashboards</button>
+        </div>
+      </form>
+      <aside class="note">
+        <p><strong>Admin:</strong> {{ admin_username }} (password set in .env)</p>
+        <p><strong>Individuals:</strong> usernames such as <code>u1</code> (password {{ demo_password }})</p>
+        <p><strong>Companies:</strong> usernames such as <code>c1</code> (same password)</p>
+      </aside>
+    </main>
+  </body>
+</html>

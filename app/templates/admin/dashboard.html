@@ -21,6 +21,7 @@
       {% set first_date = metrics.first_transaction_at.date() if metrics.first_transaction_at else '—' %}
       {% set last_date = metrics.last_transaction_at.date() if metrics.last_transaction_at else '—' %}
       <div class="badge">Data simulated from {{ first_date }} to {{ last_date }}</div>
+      <a class="logout-link" href="{{ request.url_for('logout') }}">Log out</a>
     </header>
 
     <main class="page__content">
