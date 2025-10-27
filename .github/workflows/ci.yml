@@ -23,9 +23,8 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y mysql-client
 
-    - name: Run quickstart, tests, and linting
+    - name: Prepare environment, start server, and run tests
       env:
-        # Database credentials for CI
         DB_HOST: 127.0.0.1
         DB_PORT: 3306
         DB_USER: finance
@@ -34,27 +33,20 @@ jobs:
       run: |
         set -euo pipefail
 
-        make quickstart-ci
-
-        UVICORN_PID=""
-        if [[ -f quickstart_uvicorn.pid ]]; then
-          UVICORN_PID=$(cat quickstart_uvicorn.pid)
-        fi
-
         cleanup() {
           set +e
-          if [[ -n "${UVICORN_PID}" ]]; then
+          if [[ -n "${UVICORN_PID:-}" ]]; then
             kill "${UVICORN_PID}" >/dev/null 2>&1 || true
             wait "${UVICORN_PID}" 2>/dev/null || true
           fi
-          rm -f quickstart_uvicorn.pid
           docker compose -f docker/docker-compose.yaml down -v >/dev/null 2>&1 || true
         }
-
         trap cleanup EXIT
 
-        source .venv/bin/activate
-        pytest tests/ -v
+        make quickstart-ci
 
-        # Add your linting commands here
-        echo "Linting would go here"
+        source .venv/bin/activate
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info &
+        UVICORN_PID=$!
+
+        pytest tests/ -v

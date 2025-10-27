@@ -15,7 +15,6 @@ The quickstart script now supports various configuration options to generate dif
 - `--individuals NUM`: Number of individuals (overrides preset)
 - `--companies NUM`: Number of companies (overrides preset)
 - `--no-server`: Don't start the FastAPI server
-- `--detach-server`: Start the FastAPI server in the background and exit without waiting (useful for CI)
 - `--help`: Show help message
 
 ## Presets
@@ -39,7 +38,7 @@ make quickstart
 ```bash
 make quickstart-ci
 # or
-./scripts/quickstart.sh --size small --detach-server
+./scripts/quickstart.sh --size small --no-server
 ```
 
 ### Custom configuration
@@ -75,7 +74,7 @@ make start-prod
 - `make quickstart-small`: Small preset (50 individuals, 5 companies, 3 months)
 - `make quickstart-medium`: Medium preset (500 individuals, 50 companies, 12 months)
 - `make quickstart-large`: Large preset (2000 individuals, 200 companies, 24 months)
-- `make quickstart-ci`: Small preset with detached server startup (optimized for CI)
+- `make quickstart-ci`: Small preset without server (optimized for CI)
 
 ### Server Targets
 - `make start`: Start development server with auto-reload
@@ -83,14 +82,14 @@ make start-prod
 
 ## CI/CD Integration
 
-For GitHub Actions or other CI systems, use the small preset with detached server startup:
+For GitHub Actions or other CI systems, use the small preset without server:
 
 ```yaml
 - name: Setup test environment
   run: make quickstart-ci
 ```
 
-This generates a minimal dataset (50 individuals, 5 companies, 3 months) and starts the FastAPI server in the background, making it perfect for integration-style CI runs that need the service available during tests.
+This generates a minimal dataset (50 individuals, 5 companies, 3 months) without starting the server, making it perfect for fast CI runs.
 
 ## Performance Considerations
 
