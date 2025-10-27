@@ -1,0 +1,76 @@
+/* Base theme variables and shared styles */
+
+:root, :root[data-theme="light"] {
+  --surface: #f7f5ff;
+  --surface-alt: #fff;
+  --surface-strong: #efe7ff;
+  --primary: #5f6afc;
+  --primary-soft: #a7b4ff;
+  --text-primary: #2e2a4a;
+  --text-secondary: #5a5673;
+  --text-muted: #8a86a3;
+  --border: rgba(94, 101, 255, 0.2);
+  --shadow: rgba(94, 101, 255, 0.15);
+  --bg-gradient: linear-gradient(160deg, #f7f5ff 0%, #fdf7ff 60%, #f8fffc 100%);
+  --chart-bg: linear-gradient(135deg, rgba(95, 106, 252, 0.12), rgba(255, 184, 210, 0.08));
+}
+
+:root[data-theme="dark"] {
+  --surface: #0a0f1e;
+  --surface-alt: #131b2e;
+  --surface-strong: #1e2739;
+  --primary: #60a5fa;
+  --primary-soft: #93c5fd;
+  --text-primary: #f8fafc;
+  --text-secondary: #e2e8f0;
+  --text-muted: #94a3b8;
+  --border: rgba(148, 163, 184, 0.2);
+  --shadow: rgba(0, 0, 0, 0.4);
+  --bg-gradient: linear-gradient(160deg, #0a0f1e 0%, #131b2e 60%, #1a2332 100%);
+  --chart-bg: linear-gradient(135deg, rgba(96, 165, 250, 0.08), rgba(244, 114, 182, 0.06));
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  background: var(--bg-gradient);
+  color: var(--text-primary);
+  transition: background 200ms, color 200ms;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+  transition: color 200ms;
+}
+
+a:hover { color: var(--primary-soft); }
+
+:root[data-theme="dark"] a:not(.logout-link) { color: var(--primary-soft); }
+:root[data-theme="dark"] a:not(.logout-link):hover { color: var(--primary); }
+
+/* Theme toggle */
+.theme-toggle {
+  padding: 0.65rem 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 200ms;
+  box-shadow: 0 8px 20px -10px var(--shadow);
+}
+
+.theme-toggle:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -10px var(--shadow);
+}
+
+.theme-toggle__icon { font-size: 1.1rem; line-height: 1; }
+.theme-toggle__label { font-size: 0.875rem; }

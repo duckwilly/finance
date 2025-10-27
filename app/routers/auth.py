@@ -11,6 +11,10 @@ from app.core.security import (
     get_security_provider,
 )
 from app.core.templates import templates
+from app.db.session import get_sessionmaker
+from app.models.individuals import Individual
+from app.models.companies import Company
+from sqlalchemy import select, func
 
 LOGGER = get_logger(__name__)
 router = APIRouter(tags=["auth"])
@@ -41,6 +45,17 @@ def get_security() -> SecurityProvider:
     return get_security_provider()
 
 
+def _get_user_counts() -> dict[str, int]:
+    """Get counts of individuals and companies from the database."""
+    session_factory = get_sessionmaker()
+    with session_factory() as session:
+        individual_count = session.scalar(select(func.count()).select_from(Individual))
+        company_count = session.scalar(select(func.count()).select_from(Company))
+        return {
+            "individual_count": individual_count or 0,
+            "company_count": company_count or 0,
+        }
+
 @router.get("/login", response_class=HTMLResponse, include_in_schema=False)
 async def login_form(request: Request) -> HTMLResponse:
     """Render the login form. Redirect when already authenticated."""
@@ -52,6 +67,7 @@ async def login_form(request: Request) -> HTMLResponse:
 
     next_path = _safe_next_path(request.query_params.get("next"))
     security = get_security()
+    counts = _get_user_counts()
     context = {
         "request": request,
         "next": next_path or "",
@@ -59,6 +75,7 @@ async def login_form(request: Request) -> HTMLResponse:
         "admin_username": security.admin_username,
         "demo_password": security.demo_user_password,
         "username": "",
+        **counts,
     }
     return templates.TemplateResponse("auth/login.html", context, status_code=200)
 
@@ -76,6 +93,7 @@ async def login_submit(
     user = security.authenticate(username, password)
     if user is None:
         LOGGER.info("Invalid login attempt", extra={"username": username})
+        counts = _get_user_counts()
         context = {
             "request": request,
             "next": _safe_next_path(next_path) or "",
@@ -83,6 +101,7 @@ async def login_submit(
             "admin_username": security.admin_username,
             "demo_password": security.demo_user_password,
             "username": username,
+            **counts,
         }
         return templates.TemplateResponse(
             "auth/login.html",

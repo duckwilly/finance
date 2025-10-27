@@ -4,9 +4,15 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Finance Platform • Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/base.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', path='css/login.css') }}" />
+    <script src="{{ url_for('static', path='js/theme-switcher.js') }}" defer></script>
   </head>
   <body>
+    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+      <span class="theme-toggle__icon">🌙</span>
+      <span class="theme-toggle__label">Dark mode</span>
+    </button>
     <main class="card" role="main">
       <h1>Sign in</h1>
       <p>
@@ -42,13 +48,13 @@
           />
         </div>
         <div class="actions">
-          <button type="submit">Access dashboards</button>
+          <button type="submit">Log in</button>
         </div>
       </form>
       <aside class="note">
-        <p><strong>Admin:</strong> {{ admin_username }} (password set in .env)</p>
-        <p><strong>Individuals:</strong> usernames such as <code>u1</code> (password {{ demo_password }})</p>
-        <p><strong>Companies:</strong> usernames such as <code>c1</code> (same password)</p>
+        <p><strong>Admin:</strong> {{ admin_username }}</p>
+        <p><strong>Individuals:</strong> usernames <code>u1</code> through <code>u{{ individual_count }}</code></p>
+        <p><strong>Companies:</strong> usernames <code>c1</code> through <code>c{{ company_count }}</code></p>
       </aside>
     </main>
   </body>

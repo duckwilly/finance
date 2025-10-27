@@ -4,7 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ dashboard.profile.name }} • Company dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/base.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
+    <script src="{{ url_for('static', path='js/theme-switcher.js') }}" defer></script>
   </head>
   <body class="page">
     <header class="page__header">
@@ -16,6 +18,10 @@
         </p>
       </div>
       <div class="badge">{{ dashboard.period_label }}</div>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+        <span class="theme-toggle__icon">🌙</span>
+        <span class="theme-toggle__label">Dark mode</span>
+      </button>
       <a class="logout-link" href="{{ request.url_for('logout') }}">Log out</a>
     </header>
 
