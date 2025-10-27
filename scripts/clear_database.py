@@ -85,6 +85,15 @@ def clear_database():
                 logger.info(f"Cleared {result.rowcount} rows from {table}")
             except Exception as e:
                 logger.warning(f"Could not clear table {table}: {e}")
+        
+        # Reset AUTO_INCREMENT counters for tables that use them
+        auto_increment_tables = ["user", "org", "account", "transaction", "trade", "holding", "instrument"]
+        for table in auto_increment_tables:
+            try:
+                connection.execute(text(f"ALTER TABLE {table} AUTO_INCREMENT = 1"))
+                logger.info(f"Reset AUTO_INCREMENT for {table}")
+            except Exception as e:
+                logger.warning(f"Could not reset AUTO_INCREMENT for {table}: {e}")
     
     logger.info("Database clearing complete")
 

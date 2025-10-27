@@ -4,8 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Admin Dashboard • Finance Platform</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/base.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+    <script src="{{ url_for('static', path='js/theme-switcher.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/admin-charts.js') }}?v={{ range(1000, 9999) | random }}" defer></script>
     <script src="{{ url_for('static', path='js/list-view.js') }}?v={{ range(1000, 9999) | random }}" defer></script>
   </head>
@@ -21,6 +23,11 @@
       {% set first_date = metrics.first_transaction_at.date() if metrics.first_transaction_at else '—' %}
       {% set last_date = metrics.last_transaction_at.date() if metrics.last_transaction_at else '—' %}
       <div class="badge">Data simulated from {{ first_date }} to {{ last_date }}</div>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+        <span class="theme-toggle__icon">🌙</span>
+        <span class="theme-toggle__label">Dark mode</span>
+      </button>
+      <a class="logout-link" href="{{ request.url_for('logout') }}">Log out</a>
     </header>
 
     <main class="page__content">
