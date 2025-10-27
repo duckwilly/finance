@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from functools import lru_cache
 import os
 from pathlib import Path
-from typing import Tuple
 
 from dotenv import load_dotenv
 
@@ -37,14 +36,6 @@ class DatabaseSettings:
 
 
 @dataclass(slots=True)
-class AuthAccount:
-    """Configuration entry representing a demo account."""
-
-    username: str
-    subject_id: int
-
-
-@dataclass(slots=True)
 class AuthSettings:
     """Authentication settings loaded from environment variables."""
 
@@ -54,8 +45,6 @@ class AuthSettings:
     admin_username: str
     admin_password: str
     demo_user_password: str
-    individual_accounts: tuple[AuthAccount, ...]
-    company_accounts: tuple[AuthAccount, ...]
     cookie_name: str = "access_token"
     enabled: bool = True
 
@@ -75,28 +64,6 @@ class Settings:
         def _get_env(name: str, default: str) -> str:
             return os.getenv(name, default)
 
-        def _parse_accounts(value: str, default: str) -> Tuple[AuthAccount, ...]:
-            raw_value = value or default
-            accounts: list[AuthAccount] = []
-            for item in raw_value.split(","):
-                item = item.strip()
-                if not item:
-                    continue
-                if ":" not in item:
-                    raise ValueError(
-                        "Account definitions must follow '<username>:<id>' format."
-                    )
-                username, raw_id = item.split(":", 1)
-                username = username.strip()
-                raw_id = raw_id.strip()
-                if not username or not raw_id.isdigit():
-                    raise ValueError(
-                        "Invalid account definition: username and numeric id required."
-                    )
-                accounts.append(AuthAccount(username=username, subject_id=int(raw_id)))
-            if not accounts:
-                raise ValueError("At least one account must be configured.")
-            return tuple(accounts)
 
         db = DatabaseSettings(
             driver=_get_env("DB_DRIVER", "mysql+pymysql"),
@@ -114,14 +81,6 @@ class Settings:
             admin_username=_get_env("ADMIN_USERNAME", "admin"),
             admin_password=_get_env("ADMIN_PASSWORD", "adminpass"),
             demo_user_password=_get_env("DEMO_USER_PASSWORD", "demo"),
-            individual_accounts=_parse_accounts(
-                _get_env("INDIVIDUAL_ACCOUNTS", ""),
-                default="u1:1",
-            ),
-            company_accounts=_parse_accounts(
-                _get_env("COMPANY_ACCOUNTS", ""),
-                default="c1:1",
-            ),
             enabled=_get_env("AUTH_ENABLED", "1") not in {"0", "false", "False"},
         )
         return cls(
@@ -154,12 +113,6 @@ def get_settings() -> Settings:
             },
             "auth": {
                 "admin_username": settings.auth.admin_username,
-                "individual_accounts": [
-                    account.username for account in settings.auth.individual_accounts
-                ],
-                "company_accounts": [
-                    account.username for account in settings.auth.company_accounts
-                ],
                 "token_ttl": settings.auth.access_token_expire_minutes,
                 "enabled": settings.auth.enabled,
             },

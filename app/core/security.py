@@ -10,6 +10,10 @@ from fastapi import Depends, HTTPException, Request, status
 from jwt import ExpiredSignatureError, InvalidTokenError
 
 from app.core.config import AuthSettings, get_settings
+from app.db.session import get_sessionmaker
+from app.models.individuals import Individual
+from app.models.companies import Company
+from sqlalchemy import select
 
 
 class AuthenticationError(Exception):
@@ -28,14 +32,9 @@ class AuthenticatedUser:
 class SecurityProvider:
     """Authenticate demo users and issue/verify JWT access tokens."""
 
-    def __init__(self, settings: AuthSettings) -> None:
+    def __init__(self, settings: AuthSettings, session_factory=None) -> None:
         self._settings = settings
-        self._individual_accounts = {
-            account.username: account.subject_id for account in settings.individual_accounts
-        }
-        self._company_accounts = {
-            account.username: account.subject_id for account in settings.company_accounts
-        }
+        self._session_factory = session_factory or get_sessionmaker()
 
     @property
     def cookie_name(self) -> str:
@@ -67,28 +66,41 @@ class SecurityProvider:
     def authenticate(self, username: str, password: str) -> AuthenticatedUser | None:
         """Validate the supplied credentials and return an ``AuthenticatedUser``."""
 
+        # Check admin authentication first
         if (
             username == self._settings.admin_username
             and password == self._settings.admin_password
         ):
             return AuthenticatedUser(username=username, role="admin")
 
+        # Check demo password for all other accounts
         if password != self._settings.demo_user_password:
             return None
 
-        if username in self._individual_accounts:
-            return AuthenticatedUser(
-                username=username,
-                role="individual",
-                subject_id=self._individual_accounts[username],
-            )
+        # Parse username pattern and look up in database
+        if username.startswith("u") and username[1:].isdigit():
+            # Individual user: u{id}
+            user_id = int(username[1:])
+            with self._session_factory() as session:
+                user = session.get(Individual, user_id)
+                if user:
+                    return AuthenticatedUser(
+                        username=username,
+                        role="individual",
+                        subject_id=user_id,
+                    )
 
-        if username in self._company_accounts:
-            return AuthenticatedUser(
-                username=username,
-                role="company",
-                subject_id=self._company_accounts[username],
-            )
+        elif username.startswith("c") and username[1:].isdigit():
+            # Company: c{id}
+            company_id = int(username[1:])
+            with self._session_factory() as session:
+                company = session.get(Company, company_id)
+                if company:
+                    return AuthenticatedUser(
+                        username=username,
+                        role="company",
+                        subject_id=company_id,
+                    )
 
         return None
 
@@ -143,7 +155,8 @@ def get_security_provider() -> SecurityProvider:
     """Return a cached security provider instance."""
 
     settings = get_settings()
-    return SecurityProvider(settings.auth)
+    session_factory = get_sessionmaker()
+    return SecurityProvider(settings.auth, session_factory)
 
 
 def get_authenticated_user(request: Request) -> AuthenticatedUser:
