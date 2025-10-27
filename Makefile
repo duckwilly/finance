@@ -13,7 +13,7 @@ quickstart-large:
 	./scripts/quickstart.sh --size large
 
 quickstart-ci:
-	./scripts/quickstart.sh --size small --no-server
+	./scripts/quickstart.sh --size small --detach-server
 
 start:
 	@if [ ! -d .venv ]; then echo "Virtual environment not found. Run 'make venv' first."; exit 1; fi

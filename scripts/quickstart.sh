@@ -29,6 +29,7 @@ step() {
 
 # Default values
 START_SERVER="${QUICKSTART_START_SERVER:-1}"
+DETACH_SERVER="0"
 SIMULATION_SIZE="medium"
 SIMULATION_MONTHS=""
 INDIVIDUALS=""
@@ -57,6 +58,10 @@ while [[ $# -gt 0 ]]; do
       START_SERVER="0"
       shift
       ;;
+    --detach-server)
+      DETACH_SERVER="1"
+      shift
+      ;;
     --help)
       echo "Usage: $0 [OPTIONS]"
       echo ""
@@ -66,6 +71,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --individuals NUM    Number of individuals (overrides preset)"
       echo "  --companies NUM      Number of companies (overrides preset)"
       echo "  --no-server          Don't start the FastAPI server"
+      echo "  --detach-server      Start the FastAPI server in the background and exit"
       echo "  --help               Show this help message"
       echo ""
       echo "Presets:"
@@ -276,19 +282,28 @@ if [[ "${START_SERVER}" == "1" ]]; then
   UVICORN_PORT="${QUICKSTART_PORT:-8000}"
   UVICORN_LOG_LEVEL="${QUICKSTART_LOG_LEVEL:-info}"
 
-  cleanup() {
-    if [[ -n "${UVICORN_PID:-}" ]]; then
-      kill "${UVICORN_PID}" >/dev/null 2>&1 || true
-      wait "${UVICORN_PID}" 2>/dev/null || true
-    fi
-  }
+  if [[ "${DETACH_SERVER}" == "1" ]]; then
+    uvicorn app.main:app --host "${UVICORN_HOST}" --port "${UVICORN_PORT}" --log-level "${UVICORN_LOG_LEVEL}" --reload &
+    UVICORN_PID=$!
+    echo "FastAPI application running at http://${UVICORN_HOST}:${UVICORN_PORT} (PID ${UVICORN_PID})."
+    echo "Server started in background (detach mode)."
+    echo "${UVICORN_PID}" > quickstart_uvicorn.pid
+    echo "PID recorded in quickstart_uvicorn.pid for later teardown."
+  else
+    cleanup() {
+      if [[ -n "${UVICORN_PID:-}" ]]; then
+        kill "${UVICORN_PID}" >/dev/null 2>&1 || true
+        wait "${UVICORN_PID}" 2>/dev/null || true
+      fi
+    }
 
-  trap cleanup EXIT INT TERM
-  uvicorn app.main:app --host "${UVICORN_HOST}" --port "${UVICORN_PORT}" --log-level "${UVICORN_LOG_LEVEL}" --reload &
-  UVICORN_PID=$!
-  echo "FastAPI application running at http://${UVICORN_HOST}:${UVICORN_PORT} (PID ${UVICORN_PID})."
-  echo "Press Ctrl+C to stop the server."
-  wait "${UVICORN_PID}"
+    trap cleanup EXIT INT TERM
+    uvicorn app.main:app --host "${UVICORN_HOST}" --port "${UVICORN_PORT}" --log-level "${UVICORN_LOG_LEVEL}" --reload &
+    UVICORN_PID=$!
+    echo "FastAPI application running at http://${UVICORN_HOST}:${UVICORN_PORT} (PID ${UVICORN_PID})."
+    echo "Press Ctrl+C to stop the server."
+    wait "${UVICORN_PID}"
+  fi
 else
   echo "Server startup skipped (QUICKSTART_START_SERVER=${START_SERVER})."
 fi
