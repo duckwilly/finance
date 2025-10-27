@@ -7,25 +7,24 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  quickstart-small:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-    
+
     - name: Install system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y mysql-client
-    
-    - name: Run quickstart with small dataset (CI optimized)
-      run: |
-        make quickstart-ci
+
+    - name: Prepare small dataset without server
+      run: make quickstart-ci
       env:
         # Database credentials for CI
         DB_HOST: 127.0.0.1
@@ -33,28 +32,11 @@ jobs:
         DB_USER: finance
         DB_PASSWORD: finance
         DB_NAME: finance_test
-    
+
     - name: Run tests
-      run: |
-        pytest tests/ -v
-    
+      run: pytest tests/ -v
+
     - name: Run linting
       run: |
         # Add your linting commands here
         echo "Linting would go here"
-
-  # Example of different test configurations
-  test-small:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Test with small dataset
-      run: make quickstart-small --no-server
-
-  test-large:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-    - uses: actions/checkout@v4
-    - name: Test with large dataset (only on main branch)
-      run: make quickstart-large --no-server
