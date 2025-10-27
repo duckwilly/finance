@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 import os
 from pathlib import Path
 
@@ -61,9 +60,8 @@ class Settings:
         return cls(database=db, sqlalchemy_echo=echo_flag not in {"0", "false", "False"})
 
 
-@lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Return a cached ``Settings`` instance."""
+    """Return application settings loaded from the current environment."""
 
     settings = Settings.from_env()
 
