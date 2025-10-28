@@ -7,13 +7,13 @@ from decimal import Decimal
 from sqlalchemy import BigInteger, DateTime, Integer, String, select, func, and_, extract
 from sqlalchemy.orm import Mapped, mapped_column, Session
 
-from .base import Base
+from .base import EntityBase
 from .transactions import Account, Transaction, Section, Category, AccountOwnerType, TransactionDirection
 
 _ID_TYPE = BigInteger().with_variant(Integer, "sqlite")
 
 
-class Company(Base):
+class Company(EntityBase):
     """Represents an organisation/company in the system."""
 
     __tablename__ = "org"
@@ -23,6 +23,11 @@ class Company(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.current_timestamp(), nullable=False
     )
+
+    @property
+    def owner_type(self) -> AccountOwnerType:
+        """Return the account owner type for companies."""
+        return AccountOwnerType.ORG
 
     @staticmethod
     def get_employee_count(session: Session, company_id: int) -> int:
