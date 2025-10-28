@@ -1,7 +1,7 @@
 """Database models for the finance domain."""
 from __future__ import annotations
 
-from .base import Base
+from .base import Base, EntityBase
 from .companies import Company
 from .individuals import Individual
 from .memberships import Membership
@@ -21,6 +21,7 @@ from .salary import UserSalaryMonthly
 
 __all__ = [
     "Base",
+    "EntityBase",
     "Company",
     "Individual",
     "Membership",

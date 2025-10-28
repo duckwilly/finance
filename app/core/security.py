@@ -19,7 +19,7 @@ from sqlalchemy import select
 class AuthenticationError(Exception):
     """Raised when authentication or token validation fails."""
 
-
+# Immutable dataclass for user authentication
 @dataclass(frozen=True, slots=True)
 class AuthenticatedUser:
     """Representation of the authenticated principal."""

@@ -7,12 +7,13 @@ from sqlalchemy import BigInteger, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
-from .base import Base
+from .base import EntityBase
+from .transactions import AccountOwnerType
 
 _ID_TYPE = BigInteger().with_variant(Integer, "sqlite")
 
 
-class Individual(Base):
+class Individual(EntityBase):
     """Represents an end-user/individual in the system."""
 
     __tablename__ = "user"
@@ -24,3 +25,8 @@ class Individual(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.current_timestamp(), nullable=False
     )
+
+    @property
+    def owner_type(self) -> AccountOwnerType:
+        """Return the account owner type for individuals."""
+        return AccountOwnerType.USER
