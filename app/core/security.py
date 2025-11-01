@@ -11,9 +11,15 @@ from jwt import ExpiredSignatureError, InvalidTokenError
 
 from app.core.config import AuthSettings, get_settings
 from app.db.session import get_sessionmaker
-from app.models.individuals import Individual
-from app.models.companies import Company
+from app.models import (
+    AppUser,
+    CompanyAccessGrant,
+    EmploymentContract,
+    OrgPartyMap,
+    UserPartyMap,
+)
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 
 class AuthenticationError(Exception):
@@ -27,6 +33,10 @@ class AuthenticatedUser:
     username: str
     role: str
     subject_id: int | None = None
+    app_user_id: int | None = None
+    party_id: int | None = None
+    roles: tuple[str, ...] = ()
+    company_ids: tuple[int, ...] = ()
 
 
 class SecurityProvider:
@@ -61,7 +71,12 @@ class SecurityProvider:
         return self._settings.enabled
 
     def default_admin_user(self) -> AuthenticatedUser:
-        return AuthenticatedUser(username=self._settings.admin_username, role="admin")
+        return AuthenticatedUser(
+            username=self._settings.admin_username,
+            role="admin",
+            roles=("ADMIN",),
+            company_ids=(),
+        )
 
     def authenticate(self, username: str, password: str) -> AuthenticatedUser | None:
         """Validate the supplied credentials and return an ``AuthenticatedUser``."""
@@ -77,32 +92,75 @@ class SecurityProvider:
         if password != self._settings.demo_user_password:
             return None
 
-        # Parse username pattern and look up in database
-        if username.startswith("u") and username[1:].isdigit():
-            # Individual user: u{id}
-            user_id = int(username[1:])
-            with self._session_factory() as session:
-                user = session.get(Individual, user_id)
-                if user:
-                    return AuthenticatedUser(
-                        username=username,
-                        role="individual",
-                        subject_id=user_id,
+        with self._session_factory() as session:
+            base_query = select(AppUser).options(selectinload(AppUser.roles))
+            app_user = session.execute(base_query.where(AppUser.username == username)).scalars().first()
+
+            fallback_user_id: int | None = None
+
+            if not app_user and username.startswith("u") and username[1:].isdigit():
+                fallback_user_id = int(username[1:])
+                mapped_party_id = (
+                    session.execute(
+                        select(UserPartyMap.party_id).where(UserPartyMap.user_id == fallback_user_id)
+                    )
+                    .scalar_one_or_none()
+                )
+                if mapped_party_id is not None:
+                    app_user = (
+                        session.execute(base_query.where(AppUser.party_id == mapped_party_id))
+                        .scalars()
+                        .first()
                     )
 
-        elif username.startswith("c") and username[1:].isdigit():
-            # Company: c{id}
-            company_id = int(username[1:])
-            with self._session_factory() as session:
-                company = session.get(Company, company_id)
-                if company:
-                    return AuthenticatedUser(
-                        username=username,
-                        role="company",
-                        subject_id=company_id,
-                    )
+            if not app_user or not app_user.is_active:
+                return None
 
-        return None
+            role_codes = tuple(sorted(role.role_code for role in app_user.roles))
+            party_id = app_user.party_id
+
+            individual_id = None
+            if party_id is not None:
+                individual_id = (
+                    session.execute(
+                        select(UserPartyMap.user_id).where(UserPartyMap.party_id == party_id)
+                    ).scalar_one_or_none()
+                )
+            if individual_id is None and fallback_user_id is not None:
+                individual_id = fallback_user_id
+
+            company_ids: set[int] = set()
+            if "ADMIN" not in role_codes:
+                grant_rows = session.execute(
+                    select(OrgPartyMap.org_id)
+                    .join(
+                        EmploymentContract,
+                        EmploymentContract.employer_party_id == OrgPartyMap.party_id,
+                    )
+                    .join(
+                        CompanyAccessGrant,
+                        CompanyAccessGrant.contract_id == EmploymentContract.id,
+                    )
+                    .where(
+                        CompanyAccessGrant.app_user_id == app_user.id,
+                        CompanyAccessGrant.revoked_at.is_(None),
+                    )
+                ).scalars()
+                company_ids.update(grant_rows)
+
+            # Fall back to individual role when no admin privileges present
+            resolved_role = "admin" if "ADMIN" in role_codes else "individual"
+            subject_id = individual_id
+
+            return AuthenticatedUser(
+                username=app_user.username,
+                role=resolved_role,
+                subject_id=subject_id,
+                app_user_id=app_user.id,
+                party_id=party_id,
+                roles=role_codes,
+                company_ids=tuple(sorted(company_ids)),
+            )
 
     def create_access_token(self, user: AuthenticatedUser) -> str:
         """Create a signed JWT for the authenticated user."""
@@ -117,6 +175,14 @@ class SecurityProvider:
         }
         if user.subject_id is not None:
             payload["subject_id"] = user.subject_id
+        if user.app_user_id is not None:
+            payload["app_user_id"] = user.app_user_id
+        if user.party_id is not None:
+            payload["party_id"] = user.party_id
+        if user.roles:
+            payload["roles"] = list(user.roles)
+        if user.company_ids:
+            payload["company_ids"] = list(user.company_ids)
         token = jwt.encode(payload, self._settings.secret_key, algorithm=self._settings.algorithm)
         return token
 
@@ -146,8 +212,48 @@ class SecurityProvider:
                 resolved_subject = int(subject_id)
             except (TypeError, ValueError) as exc:  # pragma: no cover - runtime safeguard
                 raise AuthenticationError("Token subject claim invalid") from exc
+        app_user_id = payload.get("app_user_id")
+        party_id = payload.get("party_id")
+        roles_payload = payload.get("roles")
+        company_ids_payload = payload.get("company_ids")
 
-        return AuthenticatedUser(username=username, role=role, subject_id=resolved_subject)
+        resolved_app_user: int | None = None
+        if app_user_id is not None:
+            try:
+                resolved_app_user = int(app_user_id)
+            except (TypeError, ValueError) as exc:  # pragma: no cover - runtime safeguard
+                raise AuthenticationError("Token app_user_id invalid") from exc
+
+        resolved_party: int | None = None
+        if party_id is not None:
+            try:
+                resolved_party = int(party_id)
+            except (TypeError, ValueError) as exc:  # pragma: no cover - runtime safeguard
+                raise AuthenticationError("Token party_id invalid") from exc
+
+        resolved_roles: tuple[str, ...] = ()
+        if isinstance(roles_payload, list) and all(isinstance(r, str) for r in roles_payload):
+            resolved_roles = tuple(roles_payload)
+
+        resolved_company_ids: tuple[int, ...] = ()
+        if isinstance(company_ids_payload, list):
+            company_values: list[int] = []
+            for value in company_ids_payload:
+                try:
+                    company_values.append(int(value))
+                except (TypeError, ValueError) as exc:  # pragma: no cover - runtime safeguard
+                    raise AuthenticationError("Token company_ids invalid") from exc
+            resolved_company_ids = tuple(sorted(set(company_values)))
+
+        return AuthenticatedUser(
+            username=username,
+            role=role,
+            subject_id=resolved_subject,
+            app_user_id=resolved_app_user,
+            party_id=resolved_party,
+            roles=resolved_roles,
+            company_ids=resolved_company_ids,
+        )
 
 
 @lru_cache(maxsize=1)
@@ -191,9 +297,9 @@ def require_individual_access(
 ) -> AuthenticatedUser:
     """Ensure the user can access the requested individual dashboard."""
 
-    if user.role == "admin":
+    if "ADMIN" in user.roles or user.role == "admin":
         return user
-    if user.role == "individual" and user.subject_id == user_id:
+    if user.subject_id == user_id:
         return user
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
@@ -204,9 +310,9 @@ def require_company_access(
 ) -> AuthenticatedUser:
     """Ensure the user can access the requested company dashboard."""
 
-    if user.role == "admin":
+    if "ADMIN" in user.roles or user.role == "admin":
         return user
-    if user.role == "company" and user.subject_id == company_id:
+    if company_id in user.company_ids:
         return user
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 

@@ -1,33 +1,36 @@
 """Service implementation for admin tooling."""
 from __future__ import annotations
 
-from collections import Counter
-from datetime import date, timedelta
+from collections import Counter, defaultdict
+from datetime import date
 from decimal import Decimal
+from threading import Lock
 from typing import Sequence
 
-from sqlalchemy import case, func, select, extract, tuple_, and_
+from sqlalchemy import and_, case, extract, func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.core.logger import get_logger, timeit
 from app.models import (
     Account,
-    AccountOwnerType,
     AccountType,
+    CashFlowFact,
     Category,
-    Counterparty,
-    Company,
-    Individual,
+    EmploymentContract,
     Instrument,
-    Membership,
-    UserSalaryMonthly,
+    JournalEntry,
+    JournalLine,
+    OrgPartyMap,
+    PayrollFact,
+    HoldingPerformanceFact,
     PositionAgg,
-    PriceDaily,
+    PriceQuote,
+    ReportingPeriod,
     Section,
-    Transaction,
-    TransactionDirection,
+    UserPartyMap,
 )
-from app.services.stocks_service import brokerage_aum_select
+from app.models.party import CompanyProfile, IndividualProfile, Party, PartyType
+from app.services.stocks_service import brokerage_aum_by_party
 from app.schemas.admin import (
     AdminMetrics,
     DashboardCharts,
@@ -39,6 +42,18 @@ from app.schemas.admin import (
 )
 
 LOGGER = get_logger(__name__)
+
+
+_METRICS_SNAPSHOTS: dict[str, AdminMetrics] = {}
+_INDIVIDUAL_OVERVIEWS: dict[str, ListView] = {}
+_INDIVIDUAL_DISTRIBUTIONS: dict[str, dict[str, int]] = {}
+_COMPANY_OVERVIEWS: dict[str, ListView] = {}
+_COMPANY_DISTRIBUTIONS: dict[str, dict[str, int]] = {}
+_STOCK_OVERVIEWS: dict[str, ListView] = {}
+_STOCK_SERIES_CACHE: dict[str, tuple[list[tuple[str, float]], str | None, str | None]] = {}
+_TRANSACTION_OVERVIEWS: dict[str, ListView] = {}
+_TRANSACTION_DISTRIBUTIONS: dict[str, dict[str, int]] = {}
+_metrics_lock = Lock()
 
 
 class AdminService:
@@ -106,9 +121,29 @@ class AdminService:
 
         return self._bucketize(amount, self.TRANSACTION_SIZE_BUCKETS)
 
-    def get_metrics(self, session: Session) -> AdminMetrics:
-        """Return high level metrics for the administrative overview."""
+    @staticmethod
+    def _engine_key(session: Session) -> str:
+        bind = session.get_bind()
+        if bind is None:
+            return "unbound"
+        try:
+            url = bind.url
+            return url.render_as_string(hide_password=True)
+        except AttributeError:  # pragma: no cover - fallback for unusual engines
+            return str(id(bind))
 
+    @classmethod
+    def refresh_metrics(cls, session: Session) -> AdminMetrics:
+        """Compute and store the metrics snapshot for the current engine."""
+
+        metrics = cls._compute_metrics(session)
+        key = cls._engine_key(session)
+        with _metrics_lock:
+            _METRICS_SNAPSHOTS[key] = metrics
+        return metrics
+
+    @classmethod
+    def _compute_metrics(cls, session: Session) -> AdminMetrics:
         LOGGER.debug("Collecting admin metrics from the database")
 
         with timeit(
@@ -116,51 +151,142 @@ class AdminService:
             logger=LOGGER,
             track_db_calls=True,
             session=session,
-            unit="metrics"
+            unit="metrics",
         ) as timer:
-            total_individuals = session.execute(select(func.count(Individual.id))).scalar_one()
-            total_companies = session.execute(select(func.count(Company.id))).scalar_one()
-            total_transactions = session.execute(select(func.count(Transaction.id))).scalar_one()
+            latest_period_id = session.execute(
+                select(ReportingPeriod.id)
+                .order_by(ReportingPeriod.period_end.desc())
+                .limit(1)
+            ).scalar_one_or_none()
 
-            first_transaction_at = session.execute(select(func.min(Transaction.posted_at))).scalar_one()
-            last_transaction_at = session.execute(select(func.max(Transaction.posted_at))).scalar_one()
+            individual_count = select(func.count(IndividualProfile.party_id)).scalar_subquery()
+            company_count = select(func.count(CompanyProfile.party_id)).scalar_subquery()
 
-            # Cash balance across all accounts
-            cash_total = session.execute(
+            journal_stats = (
                 select(
-                    func.sum(
-                        case(
-                            (Transaction.direction == TransactionDirection.CREDIT, Transaction.amount),
-                            else_=-Transaction.amount,
-                        )
-                    )
+                    func.count(JournalEntry.id).label("total_transactions"),
+                    func.min(JournalEntry.posted_at).label("first_transaction_at"),
+                    func.max(JournalEntry.posted_at).label("last_transaction_at"),
                 )
-            ).scalar_one() or Decimal("0")
+            ).subquery()
 
-            # Stock holdings total
-            holdings_total = session.execute(
-                select(func.coalesce(func.sum(PositionAgg.qty * PositionAgg.last_price), 0))
-            ).scalar_one() or Decimal("0")
+            cash_total = (
+                select(func.coalesce(func.sum(JournalLine.amount), 0))
+                .select_from(JournalLine)
+                .join(Account, JournalLine.account_id == Account.id)
+                .join(Party, Party.id == Account.party_id)
+                .where(
+                    Account.account_type_code != AccountType.BROKERAGE.value,
+                    Party.party_type.in_((PartyType.INDIVIDUAL, PartyType.COMPANY)),
+                    Party.display_name != "Ledger Clearing",
+                )
+            ).scalar_subquery()
 
-            total_aum = Decimal(cash_total) + Decimal(holdings_total)
+            if latest_period_id is not None:
+                holdings_total = (
+                    select(func.coalesce(func.sum(HoldingPerformanceFact.market_value), 0))
+                    .join(Party, Party.id == HoldingPerformanceFact.party_id)
+                    .where(
+                        HoldingPerformanceFact.reporting_period_id == latest_period_id,
+                        Party.party_type.in_((PartyType.INDIVIDUAL, PartyType.COMPANY)),
+                        Party.display_name != "Ledger Clearing",
+                    )
+                ).scalar_subquery()
+            else:
+                holdings_total = (
+                    select(func.coalesce(func.sum(PositionAgg.qty * PositionAgg.last_price), 0))
+                    .join(Account, Account.id == PositionAgg.account_id)
+                    .join(Party, Party.id == Account.party_id)
+                    .where(
+                        Party.party_type.in_((PartyType.INDIVIDUAL, PartyType.COMPANY)),
+                        Party.display_name != "Ledger Clearing",
+                    )
+                ).scalar_subquery()
 
-            metrics = AdminMetrics(
-                total_individuals=total_individuals,
-                total_companies=total_companies,
-                total_transactions=total_transactions,
-                first_transaction_at=first_transaction_at,
-                last_transaction_at=last_transaction_at,
-                total_aum=total_aum,
-                total_cash=cash_total,
-                total_holdings=holdings_total,
+            metrics_stmt = (
+                select(
+                    individual_count.label("total_individuals"),
+                    company_count.label("total_companies"),
+                    journal_stats.c.total_transactions,
+                    journal_stats.c.first_transaction_at,
+                    journal_stats.c.last_transaction_at,
+                    cash_total.label("total_cash"),
+                    holdings_total.label("total_holdings"),
+                )
+                .select_from(journal_stats)
             )
 
+            row = session.execute(metrics_stmt).one()
+
+            total_cash = Decimal(row.total_cash or 0)
+            total_holdings = Decimal(row.total_holdings or 0)
+            total_aum = total_cash + total_holdings
+
+            metrics = AdminMetrics(
+                total_individuals=int(row.total_individuals or 0),
+                total_companies=int(row.total_companies or 0),
+                total_transactions=int(row.total_transactions or 0),
+                first_transaction_at=row.first_transaction_at,
+                last_transaction_at=row.last_transaction_at,
+                total_aum=total_aum,
+                total_cash=total_cash,
+                total_holdings=total_holdings,
+            )
+
+            timer.set_total(1)
             LOGGER.debug("Admin metrics computed: %s", metrics)
 
         return metrics
 
+    def get_metrics(self, session: Session) -> AdminMetrics:
+        """Return the precomputed metrics snapshot for the session's engine."""
+
+        key = self._engine_key(session)
+        with _metrics_lock:
+            metrics = _METRICS_SNAPSHOTS.get(key)
+
+        if metrics is not None:
+            return metrics
+
+        LOGGER.debug("Metrics snapshot missing for engine %s; computing now", key)
+        return self.refresh_metrics(session)
+
+    @classmethod
+    def clear_metrics_cache(cls) -> None:
+        with _metrics_lock:
+            _METRICS_SNAPSHOTS.clear()
+            _INDIVIDUAL_OVERVIEWS.clear()
+            _COMPANY_OVERVIEWS.clear()
+            _STOCK_OVERVIEWS.clear()
+            _TRANSACTION_OVERVIEWS.clear()
+
     def get_individual_overview(self, session: Session) -> ListView:
         """Return a reusable list view model for individual users."""
+
+        key = self._engine_key(session)
+        with _metrics_lock:
+            cached = _INDIVIDUAL_OVERVIEWS.get(key)
+            cached_dist = _INDIVIDUAL_DISTRIBUTIONS.get(key)
+            company_dist = _COMPANY_DISTRIBUTIONS.get(key)
+            transaction_dist = _TRANSACTION_DISTRIBUTIONS.get(key)
+            stock_cached = _STOCK_SERIES_CACHE.get(key)
+        if cached is not None and cached_dist is not None:
+            self._income_distribution = dict(cached_dist)
+            if company_dist is not None:
+                self._profit_margin_distribution = dict(company_dist)
+            if transaction_dist is not None:
+                self._transaction_amount_distribution = dict(transaction_dist)
+            if stock_cached:
+                series, label, hint = stock_cached
+                self._stock_price_series = list(series)
+                self._stock_price_series_label = label
+                self._stock_price_series_hint = hint
+            return cached
+        elif cached is not None:
+            LOGGER.debug(
+                "Individual overview cache missing distributions for engine %s; recomputing",
+                key,
+            )
 
         LOGGER.debug("Collecting individual overview data for admin dashboard")
 
@@ -171,121 +297,196 @@ class AdminService:
             session=session,
             unit="users"
         ) as timer:
-            # Latest monthly salary per user from precomputed table
-            salary_latest = (
+            base_individuals = (
                 select(
-                    UserSalaryMonthly.user_id.label("user_id"),
-                    UserSalaryMonthly.employer_org_id.label("employer_org_id"),
-                    UserSalaryMonthly.salary_amount.label("monthly_income"),
-                    func.row_number().over(
-                        partition_by=UserSalaryMonthly.user_id,
-                        order_by=(UserSalaryMonthly.year.desc(), UserSalaryMonthly.month.desc()),
-                    ).label("rn"),
+                    Party.id.label("party_id"),
+                    Party.display_name.label("display_name"),
+                    UserPartyMap.user_id.label("user_id"),
                 )
-                .subquery()
-            )
+                .join(IndividualProfile, IndividualProfile.party_id == Party.id)
+                .outerjoin(UserPartyMap, UserPartyMap.party_id == Party.id)
+                .where(Party.party_type == PartyType.INDIVIDUAL)
+            ).cte("base_individuals")
 
-            balance_cte = (
+            latest_contracts = (
                 select(
-                    Account.owner_id.label("user_id"),
-                    Account.type.label("account_type"),
-                    func.coalesce(
-                        func.sum(
-                            case(
-                                (Transaction.direction == TransactionDirection.CREDIT, Transaction.amount),
-                                else_=-Transaction.amount,
-                            )
-                        ),
-                        0,
-                    ).label("balance"),
+                    EmploymentContract.employee_party_id.label("party_id"),
+                    EmploymentContract.employer_party_id.label("employer_party_id"),
+                    EmploymentContract.position_title.label("position_title"),
+                    func.row_number()
+                    .over(
+                        partition_by=EmploymentContract.employee_party_id,
+                        order_by=EmploymentContract.start_date.desc(),
+                    )
+                    .label("rn"),
                 )
-                .select_from(Account)
-                .join(Transaction, Transaction.account_id == Account.id, isouter=True)
+                .join(base_individuals, base_individuals.c.party_id == EmploymentContract.employee_party_id)
                 .where(
-                    Account.owner_type == AccountOwnerType.USER,
-                    Account.type.in_([AccountType.CHECKING, AccountType.SAVINGS]),
+                    EmploymentContract.start_date <= date.today(),
+                    or_(
+                        EmploymentContract.end_date.is_(None),
+                        EmploymentContract.end_date >= date.today(),
+                    ),
                 )
-                .group_by(Account.owner_id, Account.type)
-                .cte("account_balances")
-            )
+            ).cte("latest_contracts")
 
-            balance_totals = (
+            active_contracts = (
                 select(
-                    balance_cte.c.user_id,
-                    func.coalesce(
-                        func.sum(
-                            case(
-                                (balance_cte.c.account_type == AccountType.CHECKING.value, balance_cte.c.balance),
-                                else_=0,
-                            )
-                        ),
-                        0,
+                    latest_contracts.c.party_id,
+                    latest_contracts.c.employer_party_id,
+                    latest_contracts.c.position_title,
+                )
+                .where(latest_contracts.c.rn == 1)
+            ).cte("active_contracts")
+
+            latest_pay_periods = (
+                select(
+                    EmploymentContract.employee_party_id.label("party_id"),
+                    func.max(ReportingPeriod.period_end).label("max_period_end"),
+                )
+                .select_from(PayrollFact)
+                .join(ReportingPeriod, ReportingPeriod.id == PayrollFact.reporting_period_id)
+                .join(EmploymentContract, EmploymentContract.id == PayrollFact.contract_id)
+                .join(base_individuals, base_individuals.c.party_id == EmploymentContract.employee_party_id)
+                .group_by(EmploymentContract.employee_party_id)
+            ).cte("latest_pay_periods")
+
+            income_totals = (
+                select(
+                    EmploymentContract.employee_party_id.label("party_id"),
+                    func.sum(PayrollFact.gross_amount).label("monthly_income"),
+                )
+                .select_from(PayrollFact)
+                .join(ReportingPeriod, ReportingPeriod.id == PayrollFact.reporting_period_id)
+                .join(EmploymentContract, EmploymentContract.id == PayrollFact.contract_id)
+                .join(
+                    latest_pay_periods,
+                    and_(
+                        latest_pay_periods.c.party_id == EmploymentContract.employee_party_id,
+                        ReportingPeriod.period_end == latest_pay_periods.c.max_period_end,
+                    ),
+                )
+                .group_by(EmploymentContract.employee_party_id)
+            ).cte("income_totals")
+
+            balances = (
+                select(
+                    Account.party_id.label("party_id"),
+                    func.sum(
+                        case(
+                            (Account.account_type_code == AccountType.CHECKING.value, func.coalesce(JournalLine.amount, 0)),
+                            else_=0,
+                        )
                     ).label("checking_balance"),
-                    func.coalesce(
-                        func.sum(
-                            case(
-                                (balance_cte.c.account_type == AccountType.SAVINGS.value, balance_cte.c.balance),
-                                else_=0,
-                            )
-                        ),
-                        0,
+                    func.sum(
+                        case(
+                            (Account.account_type_code == AccountType.SAVINGS.value, func.coalesce(JournalLine.amount, 0)),
+                            else_=0,
+                        )
                     ).label("savings_balance"),
                 )
-                .group_by(balance_cte.c.user_id)
-                .subquery()
-            )
+                .select_from(Account)
+                .join(base_individuals, base_individuals.c.party_id == Account.party_id)
+                .join(JournalLine, JournalLine.account_id == Account.id, isouter=True)
+                .group_by(Account.party_id)
+            ).cte("balances")
 
-            brokerage_aum_cte = brokerage_aum_select(AccountOwnerType.USER).subquery()
-
-            overview_query = (
+            brokerage = (
                 select(
-                    Individual.id.label("individual_id"),
-                    Individual.name,
-                    Individual.job_title,
-                    func.coalesce(salary_latest.c.monthly_income, 0).label("monthly_income"),
-                    func.coalesce(balance_totals.c.checking_balance, 0).label("checking_balance"),
-                    func.coalesce(balance_totals.c.savings_balance, 0).label("savings_balance"),
-                    func.coalesce(brokerage_aum_cte.c.brokerage_aum, 0).label("brokerage_aum"),
-                    Company.name.label("employer_name"),
+                    Account.party_id.label("party_id"),
+                    func.sum(PositionAgg.qty * func.coalesce(PositionAgg.last_price, 0)).label("brokerage_aum"),
                 )
-                .select_from(Individual)
-                .outerjoin(salary_latest, (salary_latest.c.user_id == Individual.id) & (salary_latest.c.rn == 1))
-                .outerjoin(Company, Company.id == salary_latest.c.employer_org_id)
-                .outerjoin(balance_totals, balance_totals.c.user_id == Individual.id)
-                .outerjoin(brokerage_aum_cte, brokerage_aum_cte.c.owner_id == Individual.id)
-                .order_by(Individual.name)
+                .select_from(PositionAgg)
+                .join(Account, Account.id == PositionAgg.account_id)
+                .join(base_individuals, base_individuals.c.party_id == Account.party_id)
+                .group_by(Account.party_id)
+            ).cte("brokerage")
+
+            employer_party = aliased(Party, name="employer_party")
+
+            rows_stmt = (
+                select(
+                    base_individuals.c.party_id,
+                    base_individuals.c.display_name,
+                    base_individuals.c.user_id,
+                    active_contracts.c.position_title,
+                    employer_party.display_name.label("employer_name"),
+                    func.coalesce(income_totals.c.monthly_income, 0).label("monthly_income"),
+                    func.coalesce(balances.c.checking_balance, 0).label("checking_balance"),
+                    func.coalesce(balances.c.savings_balance, 0).label("savings_balance"),
+                    func.coalesce(brokerage.c.brokerage_aum, 0).label("brokerage_aum"),
+                )
+                .select_from(base_individuals)
+                .outerjoin(active_contracts, active_contracts.c.party_id == base_individuals.c.party_id)
+                .outerjoin(employer_party, employer_party.id == active_contracts.c.employer_party_id)
+                .outerjoin(income_totals, income_totals.c.party_id == base_individuals.c.party_id)
+                .outerjoin(balances, balances.c.party_id == base_individuals.c.party_id)
+                .outerjoin(brokerage, brokerage.c.party_id == base_individuals.c.party_id)
+                .order_by(base_individuals.c.display_name)
             )
 
-            rows = []
+            records = session.execute(rows_stmt).all()
+
+            if not records:
+                timer.set_total(0)
+                self._income_distribution = {
+                    label: 0 for label, *_ in self.INCOME_BUCKETS
+                }
+                list_view = ListView(
+                    title="Individual users",
+                    columns=[
+                        ListViewColumn(key="name", title="Name"),
+                        ListViewColumn(key="employer", title="Employer"),
+                        ListViewColumn(key="job_title", title="Job Title"),
+                        ListViewColumn(key="monthly_income", title="Monthly income", column_type="currency", align="right"),
+                        ListViewColumn(key="checking_aum", title="Checking AUM", column_type="currency", align="right"),
+                        ListViewColumn(key="savings_aum", title="Savings AUM", column_type="currency", align="right"),
+                        ListViewColumn(key="brokerage_aum", title="Brokerage AUM", column_type="currency", align="right"),
+                    ],
+                    rows=[],
+                    search_placeholder="Search individuals",
+                    empty_message="No individual users found.",
+                )
+                with _metrics_lock:
+                    _INDIVIDUAL_OVERVIEWS[key] = list_view
+                    _INDIVIDUAL_DISTRIBUTIONS[key] = dict(self._income_distribution)
+                return list_view
+
+            rows: list[ListViewRow] = []
             income_counts: Counter[str] = Counter()
-            for record in session.execute(overview_query).all():
-                employer_name = record.employer_name
 
-                search_terms = [record.name]
-                if employer_name:
-                    search_terms.append(employer_name)
-                if record.job_title:
-                    search_terms.append(record.job_title)
-
+            for record in records:
                 monthly_income = Decimal(record.monthly_income or 0)
+                checking_balance = Decimal(record.checking_balance or 0)
+                savings_balance = Decimal(record.savings_balance or 0)
+                brokerage_aum = Decimal(record.brokerage_aum or 0)
+
                 annual_income = monthly_income * Decimal(12)
                 income_bucket = self._categorize_income(annual_income)
                 income_counts[income_bucket] += 1
 
+                search_terms = [record.display_name]
+                if record.employer_name:
+                    search_terms.append(record.employer_name)
+                if record.position_title:
+                    search_terms.append(record.position_title)
+
+                identifier = record.user_id or record.party_id
+
                 rows.append(
                     ListViewRow(
-                        key=str(record.individual_id),
+                        key=str(identifier),
                         values={
-                            "name": record.name,
-                            "job_title": record.job_title or "",
-                            "employer": employer_name,
-                            "monthly_income": record.monthly_income,
-                            "checking_aum": record.checking_balance,
-                            "savings_aum": record.savings_balance,
-                            "brokerage_aum": record.brokerage_aum,
+                            "name": record.display_name,
+                            "job_title": record.position_title or "",
+                            "employer": record.employer_name,
+                            "monthly_income": monthly_income,
+                            "checking_aum": checking_balance,
+                            "savings_aum": savings_balance,
+                            "brokerage_aum": brokerage_aum,
                         },
                         search_text=" ".join(filter(None, search_terms)).lower(),
-                        links={"name": f"/individuals/{record.individual_id}"},
+                        links={"name": f"/individuals/{identifier}"},
                     )
                 )
 
@@ -313,10 +514,27 @@ class AdminService:
                 for label, *_ in self.INCOME_BUCKETS
             }
 
+        with _metrics_lock:
+            _INDIVIDUAL_OVERVIEWS[key] = list_view
+            _INDIVIDUAL_DISTRIBUTIONS[key] = dict(self._income_distribution)
+
         return list_view
 
     def get_company_overview(self, session: Session) -> ListView:
         """Return a reusable list view model for corporate users."""
+
+        key = self._engine_key(session)
+        with _metrics_lock:
+            cached = _COMPANY_OVERVIEWS.get(key)
+            cached_dist = _COMPANY_DISTRIBUTIONS.get(key)
+        if cached is not None and cached_dist is not None:
+            self._profit_margin_distribution = dict(cached_dist)
+            return cached
+        elif cached is not None:
+            LOGGER.debug(
+                "Company overview cache missing distributions for engine %s; recomputing",
+                key,
+            )
 
         LOGGER.debug("Collecting company overview data for admin dashboard")
 
@@ -327,17 +545,24 @@ class AdminService:
             session=session,
             unit="companies"
         ) as timer:
-            # Use batch processing to reduce N+1 queries while maintaining logic compatibility
-            # Get all companies first
-            companies_query = select(Company.id, Company.name).order_by(Company.name)
-            companies = session.execute(companies_query).all()
+            company_records = session.execute(
+                select(
+                    OrgPartyMap.org_id.label("company_id"),
+                    Party.id.label("party_id"),
+                    Party.display_name.label("display_name"),
+                )
+                .select_from(Party)
+                .join(CompanyProfile, CompanyProfile.party_id == Party.id)
+                .outerjoin(OrgPartyMap, OrgPartyMap.party_id == Party.id)
+                .order_by(Party.display_name)
+            ).all()
 
-            if not companies:
+            if not company_records:
                 timer.set_total(0)
                 self._profit_margin_distribution = {
                     label: 0 for label, *_ in self.PROFIT_MARGIN_BUCKETS
                 }
-                return ListView(
+                list_view = ListView(
                     title="Corporate users",
                     columns=[
                         ListViewColumn(key="name", title="Company name"),
@@ -351,149 +576,175 @@ class AdminService:
                     search_placeholder="Search companies",
                     empty_message="No corporate users found.",
                 )
+                with _metrics_lock:
+                    _COMPANY_OVERVIEWS[key] = list_view
+                    _COMPANY_DISTRIBUTIONS[key] = dict(self._profit_margin_distribution)
+                return list_view
 
-            # Batch the expensive operations by loading all company names first
-            company_ids = [company.id for company in companies]
-            company_names = {company.id: company.name for company in companies}
+            company_party_ids = {
+                record.party_id for record in company_records if record.party_id is not None
+            }
 
-            # Batch load latest months for all companies in one query
-            latest_months_query = (
-                select(
-                    Account.owner_id.label("company_id"),
-                    extract("year", Transaction.txn_date).label("year"),
-                    extract("month", Transaction.txn_date).label("month"),
-                    func.row_number().over(
-                        partition_by=Account.owner_id,
-                        order_by=Transaction.txn_date.desc()
-                    ).label("rn")
-                )
-                .select_from(Account)
-                .join(Transaction, Transaction.account_id == Account.id)
-                .where(
-                    Account.owner_type == AccountOwnerType.ORG,
-                    Account.owner_id.in_(company_ids)
-                )
-            )
+            monthly_income_map: defaultdict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+            monthly_expense_map: defaultdict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+            profit_total_map: dict[int, Decimal] = {}
 
-            latest_months = session.execute(latest_months_query).all()
-            latest_month_map = {}
-            for row in latest_months:
-                if row.rn == 1:  # Only the most recent month
-                    latest_month_map[row.company_id] = (row.year, row.month)
-
-            # Employee counts from membership
-            employee_counts = session.execute(
-                select(Membership.org_id, func.count(func.distinct(Membership.user_id)))
-                .where(Membership.org_id.in_(company_ids), Membership.is_primary == True)  # noqa: E712
-                .group_by(Membership.org_id)
-            ).all()
-            employee_count_map = {org_id: cnt for org_id, cnt in employee_counts}
-
-            # Monthly salary cost from precomputed table at latest month per company
-            monthly_salary_map: dict[int, Decimal] = {}
-            if latest_month_map:
-                # Query salaries filtered to latest ym per company
-                union_rows = []
-                for cid, (y, m) in latest_month_map.items():
-                    union_rows.append((cid, y, m))
-                # Build a single SELECT with IN filters
-                salary_rows = session.execute(
+            if company_party_ids:
+                latest_cash = (
                     select(
-                        UserSalaryMonthly.employer_org_id,
-                        func.sum(UserSalaryMonthly.salary_amount),
+                        CashFlowFact.party_id.label("party_id"),
+                        CashFlowFact.reporting_period_id,
+                        func.row_number().over(
+                            partition_by=CashFlowFact.party_id,
+                            order_by=ReportingPeriod.period_end.desc(),
+                        ).label("rn"),
+                    )
+                    .join(ReportingPeriod, ReportingPeriod.id == CashFlowFact.reporting_period_id)
+                    .where(CashFlowFact.party_id.in_(company_party_ids))
+                    .subquery()
+                )
+
+                cash_rows = session.execute(
+                    select(
+                        CashFlowFact.party_id,
+                        Section.name.label("section_name"),
+                        func.sum(CashFlowFact.inflow_amount).label("inflow_amount"),
+                        func.sum(CashFlowFact.outflow_amount).label("outflow_amount"),
+                        func.sum(CashFlowFact.net_amount).label("net_amount"),
+                    )
+                    .join(
+                        latest_cash,
+                        and_(
+                            latest_cash.c.party_id == CashFlowFact.party_id,
+                            latest_cash.c.reporting_period_id == CashFlowFact.reporting_period_id,
+                            latest_cash.c.rn == 1,
+                        ),
+                    )
+                    .join(Section, Section.id == CashFlowFact.section_id)
+                    .group_by(CashFlowFact.party_id, Section.name)
+                ).all()
+
+                for row in cash_rows:
+                    section_name = row.section_name
+                    if section_name == "income":
+                        monthly_income_map[row.party_id] = Decimal(row.inflow_amount or 0)
+                    elif section_name == "expense":
+                        monthly_expense_map[row.party_id] = Decimal(row.outflow_amount or 0)
+
+                profit_rows = session.execute(
+                    select(
+                        CashFlowFact.party_id,
+                        func.sum(CashFlowFact.net_amount).label("profit_total"),
+                    )
+                    .join(Section, Section.id == CashFlowFact.section_id)
+                    .where(
+                        CashFlowFact.party_id.in_(company_party_ids),
+                        Section.name.in_(("income", "expense")),
+                    )
+                    .group_by(CashFlowFact.party_id)
+                ).all()
+                profit_total_map = {
+                    row.party_id: Decimal(row.profit_total or 0) for row in profit_rows
+                }
+
+            monthly_salary_map: defaultdict[int, Decimal] = defaultdict(lambda: Decimal("0"))
+            payroll_employee_map: dict[int, int] = {}
+            if company_party_ids:
+                latest_payroll = (
+                    select(
+                        EmploymentContract.employer_party_id.label("employer_party_id"),
+                        PayrollFact.reporting_period_id,
+                        func.row_number().over(
+                            partition_by=EmploymentContract.employer_party_id,
+                            order_by=ReportingPeriod.period_end.desc(),
+                        ).label("rn"),
+                    )
+                    .select_from(PayrollFact)
+                    .join(ReportingPeriod, ReportingPeriod.id == PayrollFact.reporting_period_id)
+                    .join(EmploymentContract, EmploymentContract.id == PayrollFact.contract_id)
+                    .where(EmploymentContract.employer_party_id.in_(company_party_ids))
+                    .subquery()
+                )
+
+                payroll_rows = session.execute(
+                    select(
+                        EmploymentContract.employer_party_id,
+                        func.sum(PayrollFact.gross_amount).label("monthly_salary_cost"),
+                        func.count(func.distinct(EmploymentContract.employee_party_id)).label("employee_count"),
+                    )
+                    .select_from(PayrollFact)
+                    .join(EmploymentContract, EmploymentContract.id == PayrollFact.contract_id)
+                    .join(
+                        latest_payroll,
+                        and_(
+                            latest_payroll.c.employer_party_id == EmploymentContract.employer_party_id,
+                            latest_payroll.c.reporting_period_id == PayrollFact.reporting_period_id,
+                            latest_payroll.c.rn == 1,
+                        ),
+                    )
+                    .group_by(EmploymentContract.employer_party_id)
+                ).all()
+
+                for row in payroll_rows:
+                    employer_party_id = row.employer_party_id
+                    monthly_salary_map[employer_party_id] = Decimal(row.monthly_salary_cost or 0)
+                    payroll_employee_map[employer_party_id] = int(row.employee_count or 0)
+
+            contract_employee_map: dict[int, int] = {}
+            if company_party_ids:
+                contract_rows = session.execute(
+                    select(
+                        EmploymentContract.employer_party_id,
+                        func.count(func.distinct(EmploymentContract.employee_party_id)).label("employee_count"),
                     )
                     .where(
-                        tuple_(UserSalaryMonthly.employer_org_id, UserSalaryMonthly.year, UserSalaryMonthly.month).in_(
-                            union_rows
-                        )
+                        EmploymentContract.employer_party_id.in_(company_party_ids),
+                        EmploymentContract.is_primary.is_(True),
+                        EmploymentContract.start_date <= date.today(),
+                        or_(
+                            EmploymentContract.end_date.is_(None),
+                            EmploymentContract.end_date >= date.today(),
+                        ),
                     )
-                    .group_by(UserSalaryMonthly.employer_org_id)
+                    .group_by(EmploymentContract.employer_party_id)
                 ).all()
-                for org_id, total in salary_rows:
-                    monthly_salary_map[org_id] = Decimal(total)
+                contract_employee_map = {
+                    row.employer_party_id: int(row.employee_count or 0) for row in contract_rows
+                }
 
-            # Batch load income/expense data for all companies
-            financial_query = (
-                select(
-                    Account.owner_id.label("company_id"),
-                    Section.name.label("section_name"),
-                    Transaction.direction,
-                    Transaction.amount,
-                    extract("year", Transaction.txn_date).label("year"),
-                    extract("month", Transaction.txn_date).label("month")
-                )
-                .select_from(Account)
-                .join(Transaction, Transaction.account_id == Account.id)
-                .join(Section, Section.id == Transaction.section_id)
-                .where(
-                    Account.owner_type == AccountOwnerType.ORG,
-                    Account.owner_id.in_(company_ids),
-                    Section.name.in_(["income", "expense"])
-                )
-            )
-
-            financial_data = session.execute(financial_query).all()
-
-            # Process financial data
-            monthly_income_map = {}
-            monthly_expenses_map = {}
-            total_profit_map = {}
-
-            for row in financial_data:
-                company_id = row.company_id
-                year = row.year
-                month = row.month
-
-                # Check if this is the latest month for this company
-                if company_id in latest_month_map:
-                    latest_year, latest_month = latest_month_map[company_id]
-                    is_latest_month = (year == latest_year and month == latest_month)
-                else:
-                    is_latest_month = False
-
-                amount = float(row.amount)
-
-                if row.section_name == "income":
-                    if row.direction == TransactionDirection.CREDIT:
-                        # Monthly income
-                        if is_latest_month:
-                            if company_id not in monthly_income_map:
-                                monthly_income_map[company_id] = 0
-                            monthly_income_map[company_id] += amount
-
-                        # Total profit (all time)
-                        if company_id not in total_profit_map:
-                            total_profit_map[company_id] = 0
-                        total_profit_map[company_id] += amount
-
-                elif row.section_name == "expense":
-                    if row.direction == TransactionDirection.DEBIT:
-                        # Monthly expenses
-                        if is_latest_month:
-                            if company_id not in monthly_expenses_map:
-                                monthly_expenses_map[company_id] = 0
-                            monthly_expenses_map[company_id] += amount
-
-                        # Total profit (all time) - expenses subtract
-                        if company_id not in total_profit_map:
-                            total_profit_map[company_id] = 0
-                        total_profit_map[company_id] -= amount
-
-            # Build result rows
-            rows = []
+            rows: list[ListViewRow] = []
             profit_margin_counts: Counter[str] = Counter()
-            for company in companies:
-                company_id = company.id
-                company_name = company_names[company_id]
 
-                monthly_income = Decimal(monthly_income_map.get(company_id, 0))
-                monthly_expenses = Decimal(monthly_expenses_map.get(company_id, 0))
-                profit_total = Decimal(total_profit_map.get(company_id, 0))
+            for record in company_records:
+                company_id = record.company_id or record.party_id
+                company_name = record.display_name or "Unknown company"
+                party_id = record.party_id
+
+                monthly_income = Decimal("0")
+                monthly_expenses = Decimal("0")
+                profit_total = Decimal("0")
+                monthly_salary_cost = Decimal("0")
+                employee_count = 0
+
+                if party_id is not None:
+                    monthly_income = monthly_income_map.get(party_id, Decimal("0"))
+                    monthly_expenses = monthly_expense_map.get(party_id, Decimal("0"))
+                    profit_total = profit_total_map.get(party_id, Decimal("0"))
+                    monthly_salary_cost = monthly_salary_map.get(party_id, Decimal("0"))
+
+                    payroll_count = payroll_employee_map.get(party_id)
+                    contract_count = contract_employee_map.get(party_id, 0)
+
+                    if payroll_count is not None:
+                        employee_count = payroll_count
+                        if contract_count:
+                            employee_count = max(employee_count, contract_count)
+                    else:
+                        employee_count = contract_count
 
                 margin_ratio: Decimal | None = None
                 if monthly_income > 0:
-                    monthly_profit = monthly_income - monthly_expenses
-                    margin_ratio = (monthly_profit / monthly_income)
+                    margin_ratio = (monthly_income - monthly_expenses) / monthly_income
 
                 margin_bucket = self._categorize_margin(monthly_income, margin_ratio)
                 profit_margin_counts[margin_bucket] += 1
@@ -503,13 +754,13 @@ class AdminService:
                         key=str(company_id),
                         values={
                             "name": company_name,
-                            "employee_count": int(employee_count_map.get(company_id, 0)),
-                            "monthly_salary_cost": Decimal(monthly_salary_map.get(company_id, 0)),
+                            "employee_count": employee_count,
+                            "monthly_salary_cost": monthly_salary_cost,
                             "monthly_income": monthly_income,
                             "monthly_expenses": monthly_expenses,
                             "profit_total": profit_total,
                         },
-                        search_text=company_name.lower(),
+                        search_text=(company_name or "").lower(),
                         links={"name": f"/corporate/{company_id}"},
                     )
                 )
@@ -538,10 +789,34 @@ class AdminService:
                 for label, *_ in self.PROFIT_MARGIN_BUCKETS
             }
 
+        with _metrics_lock:
+            _COMPANY_OVERVIEWS[key] = list_view
+            _COMPANY_DISTRIBUTIONS[key] = dict(self._profit_margin_distribution)
+
+        with _metrics_lock:
+            _COMPANY_OVERVIEWS[key] = list_view
+            _COMPANY_DISTRIBUTIONS[key] = dict(self._profit_margin_distribution)
+
         return list_view
 
     def get_stock_holdings_overview(self, session: Session) -> ListView:
         """Return a list view representation of stock holdings by product."""
+
+        key = self._engine_key(session)
+        with _metrics_lock:
+            cached = _STOCK_OVERVIEWS.get(key)
+            cached_series = _STOCK_SERIES_CACHE.get(key)
+        if cached is not None and cached_series is not None:
+            series, label, hint = cached_series
+            self._stock_price_series = list(series)
+            self._stock_price_series_label = label
+            self._stock_price_series_hint = hint
+            return cached
+        elif cached is not None:
+            LOGGER.debug(
+                "Stock overview cache missing price series for engine %s; recomputing",
+                key,
+            )
 
         LOGGER.debug("Collecting stock holdings overview data for admin dashboard")
 
@@ -552,9 +827,9 @@ class AdminService:
             session=session,
             unit="products",
         ) as timer:
-            # Get simulation period from transaction data
-            first_transaction_at = session.execute(select(func.min(Transaction.posted_at))).scalar_one()
-            last_transaction_at = session.execute(select(func.max(Transaction.posted_at))).scalar_one()
+            # Get simulation period from journal data
+            first_transaction_at = session.execute(select(func.min(JournalEntry.posted_at))).scalar_one()
+            last_transaction_at = session.execute(select(func.max(JournalEntry.posted_at))).scalar_one()
             
             # Convert to dates for price lookup
             simulation_start_date = first_transaction_at.date() if first_transaction_at else None
@@ -570,50 +845,46 @@ class AdminService:
                 )
                 .select_from(PositionAgg)
                 .join(Account, Account.id == PositionAgg.account_id)
-                .where(
-                    Account.owner_type == AccountOwnerType.USER,
-                    Account.type == AccountType.BROKERAGE,
-                )
+                .join(UserPartyMap, UserPartyMap.party_id == Account.party_id)
+                .where(Account.account_type_code == AccountType.BROKERAGE.value)
                 .group_by(PositionAgg.instrument_id)
                 .cte("user_positions")
             )
 
-            # Use window functions for efficient price lookup
-            # Get the earliest price >= simulation start date
-            start_prices = (
+            # Use window functions for efficient price lookup based on close quotes
+            start_query = (
                 select(
-                    PriceDaily.instrument_id.label("instrument_id"),
-                    PriceDaily.close_price.label("start_price"),
-                    PriceDaily.price_date.label("start_date"),
+                    PriceQuote.instrument_id.label("instrument_id"),
+                    PriceQuote.quote_value.label("start_price"),
+                    PriceQuote.price_date.label("start_date"),
                     func.row_number().over(
-                        partition_by=PriceDaily.instrument_id,
-                        order_by=PriceDaily.price_date
+                        partition_by=PriceQuote.instrument_id,
+                        order_by=PriceQuote.price_date
                     ).label("rn")
                 )
-                .select_from(PriceDaily)
-                .where(
-                    PriceDaily.price_date >= simulation_start_date
-                )
-                .subquery()
+                .select_from(PriceQuote)
+                .where(PriceQuote.quote_type == "CLOSE")
             )
+            if simulation_start_date:
+                start_query = start_query.where(PriceQuote.price_date >= simulation_start_date)
+            start_prices = start_query.subquery()
 
-            # Get the latest price <= simulation end date
-            end_prices = (
+            end_query = (
                 select(
-                    PriceDaily.instrument_id.label("instrument_id"),
-                    PriceDaily.close_price.label("end_price"),
-                    PriceDaily.price_date.label("end_date"),
+                    PriceQuote.instrument_id.label("instrument_id"),
+                    PriceQuote.quote_value.label("end_price"),
+                    PriceQuote.price_date.label("end_date"),
                     func.row_number().over(
-                        partition_by=PriceDaily.instrument_id,
-                        order_by=PriceDaily.price_date.desc()
+                        partition_by=PriceQuote.instrument_id,
+                        order_by=PriceQuote.price_date.desc()
                     ).label("rn")
                 )
-                .select_from(PriceDaily)
-                .where(
-                    PriceDaily.price_date <= simulation_end_date
-                )
-                .subquery()
+                .select_from(PriceQuote)
+                .where(PriceQuote.quote_type == "CLOSE")
             )
+            if simulation_end_date:
+                end_query = end_query.where(PriceQuote.price_date <= simulation_end_date)
+            end_prices = end_query.subquery()
 
             # Filter to get only the first row for each instrument
             start_prices_filtered = (
@@ -771,23 +1042,26 @@ class AdminService:
                 
                 # Get price data for the entire simulation period
                 query = (
-                    select(PriceDaily.price_date, PriceDaily.close_price)
-                    .where(PriceDaily.instrument_id == instrument_id)
+                    select(PriceQuote.price_date, PriceQuote.quote_value)
+                    .where(
+                        PriceQuote.instrument_id == instrument_id,
+                        PriceQuote.quote_type == "CLOSE",
+                    )
                 )
-                
+
                 if simulation_start_date:
-                    query = query.where(PriceDaily.price_date >= simulation_start_date)
+                    query = query.where(PriceQuote.price_date >= simulation_start_date)
                 if simulation_end_date:
-                    query = query.where(PriceDaily.price_date <= simulation_end_date)
-                
-                query = query.order_by(PriceDaily.price_date)
+                    query = query.where(PriceQuote.price_date <= simulation_end_date)
+
+                query = query.order_by(PriceQuote.price_date)
                 price_rows = session.execute(query).all()
 
                 if price_rows:
                     self._stock_price_series = [
-                        (row.price_date.isoformat(), float(row.close_price))
+                        (row.price_date.isoformat(), float(row.quote_value))
                         for row in price_rows
-                        if row.close_price is not None
+                        if row.quote_value is not None
                     ]
                     self._stock_price_series_label = label
                     start_date_str = simulation_start_date.isoformat() if simulation_start_date else "start"
@@ -799,6 +1073,14 @@ class AdminService:
                     self._stock_price_series = []
                     self._stock_price_series_label = label
                     self._stock_price_series_hint = None
+
+        with _metrics_lock:
+            _STOCK_OVERVIEWS[key] = list_view
+            _STOCK_SERIES_CACHE[key] = (
+                list(self._stock_price_series or []),
+                self._stock_price_series_label,
+                self._stock_price_series_hint,
+            )
 
         return list_view
 
@@ -815,7 +1097,10 @@ class AdminService:
                 Instrument.name,
             )
             .select_from(Instrument)
-            .join(PriceDaily, PriceDaily.instrument_id == Instrument.id)
+            .join(PriceQuote, and_(
+                PriceQuote.instrument_id == Instrument.id,
+                PriceQuote.quote_type == "CLOSE",
+            ))
             .distinct()
             .order_by(Instrument.symbol)
         )
@@ -843,9 +1128,9 @@ class AdminService:
         
         LOGGER.debug("Fetching price data for instrument %d", instrument_id)
         
-        # Get simulation period from transaction data
-        first_transaction_at = session.execute(select(func.min(Transaction.posted_at))).scalar_one()
-        last_transaction_at = session.execute(select(func.max(Transaction.posted_at))).scalar_one()
+        # Get simulation period from journal data
+        first_transaction_at = session.execute(select(func.min(JournalEntry.posted_at))).scalar_one()
+        last_transaction_at = session.execute(select(func.max(JournalEntry.posted_at))).scalar_one()
         
         # Convert to dates for price lookup
         simulation_start_date = first_transaction_at.date() if first_transaction_at else None
@@ -866,25 +1151,28 @@ class AdminService:
         
         # Get price data for this instrument within the simulation period
         query = (
-            select(PriceDaily.price_date, PriceDaily.close_price)
-            .where(PriceDaily.instrument_id == instrument_id)
+            select(PriceQuote.price_date, PriceQuote.quote_value)
+            .where(
+                PriceQuote.instrument_id == instrument_id,
+                PriceQuote.quote_type == "CLOSE",
+            )
         )
-        
+
         if simulation_start_date:
-            query = query.where(PriceDaily.price_date >= simulation_start_date)
+            query = query.where(PriceQuote.price_date >= simulation_start_date)
         if simulation_end_date:
-            query = query.where(PriceDaily.price_date <= simulation_end_date)
-        
-        query = query.order_by(PriceDaily.price_date)
+            query = query.where(PriceQuote.price_date <= simulation_end_date)
+
+        query = query.order_by(PriceQuote.price_date)
         price_rows = session.execute(query).all()
-        
+
         if not price_rows:
             return [], label, None
         
         series = [
-            (row.price_date.isoformat(), float(row.close_price))
+            (row.price_date.isoformat(), float(row.quote_value))
             for row in price_rows
-            if row.close_price is not None
+            if row.quote_value is not None
         ]
         
         start_date_str = simulation_start_date.isoformat() if simulation_start_date else "start"
@@ -896,6 +1184,19 @@ class AdminService:
     def get_transaction_overview(self, session: Session, limit: int = 500) -> ListView:
         """Return a reusable list view model for recent transactions."""
 
+        key = self._engine_key(session)
+        with _metrics_lock:
+            cached = _TRANSACTION_OVERVIEWS.get(key)
+            cached_dist = _TRANSACTION_DISTRIBUTIONS.get(key)
+        if cached is not None and cached_dist is not None:
+            self._transaction_amount_distribution = dict(cached_dist)
+            return cached
+        elif cached is not None:
+            LOGGER.debug(
+                "Transaction overview cache missing distributions for engine %s; recomputing",
+                key,
+            )
+
         LOGGER.debug("Collecting transaction overview data for admin dashboard")
 
         with timeit(
@@ -905,91 +1206,78 @@ class AdminService:
             session=session,
             unit="transactions"
         ) as timer:
-            latest_transactions = (
+            latest_entries = (
                 select(
-                    Transaction.id,
-                    Transaction.account_id,
-                    Transaction.txn_date,
-                    Transaction.posted_at,
-                    Transaction.amount,
-                    Transaction.currency,
-                    Transaction.direction,
-                    Transaction.category_id,
-                    Transaction.description,
-                    Transaction.counterparty_id,
-                    Transaction.transfer_group_id,
+                    JournalEntry.id.label("entry_id"),
+                    JournalEntry.txn_date,
+                    JournalEntry.posted_at,
+                    JournalEntry.description,
+                    JournalEntry.counterparty_party_id,
                 )
-                .order_by(Transaction.posted_at.desc())
+                .order_by(JournalEntry.posted_at.desc())
                 .limit(limit)
-                .cte("latest_transactions")
+                .cte("latest_entries")
             )
 
-            account_alias = aliased(Account)
-            partner_account = aliased(Account)
-            partner_txn = aliased(Transaction)
-            owner_individual = aliased(Individual)
-            owner_company = aliased(Company)
-            partner_individual = aliased(Individual)
-            partner_company = aliased(Company)
-            category_alias = aliased(Category)
-            counterparty_alias = aliased(Counterparty)
+            payer_candidates = (
+                select(
+                    JournalLine.entry_id.label("entry_id"),
+                    Party.display_name.label("payer_name"),
+                    func.abs(JournalLine.amount).label("payer_amount"),
+                    Account.currency_code.label("currency_code"),
+                    func.row_number()
+                    .over(partition_by=JournalLine.entry_id, order_by=JournalLine.amount.asc())
+                    .label("rn"),
+                )
+                .join(Account, Account.id == JournalLine.account_id)
+                .join(Party, Party.id == Account.party_id)
+                .where(JournalLine.amount < 0)
+            ).subquery()
+
+            payee_candidates = (
+                select(
+                    JournalLine.entry_id.label("entry_id"),
+                    Party.display_name.label("payee_name"),
+                    func.abs(JournalLine.amount).label("payee_amount"),
+                    Account.currency_code.label("currency_code"),
+                    Category.name.label("category_name"),
+                    Section.name.label("section_name"),
+                    func.row_number()
+                    .over(partition_by=JournalLine.entry_id, order_by=JournalLine.amount.desc())
+                    .label("rn"),
+                )
+                .join(Account, Account.id == JournalLine.account_id)
+                .join(Party, Party.id == Account.party_id)
+                .outerjoin(Category, Category.id == JournalLine.category_id)
+                .outerjoin(Section, Section.id == Category.section_id)
+                .where(JournalLine.amount > 0)
+            ).subquery()
+
+            payer = payer_candidates.alias()
+            payee = payee_candidates.alias()
+            counterparty_party = aliased(Party)
 
             transactions_query = (
                 select(
-                    latest_transactions.c.id.label("transaction_id"),
-                    latest_transactions.c.txn_date,
-                    latest_transactions.c.posted_at,
-                    latest_transactions.c.direction,
-                    latest_transactions.c.amount,
-                    latest_transactions.c.currency,
-                    latest_transactions.c.description,
-                    category_alias.name.label("category_name"),
-                    counterparty_alias.name.label("counterparty_name"),
-                    func.coalesce(owner_individual.name, owner_company.name).label("account_owner_name"),
-                    func.coalesce(partner_individual.name, partner_company.name).label("partner_owner_name"),
+                    latest_entries.c.entry_id,
+                    latest_entries.c.txn_date,
+                    latest_entries.c.posted_at,
+                    latest_entries.c.description,
+                    payee.c.payee_name,
+                    payee.c.payee_amount,
+                    payee.c.currency_code.label("payee_currency"),
+                    payee.c.category_name,
+                    payee.c.section_name,
+                    payer.c.payer_name,
+                    payer.c.payer_amount,
+                    payer.c.currency_code.label("payer_currency"),
+                    counterparty_party.display_name.label("counterparty_name"),
                 )
-                .select_from(latest_transactions)
-                .join(account_alias, account_alias.id == latest_transactions.c.account_id)
-                .outerjoin(
-                    owner_individual,
-                    and_(
-                        account_alias.owner_type == AccountOwnerType.USER,
-                        owner_individual.id == account_alias.owner_id,
-                    ),
-                )
-                .outerjoin(
-                    owner_company,
-                    and_(
-                        account_alias.owner_type == AccountOwnerType.ORG,
-                        owner_company.id == account_alias.owner_id,
-                    ),
-                )
-                .outerjoin(category_alias, category_alias.id == latest_transactions.c.category_id)
-                .outerjoin(counterparty_alias, counterparty_alias.id == latest_transactions.c.counterparty_id)
-                .outerjoin(
-                    partner_txn,
-                    and_(
-                        latest_transactions.c.transfer_group_id.isnot(None),
-                        partner_txn.transfer_group_id == latest_transactions.c.transfer_group_id,
-                        partner_txn.id != latest_transactions.c.id,
-                    ),
-                )
-                .outerjoin(partner_account, partner_account.id == partner_txn.account_id)
-                .outerjoin(
-                    partner_individual,
-                    and_(
-                        partner_account.owner_type == AccountOwnerType.USER,
-                        partner_individual.id == partner_account.owner_id,
-                    ),
-                )
-                .outerjoin(
-                    partner_company,
-                    and_(
-                        partner_account.owner_type == AccountOwnerType.ORG,
-                        partner_company.id == partner_account.owner_id,
-                    ),
-                )
-                .order_by(latest_transactions.c.posted_at.desc())
+                .select_from(latest_entries)
+                .outerjoin(payee, and_(payee.c.entry_id == latest_entries.c.entry_id, payee.c.rn == 1))
+                .outerjoin(payer, and_(payer.c.entry_id == latest_entries.c.entry_id, payer.c.rn == 1))
+                .outerjoin(counterparty_party, counterparty_party.id == latest_entries.c.counterparty_party_id)
+                .order_by(latest_entries.c.posted_at.desc())
             )
 
             records = session.execute(transactions_query).all()
@@ -998,41 +1286,31 @@ class AdminService:
             transaction_amount_counts: Counter[str] = Counter()
 
             for record in records:
-                owner_name = record.account_owner_name or "Unknown account"
-                counterparty_name = record.counterparty_name
-                partner_name = record.partner_owner_name
+                payer_name = record.payer_name or record.counterparty_name or "Account transfer"
+                payee_name = record.payee_name or record.counterparty_name or "Account transfer"
 
-                if record.direction == TransactionDirection.DEBIT:
-                    payer = owner_name
-                    payee = counterparty_name or partner_name or "External counterparty"
-                else:
-                    payer = counterparty_name or partner_name or "External counterparty"
-                    payee = owner_name
+                amount_value = Decimal(record.payee_amount or record.payer_amount or 0)
+                currency_code = record.payee_currency or record.payer_currency
+                category_name = record.category_name or record.section_name or "Uncategorised"
 
-                search_terms = [
-                    str(record.txn_date),
-                    payer,
-                    payee,
-                ]
-
-                if record.category_name:
-                    search_terms.append(record.category_name)
-                if record.description:
-                    search_terms.append(record.description)
-
-                amount_value = Decimal(record.amount or 0)
                 amount_bucket = self._categorize_transaction_amount(abs(amount_value))
                 transaction_amount_counts[amount_bucket] += 1
 
+                search_terms = [str(record.txn_date), payer_name, payee_name]
+                if category_name:
+                    search_terms.append(category_name)
+                if record.description:
+                    search_terms.append(record.description)
+
                 rows.append(
                     ListViewRow(
-                        key=str(record.transaction_id),
+                        key=str(record.entry_id),
                         values={
                             "date": record.txn_date.strftime("%Y-%m-%d"),
-                            "payer": payer,
-                            "payee": payee,
-                            "amount": record.amount,
-                            "category": record.category_name or "Uncategorized",
+                            "payer": payer_name,
+                            "payee": payee_name,
+                            "amount": amount_value,
+                            "category": category_name,
                             "description": record.description or "",
                         },
                         search_text=" ".join(filter(None, search_terms)).lower(),
@@ -1063,10 +1341,20 @@ class AdminService:
                 for label, *_ in self.TRANSACTION_SIZE_BUCKETS
             }
 
+        with _metrics_lock:
+            _TRANSACTION_OVERVIEWS[key] = list_view
+            _TRANSACTION_DISTRIBUTIONS[key] = dict(self._transaction_amount_distribution)
+
+        with _metrics_lock:
+            _TRANSACTION_OVERVIEWS[key] = list_view
+            _TRANSACTION_DISTRIBUTIONS[key] = dict(self._transaction_amount_distribution)
+
         return list_view
 
     def get_dashboard_charts(self, session: Session) -> DashboardCharts:
         """Aggregate chart payloads for the admin dashboard."""
+
+        key = self._engine_key(session)
 
         if self._income_distribution is None:
             self.get_individual_overview(session)
@@ -1076,6 +1364,18 @@ class AdminService:
             self.get_transaction_overview(session)
         if self._stock_price_series is None:
             self.get_stock_holdings_overview(session)
+
+        # Final guard in case the underlying datasets are genuinely empty
+        if self._income_distribution is None:
+            self._income_distribution = {label: 0 for label, *_ in self.INCOME_BUCKETS}
+        if self._profit_margin_distribution is None:
+            self._profit_margin_distribution = {label: 0 for label, *_ in self.PROFIT_MARGIN_BUCKETS}
+        if self._transaction_amount_distribution is None:
+            self._transaction_amount_distribution = {label: 0 for label, *_ in self.TRANSACTION_SIZE_BUCKETS}
+        if self._stock_price_series is None:
+            self._stock_price_series = []
+            self._stock_price_series_label = "Top holding"
+            self._stock_price_series_hint = None
 
         income_labels = [label for label, *_ in self.INCOME_BUCKETS]
         income_values = [

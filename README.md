@@ -103,25 +103,23 @@ When you are ready to run the application manually, execute
 will launch the server for you unless disabled via environment variables).
 
 ## Synthetic Data & Tooling
-The data generation scripts provide a comprehensive dataset covering individuals, 
-companies, transactions, and stock trades with real historical price data.
+The data generation scripts provide a comprehensive dataset covering individuals,
+companies, a double-entry ledger, and stock trades with real historical price data.
 
 ### Data Sources
 - **Stock Prices**: Real historical daily prices from 2021-present via Yahoo Finance
 - **FX Rates**: Real USD/EUR exchange rates from 2021-present
-- **Transactions**: Synthetic bank transactions with realistic patterns
+- **Journal Ledger**: Synthetic entries and lines that balance to zero per entry
 - **Stock Trades**: Portfolio simulation with 70% of users having varying investment levels
 
 ### Data Generation Workflow
 1. `scripts/fetch_stock_prices.py` - Downloads real historical stock prices and FX rates
-2. `scripts/gen_seed_data.py` - Generates synthetic users, companies, transactions, and trades
+2. `scripts/gen_seed_data.py` - Generates synthetic users, companies, journal entries/lines, and trades; it validates that every entry balances before writing CSVs
 3. `scripts/load_csvs.py` - Loads all data into the database
 
 Adjust parameters in `scripts/gen_seed_data.py` to create lighter or heavier workloads.
 
+> **After updating**: rerun `python scripts/gen_seed_data.py --seed 42` (or your preferred settings) followed by `python scripts/load_csvs.py` to regenerate journal entries/lines. The loader now expects the journal CSVs and will ignore the retired `transactions.csv` artifact.
+
 ## Next Steps
-- Flesh out domain models in `app/models/` and their accompanying schemas.
-- Implement service-layer logic that aggregates financial metrics.
-- Introduce FastAPI routers for admin, company, and individual dashboards.
-- Add Alembic migrations to replace the raw SQL schema.
-- Expand automated tests alongside new features.
+- Flesh out domain models in `

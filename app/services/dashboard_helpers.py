@@ -3,21 +3,13 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, Sequence
 
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import ColumnElement
 
-from app.models import (
-    Account,
-    AccountOwnerType,
-    Category,
-    PositionAgg,
-    Section,
-    Transaction,
-    TransactionDirection,
-)
+from app.models import Account, AccountType, Category, JournalEntry, JournalLine, PositionAgg, Section
 
 BreakdownResult = tuple[str, Decimal, list[tuple[date, str | None, Decimal]]]
 
@@ -25,12 +17,10 @@ BreakdownResult = tuple[str, Decimal, list[tuple[date, str | None, Decimal]]]
 def fetch_category_breakdown(
     session: Session,
     *,
-    owner_type: AccountOwnerType,
-    owner_id: int,
     section_name: str,
-    direction: TransactionDirection,
     start_date: date,
     limit_transactions: int = 10,
+    party_ids: Sequence[int] | None = None,
 ) -> list[BreakdownResult]:
     """Return totals and sample transactions for a given section.
 
@@ -39,24 +29,23 @@ def fetch_category_breakdown(
     """
 
     category_label = func.coalesce(Category.name, "Uncategorised").label("category_name")
-    total_column = func.coalesce(func.sum(Transaction.amount), 0).label("total")
+    total_column = func.coalesce(func.sum(func.abs(JournalLine.amount)), 0).label("total")
 
-    filters: list[ColumnElement[Any]] = [
-        Account.owner_type == owner_type,
-        Account.owner_id == owner_id,
-        Section.name == section_name,
-        Transaction.direction == direction,
-    ]
+    filters: list[ColumnElement[Any]] = [Section.name == section_name]
+
+    if party_ids:
+        filters.append(Account.party_id.in_(list(party_ids)))
 
     if start_date:
-        filters.append(Transaction.txn_date >= start_date)
+        filters.append(JournalEntry.txn_date >= start_date)
 
     totals_query = (
         select(category_label, total_column)
-        .select_from(Transaction)
-        .join(Account, Transaction.account_id == Account.id)
-        .join(Section, Section.id == Transaction.section_id)
-        .outerjoin(Category, Category.id == Transaction.category_id)
+        .select_from(JournalLine)
+        .join(Account, JournalLine.account_id == Account.id)
+        .join(JournalEntry, JournalEntry.id == JournalLine.entry_id)
+        .outerjoin(Category, Category.id == JournalLine.category_id)
+        .outerjoin(Section, Section.id == Category.section_id)
         .where(*filters)
         .group_by(category_label)
         .order_by(total_column.desc())
@@ -72,15 +61,17 @@ def fetch_category_breakdown(
 
         transactions_query = (
             select(
-                Transaction.txn_date,
-                Transaction.description,
-                Transaction.amount,
+                JournalEntry.txn_date,
+                JournalEntry.description,
+                JournalLine.amount,
             )
-            .join(Account, Transaction.account_id == Account.id)
-            .join(Section, Section.id == Transaction.section_id)
-            .outerjoin(Category, Category.id == Transaction.category_id)
+            .select_from(JournalLine)
+            .join(JournalEntry, JournalEntry.id == JournalLine.entry_id)
+            .join(Account, JournalLine.account_id == Account.id)
+            .outerjoin(Category, Category.id == JournalLine.category_id)
+            .outerjoin(Section, Section.id == Category.section_id)
             .where(*filters, category_filter)
-            .order_by(Transaction.txn_date.desc())
+            .order_by(JournalEntry.txn_date.desc(), JournalEntry.created_at.desc())
             .limit(limit_transactions)
         )
         txn_rows = session.execute(transactions_query).all()
@@ -89,7 +80,7 @@ def fetch_category_breakdown(
             (
                 row.txn_date,
                 row.description,
-                Decimal(row.amount or 0),
+                Decimal(abs(row.amount or 0)),
             )
             for row in txn_rows
         ]
@@ -108,8 +99,7 @@ def fetch_category_breakdown(
 def calculate_entity_net_worth(
     session: Session,
     *,
-    owner_type: AccountOwnerType,
-    owner_id: int,
+    party_id: int,
 ) -> Decimal:
     """Calculate total net worth for an entity (cash + brokerage holdings).
     
@@ -121,25 +111,13 @@ def calculate_entity_net_worth(
     Returns:
         Total net worth as Decimal
     """
-    # Calculate cash balance from all accounts
+    owner_filters: list[ColumnElement[Any]] = [Account.party_id == party_id]
+
     cash_balance_query = (
-        select(
-            func.coalesce(
-                func.sum(
-                    case(
-                        (Transaction.direction == TransactionDirection.CREDIT, Transaction.amount),
-                        else_=-Transaction.amount,
-                    )
-                ),
-                0,
-            )
-        )
+        select(func.coalesce(func.sum(JournalLine.amount), 0))
         .select_from(Account)
-        .join(Transaction, Transaction.account_id == Account.id, isouter=True)
-        .where(
-            Account.owner_type == owner_type,
-            Account.owner_id == owner_id,
-        )
+        .join(JournalLine, JournalLine.account_id == Account.id, isouter=True)
+        .where(Account.account_type_code != AccountType.BROKERAGE.value, *owner_filters)
     )
     cash_balance = session.execute(cash_balance_query).scalar_one() or Decimal("0")
 
@@ -148,10 +126,7 @@ def calculate_entity_net_worth(
         select(func.coalesce(func.sum(PositionAgg.qty * PositionAgg.last_price), 0))
         .select_from(PositionAgg)
         .join(Account, Account.id == PositionAgg.account_id)
-        .where(
-            Account.owner_type == owner_type,
-            Account.owner_id == owner_id,
-        )
+        .where(*owner_filters)
     )
     holdings_value = session.execute(holdings_query).scalar_one() or Decimal("0")
 

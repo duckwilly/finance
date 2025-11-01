@@ -1,68 +1,71 @@
-"""ORM model for linking individuals to organisations."""
+"""Employment and relationship models."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, ForeignKey, Integer, String, select
-from sqlalchemy.orm import Mapped, mapped_column, Session
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
-from .transactions import Account, Transaction, Section, Category, AccountOwnerType
-from .companies import Company
 
 _ID_TYPE = BigInteger().with_variant(Integer, "sqlite")
 
 
-class Membership(Base):
-    """Associates an individual with an employer/company."""
+class EmploymentContract(Base):
+    """Employment relationship between an individual party and a company party."""
 
-    __tablename__ = "membership"
+    __tablename__ = "employment_contract"
 
     id: Mapped[int] = mapped_column(_ID_TYPE, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
-    org_id: Mapped[int] = mapped_column(ForeignKey("org.id"), nullable=False, index=True)
-    role: Mapped[str] = mapped_column(String(64), nullable=False, server_default="member")
-    is_primary: Mapped[bool] = mapped_column(default=True)
-    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    employee_party_id: Mapped[int] = mapped_column(ForeignKey("party.id"), nullable=False, index=True)
+    employer_party_id: Mapped[int] = mapped_column(ForeignKey("party.id"), nullable=False, index=True)
+    position_title: Mapped[str] = mapped_column(String(160), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="1")
 
-    @staticmethod
-    def find_employer_for_user(session: Session, user_id: int) -> Company | None:
-        """
-        Find the employer company for a given user by analyzing salary transactions.
-        
-        This method looks for salary transactions (section='income', category='Salary') 
-        in the user's accounts and identifies the employer company from the transaction description.
-        
-        Args:
-            session: Database session
-            user_id: ID of the user to find employer for
-            
-        Returns:
-            Company object if employer found, None otherwise
-        """
-        salary_query = (
-            select(Transaction.description)
-            .join(Account, Account.id == Transaction.account_id)
-            .join(Section, Section.id == Transaction.section_id)
-            .outerjoin(Category, Category.id == Transaction.category_id)
-            .where(
-                Account.owner_type == "user",
-                Account.owner_id == user_id,
-                Section.name == "income",
-                Category.name == "Salary"
-            )
-            .limit(1)
-        )
-        
-        description = session.execute(salary_query).scalar_one_or_none()
-        
-        if not description or not description.startswith("Salary from "):
-            return None
-            
-        # Extract company name from description (format: "Salary from Company Name")
-        company_name = description.replace("Salary from ", "").strip()
-        
-        # Find the company by name
-        company_query = select(Company).where(Company.name == company_name)
-        return session.execute(company_query).scalar_one_or_none()
+    employee_party = relationship("Party", foreign_keys=[employee_party_id])
+    employer_party = relationship("Party", foreign_keys=[employer_party_id])
+
+
+class PartyRelationship(Base):
+    """Generic directed relationship between parties."""
+
+    __tablename__ = "party_relationship"
+
+    id: Mapped[int] = mapped_column(_ID_TYPE, primary_key=True, autoincrement=True)
+    from_party_id: Mapped[int] = mapped_column(ForeignKey("party.id"), nullable=False)
+    to_party_id: Mapped[int] = mapped_column(ForeignKey("party.id"), nullable=False)
+    relationship_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
+
+    from_party = relationship("Party", foreign_keys=[from_party_id])
+    to_party = relationship("Party", foreign_keys=[to_party_id])
+
+
+class CompanyAccessGrant(Base):
+    """Materialised access grants linking authenticated users to company workspaces."""
+
+    __tablename__ = "company_access_grant"
+
+    id: Mapped[int] = mapped_column(_ID_TYPE, primary_key=True, autoincrement=True)
+    contract_id: Mapped[int] = mapped_column(ForeignKey("employment_contract.id"), nullable=False)
+    app_user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), nullable=False)
+    role_code: Mapped[str] = mapped_column(String(32), ForeignKey("app_role.code"), nullable=False)
+    granted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    contract = relationship("EmploymentContract")
+    app_user = relationship("AppUser")
+    role = relationship("AppRole")

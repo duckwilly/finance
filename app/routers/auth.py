@@ -12,8 +12,7 @@ from app.core.security import (
 )
 from app.core.templates import templates
 from app.db.session import get_sessionmaker
-from app.models.individuals import Individual
-from app.models.companies import Company
+from app.models.party import CompanyProfile, IndividualProfile
 from sqlalchemy import select, func
 
 LOGGER = get_logger(__name__)
@@ -21,12 +20,12 @@ router = APIRouter(tags=["auth"])
 
 
 def _default_destination(user: AuthenticatedUser) -> str:
-    if user.role == "admin":
+    if "ADMIN" in user.roles or user.role == "admin":
         return "/dashboard/"
-    if user.role == "individual" and user.subject_id is not None:
+    if user.subject_id is not None:
         return f"/individuals/{user.subject_id}"
-    if user.role == "company" and user.subject_id is not None:
-        return f"/corporate/{user.subject_id}"
+    if user.company_ids:
+        return f"/corporate/{user.company_ids[0]}"
     return "/dashboard/"
 
 
@@ -49,8 +48,8 @@ def _get_user_counts() -> dict[str, int]:
     """Get counts of individuals and companies from the database."""
     session_factory = get_sessionmaker()
     with session_factory() as session:
-        individual_count = session.scalar(select(func.count()).select_from(Individual))
-        company_count = session.scalar(select(func.count()).select_from(Company))
+        individual_count = session.scalar(select(func.count()).select_from(IndividualProfile))
+        company_count = session.scalar(select(func.count()).select_from(CompanyProfile))
         return {
             "individual_count": individual_count or 0,
             "company_count": company_count or 0,
