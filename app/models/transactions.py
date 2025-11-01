@@ -7,10 +7,9 @@ from enum import Enum
 
 from sqlalchemy import (
     BigInteger,
-    CheckConstraint,
+    Boolean,
     Date,
     DateTime,
-    Enum as SQLEnum,
     ForeignKey,
     Integer,
     Numeric,
@@ -18,24 +17,27 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 from sqlalchemy.sql import func
 
 from .base import Base
+from .party import Party
 
 _ID_TYPE = BigInteger().with_variant(Integer, "sqlite")
 _SMALL_ID_TYPE = SmallInteger().with_variant(Integer, "sqlite")
 
 
-class AccountOwnerType(str, Enum):
-    """Enumeration of account owner entity types."""
+class AccountRole(Base):
+    """Lookup model representing participant roles on an account."""
 
-    USER = "user"
-    ORG = "org"
+    __tablename__ = "account_role"
+
+    code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    description: Mapped[str] = mapped_column(String(128), nullable=False)
 
 
 class AccountType(str, Enum):
-    """Enumeration of supported account types."""
+    """Enumeration of supported account types (mirrors account_type table codes)."""
 
     CHECKING = "checking"
     SAVINGS = "savings"
@@ -43,21 +45,13 @@ class AccountType(str, Enum):
     OPERATING = "operating"
 
 
-class TransactionDirection(str, Enum):
-    """Direction of a booked transaction."""
+class TxnChannel(Base):
+    """Lookup model for transaction channels used by journal entries."""
 
-    DEBIT = "DEBIT"
-    CREDIT = "CREDIT"
+    __tablename__ = "txn_channel"
 
-
-class TransactionChannel(str, Enum):
-    """Channel or rail used for the transaction."""
-
-    SEPA = "SEPA"
-    CARD = "CARD"
-    WIRE = "WIRE"
-    CASH = "CASH"
-    INTERNAL = "INTERNAL"
+    code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    description: Mapped[str] = mapped_column(String(128), nullable=False)
 
 
 class Section(Base):
@@ -80,36 +74,17 @@ class Category(Base):
     name: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
-class Counterparty(Base):
-    """External counterparty information."""
-
-    __tablename__ = "counterparty"
-
-    id: Mapped[int] = mapped_column(_ID_TYPE, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(160), nullable=False)
-    account_ref: Mapped[str | None] = mapped_column(String(64))
-    bic: Mapped[str | None] = mapped_column(String(11))
-    country_code: Mapped[str | None] = mapped_column(String(2))
-
-
 class Account(Base):
     """Bank/brokerage account belonging to an individual or company."""
 
     __tablename__ = "account"
-    __table_args__ = (
-        UniqueConstraint("iban", name="uniq_iban"),
-    )
+
+    __table_args__ = (UniqueConstraint("iban", name="uniq_iban"),)
 
     id: Mapped[int] = mapped_column(_ID_TYPE, primary_key=True, autoincrement=True)
-    owner_type: Mapped[AccountOwnerType] = mapped_column(
-        SQLEnum(AccountOwnerType, native_enum=False, values_callable=lambda obj: [e.value for e in obj]), nullable=False
-    )
-    owner_id: Mapped[int] = mapped_column(_ID_TYPE, nullable=False)
-    type: Mapped[AccountType] = mapped_column(
-        SQLEnum(AccountType, native_enum=False, values_callable=lambda obj: [e.value for e in obj]), 
-        nullable=False
-    )
-    currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="EUR")
+    party_id: Mapped[int] = mapped_column(_ID_TYPE, ForeignKey("party.id"), nullable=False)
+    account_type_code: Mapped[str] = mapped_column(String(32), ForeignKey("account_type.code"), nullable=False)
+    currency_code: Mapped[str] = mapped_column(String(3), ForeignKey("currency.code"), nullable=False)
     name: Mapped[str | None] = mapped_column(String(120))
     iban: Mapped[str | None] = mapped_column(String(34))
     opened_at: Mapped[datetime] = mapped_column(
@@ -117,42 +92,82 @@ class Account(Base):
     )
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    transactions: Mapped[list["Transaction"]] = relationship(
+    journal_lines: Mapped[list["JournalLine"]] = relationship(
+        back_populates="account", cascade="all, delete-orphan"
+    )
+    party: Mapped[Party] = relationship()
+    party_roles: Mapped[list["AccountPartyRole"]] = relationship(
         back_populates="account", cascade="all, delete-orphan"
     )
 
+    type = synonym("account_type_code")
+    currency = synonym("currency_code")
 
-class Transaction(Base):
-    """Posted transaction statement line."""
 
-    __tablename__ = "transaction"
-    __table_args__ = (
-        CheckConstraint("amount > 0", name="ck_transaction_amount_positive"),
-    )
+class AccountPartyRole(Base):
+    """Role assignment of a party to an account."""
+
+    __tablename__ = "account_party_role"
+    __table_args__ = (UniqueConstraint("account_id", "party_id", "role_code", name="uq_account_party_role"),)
 
     id: Mapped[int] = mapped_column(_ID_TYPE, primary_key=True, autoincrement=True)
-    account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False, index=True)
-    posted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    account_id: Mapped[int] = mapped_column(_ID_TYPE, ForeignKey("account.id"), nullable=False)
+    party_id: Mapped[int] = mapped_column(_ID_TYPE, ForeignKey("party.id"), nullable=False)
+    role_code: Mapped[str] = mapped_column(String(32), ForeignKey("account_role.code"), nullable=False)
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
+
+    account: Mapped[Account] = relationship(back_populates="party_roles")
+    party: Mapped[Party] = relationship()
+    role: Mapped[AccountRole] = relationship()
+
+
+class JournalEntry(Base):
+    """Double-entry journal header."""
+
+    __tablename__ = "journal_entry"
+
+    id: Mapped[int] = mapped_column(_ID_TYPE, primary_key=True, autoincrement=True)
+    entry_code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     txn_date: Mapped[date] = mapped_column(Date, nullable=False)
-    amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
-    currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="EUR")
-    direction: Mapped[TransactionDirection] = mapped_column(
-        SQLEnum(TransactionDirection, native_enum=False), nullable=False
-    )
-    section_id: Mapped[int] = mapped_column(ForeignKey("section.id"), nullable=False)
-    category_id: Mapped[int | None] = mapped_column(ForeignKey("category.id"))
-    channel: Mapped[TransactionChannel] = mapped_column(
-        SQLEnum(TransactionChannel, native_enum=False), nullable=False, server_default=TransactionChannel.SEPA.value
-    )
+    posted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     description: Mapped[str | None] = mapped_column(String(255))
-    counterparty_id: Mapped[int | None] = mapped_column(ForeignKey("counterparty.id"))
-    transfer_group_id: Mapped[str | None] = mapped_column(String(64))
-    ext_reference: Mapped[str | None] = mapped_column(String(64))
+    channel_code: Mapped[str | None] = mapped_column(String(32), ForeignKey("txn_channel.code"))
+    counterparty_party_id: Mapped[int | None] = mapped_column(ForeignKey("party.id"))
+    transfer_reference: Mapped[str | None] = mapped_column(String(64))
+    external_reference: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.current_timestamp(), nullable=False
+        DateTime(timezone=True), nullable=False, server_default=func.current_timestamp()
     )
 
-    account: Mapped[Account] = relationship(back_populates="transactions")
-    section: Mapped[Section] = relationship()
+    lines: Mapped[list["JournalLine"]] = relationship(
+        back_populates="entry", cascade="all, delete-orphan"
+    )
+    channel: Mapped[TxnChannel | None] = relationship("TxnChannel")
+    counterparty_party: Mapped[Party | None] = relationship(
+        "Party", foreign_keys=[counterparty_party_id]
+    )
+
+
+class JournalLine(Base):
+    """Double-entry journal line item."""
+
+    __tablename__ = "journal_line"
+
+    id: Mapped[int] = mapped_column(_ID_TYPE, primary_key=True, autoincrement=True)
+    entry_id: Mapped[int] = mapped_column(_ID_TYPE, ForeignKey("journal_entry.id"), nullable=False)
+    account_id: Mapped[int] = mapped_column(_ID_TYPE, ForeignKey("account.id"), nullable=False)
+    party_id: Mapped[int | None] = mapped_column(_ID_TYPE, ForeignKey("party.id"))
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
+    currency_code: Mapped[str] = mapped_column(String(3), ForeignKey("currency.code"), nullable=False)
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("category.id"))
+    line_memo: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.current_timestamp()
+    )
+
+    entry: Mapped[JournalEntry] = relationship(back_populates="lines")
+    account: Mapped[Account] = relationship(back_populates="journal_lines")
+    party: Mapped[Party | None] = relationship()
     category: Mapped[Category | None] = relationship()
-    counterparty: Mapped[Counterparty | None] = relationship()

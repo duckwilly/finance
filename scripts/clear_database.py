@@ -20,15 +20,21 @@ def is_database_empty():
     
     # Tables to check for data
     tables_to_check = [
+        "party",
         "user",
-        "org", 
+        "org",
+        "app_user",
         "account",
-        "transaction",
+        "account_party_role",
+        "journal_entry",
+        "cash_flow_fact",
+        "holding_performance_fact",
+        "payroll_fact",
         "trade",
         "holding",
         "instrument",
-        "price_daily",
-        "fx_rate_daily"
+        "price_quote",
+        "fx_rate_daily",
     ]
     
     with engine.connect() as connection:
@@ -59,23 +65,37 @@ def clear_database():
     
     # Tables in dependency order (child tables first)
     tables_to_clear = [
-        "transfer_link",
-        "lot", 
+        "journal_line",
+        "journal_entry",
+        "lot",
         "holding",
         "trade",
-        "transaction",
-        "account_membership",
+        "price_quote",
+        "instrument_identifier",
+        "fx_rate_daily",
+        "holding_performance_fact",
+        "cash_flow_fact",
+        "payroll_fact",
+        "account_party_role",
         "account",
-        "user_salary_monthly",  # References user and org
-        "membership",           # References user and org
-        "counterparty",
+        "user_party_map",
+        "org_party_map",
+        "user_salary_monthly",
+        "membership",
+        "company_access_grant",
+        "party_relationship",
+        "employment_contract",
+        "app_user_role",
+        "app_user",
         "category",
         "section",
-        "price_daily",
-        "fx_rate_daily",
+        "reporting_period",
         "instrument",
+        "company_profile",
+        "individual_profile",
+        "party",
         "org",
-        "user"
+        "user",
     ]
     
     with engine.begin() as connection:
@@ -87,7 +107,23 @@ def clear_database():
                 logger.warning(f"Could not clear table {table}: {e}")
         
         # Reset AUTO_INCREMENT counters for tables that use them
-        auto_increment_tables = ["user", "org", "account", "transaction", "trade", "holding", "instrument"]
+        auto_increment_tables = [
+            "party",
+            "user",
+            "org",
+            "app_user",
+            "account",
+            "account_party_role",
+            "company_access_grant",
+            "employment_contract",
+            "journal_entry",
+            "journal_line",
+            "trade",
+            "holding",
+            "instrument",
+            "instrument_identifier",
+            "reporting_period",
+        ]
         for table in auto_increment_tables:
             try:
                 connection.execute(text(f"ALTER TABLE {table} AUTO_INCREMENT = 1"))

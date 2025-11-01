@@ -21,12 +21,60 @@ logger = get_logger(__name__)
 
 # Instruments to fetch (matching gen_seed_data.py)
 INSTRUMENTS = [
-    {"ext_id": "I-AAPL", "symbol": "AAPL", "name": "Apple Inc.", "type": "EQUITY", "currency": "USD", "isin": "US0378331005", "mic": "XNAS"},
-    {"ext_id": "I-MSFT", "symbol": "MSFT", "name": "Microsoft Corporation", "type": "EQUITY", "currency": "USD", "isin": "US5949181045", "mic": "XNAS"},
-    {"ext_id": "I-NVDA", "symbol": "NVDA", "name": "NVIDIA Corporation", "type": "EQUITY", "currency": "USD", "isin": "US67066G1040", "mic": "XNAS"},
-    {"ext_id": "I-TSLA", "symbol": "TSLA", "name": "Tesla Inc.", "type": "EQUITY", "currency": "USD", "isin": "US88160R1014", "mic": "XNAS"},
-    {"ext_id": "I-VWRL", "symbol": "VWRL.L", "name": "Vanguard FTSE All-World UCITS", "type": "ETF", "currency": "USD", "isin": "IE00B3RBWM25", "mic": "XLON"},
-    {"ext_id": "I-ASM", "symbol": "ASML.AS", "name": "ASML Holding N.V.", "type": "EQUITY", "currency": "EUR", "isin": "NL0010273215", "mic": "XAMS"},
+    {
+        "ext_id": "I-AAPL",
+        "symbol": "AAPL",
+        "yf_symbol": "AAPL",
+        "name": "Apple Inc.",
+        "instrument_type_code": "EQUITY",
+        "primary_currency_code": "USD",
+        "primary_market_mic": "XNAS",
+    },
+    {
+        "ext_id": "I-MSFT",
+        "symbol": "MSFT",
+        "yf_symbol": "MSFT",
+        "name": "Microsoft Corporation",
+        "instrument_type_code": "EQUITY",
+        "primary_currency_code": "USD",
+        "primary_market_mic": "XNAS",
+    },
+    {
+        "ext_id": "I-NVDA",
+        "symbol": "NVDA",
+        "yf_symbol": "NVDA",
+        "name": "NVIDIA Corporation",
+        "instrument_type_code": "EQUITY",
+        "primary_currency_code": "USD",
+        "primary_market_mic": "XNAS",
+    },
+    {
+        "ext_id": "I-TSLA",
+        "symbol": "TSLA",
+        "yf_symbol": "TSLA",
+        "name": "Tesla Inc.",
+        "instrument_type_code": "EQUITY",
+        "primary_currency_code": "USD",
+        "primary_market_mic": "XNAS",
+    },
+    {
+        "ext_id": "I-VWRL",
+        "symbol": "VWRL",
+        "yf_symbol": "VWRL.L",
+        "name": "Vanguard FTSE All-World UCITS",
+        "instrument_type_code": "ETF",
+        "primary_currency_code": "USD",
+        "primary_market_mic": "XLON",
+    },
+    {
+        "ext_id": "I-ASM",
+        "symbol": "ASML",
+        "yf_symbol": "ASML.AS",
+        "name": "ASML Holding N.V.",
+        "instrument_type_code": "EQUITY",
+        "primary_currency_code": "EUR",
+        "primary_market_mic": "XAMS",
+    },
 ]
 
 SEED_DIR = Path("data/seed")
@@ -43,7 +91,7 @@ def parse_args() -> argparse.Namespace:
 
 def should_refresh_files(max_age_days: int) -> bool:
     """Check if price files need to be refreshed based on age."""
-    price_file = SEED_DIR / "price_daily.csv"
+    price_file = SEED_DIR / "price_quotes.csv"
     fx_file = SEED_DIR / "fx_rate_daily.csv"
     
     if not price_file.exists() or not fx_file.exists():
@@ -64,9 +112,8 @@ def fetch_stock_prices(start_date: str, end_date: str) -> List[Dict[str, str]]:
     
     with progress_manager.task("Fetching stock prices", total=len(INSTRUMENTS), unit="stocks") as task:
         for instrument in INSTRUMENTS:
-            symbol = instrument["symbol"]
+            symbol = instrument.get("yf_symbol") or instrument["symbol"]
             ext_id = instrument["ext_id"]
-            currency = instrument["currency"]
             
             logger.debug("Fetching data for %s (%s)", symbol, ext_id)
             
@@ -86,8 +133,8 @@ def fetch_stock_prices(start_date: str, end_date: str) -> List[Dict[str, str]]:
                     all_prices.append({
                         "instrument_ext_id": ext_id,
                         "price_date": price_date,
-                        "close_price": close_price,
-                        "currency": currency,
+                        "quote_type": "CLOSE",
+                        "quote_value": close_price,
                     })
                 
                 logger.debug("Fetched %s price points for %s", len(hist), symbol)
@@ -141,13 +188,13 @@ def write_csv_files(prices: List[Dict[str, str]], fx_rates: List[Dict[str, str]]
     SEED_DIR.mkdir(parents=True, exist_ok=True)
     
     # Write price data
-    price_file = SEED_DIR / "price_daily.csv"
+    price_file = SEED_DIR / "price_quotes.csv"
     logger.info("Writing %s price points to %s", len(prices), price_file)
     
     with timeit("price csv write", logger=logger, unit="rows") as timer:
         with price_file.open("w", newline="", encoding="utf-8") as f:
             if prices:
-                writer = csv.DictWriter(f, fieldnames=["instrument_ext_id", "price_date", "close_price", "currency"])
+                writer = csv.DictWriter(f, fieldnames=["instrument_ext_id", "price_date", "quote_type", "quote_value"])
                 writer.writeheader()
                 for row in prices:
                     writer.writerow(row)

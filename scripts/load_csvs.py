@@ -3,9 +3,11 @@ import csv
 import os
 import sys
 from contextlib import contextmanager
+from datetime import date, timedelta
 from pathlib import Path
 from itertools import islice
 from typing import Dict, Iterable, Iterator, Optional, Sequence, Tuple, TypeVar, Union
+from decimal import Decimal
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -19,9 +21,6 @@ from app.config import get_settings
 from app.log import get_logger, init_logging, log_context, progress_manager, timeit
 
 logger = get_logger(__name__)
-ALLOWED_ACCOUNT_TYPES = {"checking", "savings", "brokerage", "operating"}
-ALLOWED_DIRECTIONS = {"DEBIT", "CREDIT"}
-ALLOWED_CHANNELS = {"SEPA", "CARD", "WIRE", "CASH", "INTERNAL"}
 ALLOWED_TRADE_SIDES = {"BUY", "SELL"}
 
 settings = get_settings()
@@ -83,6 +82,16 @@ def count_rows(name: str) -> int:
         if header is None:
             return 0
         return sum(1 for _ in f)
+
+
+def month_start(day: date) -> date:
+    return date(day.year, day.month, 1)
+
+
+def month_end(day: date) -> date:
+    if day.month == 12:
+        return date(day.year, 12, 31)
+    return date(day.year, day.month + 1, 1) - timedelta(days=1)
 
 T = TypeVar("T")
 
@@ -150,40 +159,502 @@ def get_or_create_category(cur, section_id, category_name):
     CATEGORY_CACHE[key] = cur.lastrowid
     return cur.lastrowid
 
-COUNTERPARTY_CACHE: Dict[Tuple[str, str, str], int] = {}
+
+def load_parties_and_profiles() -> Dict[str, int]:
+    parties = read_rows("parties.csv")
+    individual_profiles = read_rows("individual_profiles.csv")
+    company_profiles = read_rows("company_profiles.csv")
+
+    if not parties and not individual_profiles and not company_profiles:
+        return {}
+
+    party_map: Dict[str, int] = {}
+
+    with conn() as c:
+        cur = c.cursor()
+        cur.execute("SELECT id, party_type, display_name FROM party")
+        existing = {(row["party_type"], row["display_name"]): row["id"] for row in cur.fetchall()}
+
+        pending_rows: list[tuple] = []
+        pending_keys: list[tuple] = []
+        pending_exts: Dict[tuple, list[str]] = {}
+
+        for row in parties:
+            key = (row["party_type"], row["display_name"])
+            existing_id = existing.get(key)
+            if existing_id:
+                party_map[row["ext_id"]] = existing_id
+                continue
+
+            ext_list = pending_exts.setdefault(key, [])
+            if ext_list:
+                ext_list.append(row["ext_id"])
+                continue
+
+            ext_list.append(row["ext_id"])
+            pending_rows.append((row["party_type"], row["display_name"]))
+            pending_keys.append(key)
+
+        if pending_rows:
+            inserted = insertmany_with_ids(
+                cur,
+                "INSERT INTO party(party_type, display_name) VALUES (%s,%s)",
+                pending_rows,
+            )
+            for key, new_id in zip(pending_keys, inserted):
+                existing[key] = new_id
+                for ext in pending_exts[key]:
+                    party_map[ext] = new_id
+
+        for row in parties:
+            key = (row["party_type"], row["display_name"])
+            if row["ext_id"] not in party_map and key in existing:
+                party_map[row["ext_id"]] = existing[key]
+
+        if individual_profiles:
+            profile_rows = []
+            for profile in individual_profiles:
+                party_id = party_map.get(profile["party_ext_id"])
+                if not party_id:
+                    continue
+                profile_rows.append(
+                    (
+                        party_id,
+                        profile["given_name"],
+                        profile["family_name"],
+                        profile["primary_email"],
+                        profile.get("residency_country") or None,
+                        profile.get("birth_date") or None,
+                    )
+                )
+            if profile_rows:
+                executemany_in_chunks(
+                    cur,
+                    """
+                    INSERT INTO individual_profile(
+                        party_id, given_name, family_name, primary_email, residency_country, birth_date
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s)
+                    ON DUPLICATE KEY UPDATE
+                        given_name=VALUES(given_name),
+                        family_name=VALUES(family_name),
+                        primary_email=VALUES(primary_email),
+                        residency_country=VALUES(residency_country),
+                        birth_date=VALUES(birth_date)
+                    """,
+                    profile_rows,
+                )
+
+        if company_profiles:
+            company_rows = []
+            for profile in company_profiles:
+                party_id = party_map.get(profile["party_ext_id"])
+                if not party_id:
+                    continue
+                company_rows.append(
+                    (
+                        party_id,
+                        profile["legal_name"],
+                        profile.get("registration_number") or None,
+                        profile.get("tax_identifier") or None,
+                        profile.get("industry_code") or None,
+                        profile.get("incorporation_date") or None,
+                    )
+                )
+            if company_rows:
+                executemany_in_chunks(
+                    cur,
+                    """
+                    INSERT INTO company_profile(
+                        party_id, legal_name, registration_number, tax_identifier, industry_code, incorporation_date
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s)
+                    ON DUPLICATE KEY UPDATE
+                        legal_name=VALUES(legal_name),
+                        registration_number=VALUES(registration_number),
+                        tax_identifier=VALUES(tax_identifier),
+                        industry_code=VALUES(industry_code),
+                        incorporation_date=VALUES(incorporation_date)
+                    """,
+                    company_rows,
+                )
+
+    return party_map
 
 
-def get_or_create_counterparty(cur, name, account_ref, bic, country_code=None):
-    key = (name or "", account_ref or "", bic or "")
-    cached = COUNTERPARTY_CACHE.get(key)
-    if cached:
-        return cached
-    cur.execute(
-        """
-        SELECT id FROM counterparty
-        WHERE name=%s AND account_ref<=>%s AND bic<=>%s
-    """,
-        key,
-    )
-    r = cur.fetchone()
-    if r:
-        COUNTERPARTY_CACHE[key] = r["id"]
-        return r["id"]
-    cur.execute(
-        """
-        INSERT INTO counterparty(name, account_ref, bic, country_code)
-        VALUES (%s,%s,%s,%s)
-    """,
-        (name or "", account_ref or None, bic or None, country_code),
-    )
-    COUNTERPARTY_CACHE[key] = cur.lastrowid
-    return cur.lastrowid
+def load_app_users_and_roles(party_map: Dict[str, int]) -> Dict[str, int]:
+    app_users = read_rows("app_users.csv")
+    app_user_roles = read_rows("app_user_roles.csv")
 
-def load_users_orgs_accounts_and_memberships():
+    if not app_users:
+        return {}
+
+    app_user_map: Dict[str, int] = {}
+
+    with conn() as c:
+        cur = c.cursor()
+        cur.execute("SELECT id, username, party_id FROM app_user")
+        existing_rows = cur.fetchall()
+        existing_users = {row["username"]: row["id"] for row in existing_rows}
+        existing_party_users = {row["party_id"]: row["id"] for row in existing_rows if row["party_id"]}
+
+        pending_rows: list[tuple] = []
+        pending_usernames: list[str] = []
+        pending_exts: Dict[str, list[str]] = {}
+        seen_party_ids: set[int] = set()
+
+        for row in app_users:
+            username = row["username"]
+            existing_id = existing_users.get(username)
+            party_ext = row.get("party_ext_id") or ""
+            party_id = party_map.get(party_ext) if party_ext else None
+            
+            if existing_id:
+                app_user_map[row["ext_id"]] = existing_id
+                continue
+            
+            # Check if party_id already has an app_user (either existing or pending)
+            if party_id and party_id in existing_party_users:
+                logger.warning(
+                    "Skipping app_user %s: party_id %s already has an app_user (id=%s)",
+                    row["ext_id"], party_id, existing_party_users[party_id]
+                )
+                app_user_map[row["ext_id"]] = existing_party_users[party_id]
+                continue
+            
+            if party_id and party_id in seen_party_ids:
+                logger.warning(
+                    "Skipping app_user %s: party_id %s already pending for insert in this batch",
+                    row["ext_id"], party_id
+                )
+                continue
+
+            ext_list = pending_exts.setdefault(username, [])
+            if ext_list:
+                ext_list.append(row["ext_id"])
+                continue
+
+            ext_list.append(row["ext_id"])
+            if party_id:
+                seen_party_ids.add(party_id)
+            pending_rows.append(
+                (
+                    party_id,
+                    username,
+                    row.get("email") or None,
+                    row.get("password_hash") or "",
+                    1 if str(row.get("is_active", "1")).lower() in {"1", "true", "yes"} else 0,
+                )
+            )
+            pending_usernames.append(username)
+
+        if pending_rows:
+            inserted = insertmany_with_ids(
+                cur,
+                "INSERT INTO app_user(party_id, username, email, password_hash, is_active) VALUES (%s,%s,%s,%s,%s)",
+                pending_rows,
+            )
+            for username, new_id in zip(pending_usernames, inserted):
+                existing_users[username] = new_id
+                for ext in pending_exts[username]:
+                    app_user_map[ext] = new_id
+
+        for row in app_users:
+            if row["ext_id"] not in app_user_map:
+                existing_id = existing_users.get(row["username"])
+                if existing_id:
+                    app_user_map[row["ext_id"]] = existing_id
+
+        if app_user_roles:
+            role_rows = []
+            for row in app_user_roles:
+                app_user_id = app_user_map.get(row["app_user_ext_id"])
+                role_code = row.get("role_code")
+                if not app_user_id or not role_code:
+                    continue
+                role_rows.append((app_user_id, role_code))
+            if role_rows:
+                executemany_in_chunks(
+                    cur,
+                    "INSERT IGNORE INTO app_user_role(app_user_id, role_code) VALUES (%s,%s)",
+                    role_rows,
+                )
+
+    return app_user_map
+
+
+def load_employment_and_access(
+    party_map: Dict[str, int],
+    app_user_map: Dict[str, int],
+) -> Dict[str, int]:
+    contracts = read_rows("employment_contracts.csv")
+    grants = read_rows("company_access_grants.csv")
+    relationships = read_rows("party_relationships.csv")
+
+    if not contracts and not grants and not relationships:
+        return {}
+
+    contract_map: Dict[str, int] = {}
+
+    with conn() as c:
+        cur = c.cursor()
+        cur.execute(
+            "SELECT id, employee_party_id, employer_party_id, start_date FROM employment_contract"
+        )
+        existing_contracts = {
+            (row["employee_party_id"], row["employer_party_id"], str(row["start_date"])): row["id"]
+            for row in cur.fetchall()
+        }
+
+        pending_rows: list[tuple] = []
+        pending_keys: list[tuple] = []
+        pending_exts: Dict[tuple, list[str]] = {}
+
+        for row in contracts:
+            employee_id = party_map.get(row["employee_party_ext_id"])
+            employer_id = party_map.get(row["employer_party_ext_id"])
+            if not employee_id or not employer_id:
+                continue
+            start_date = row.get("start_date") or "2023-01-01"
+            key = (employee_id, employer_id, start_date)
+            existing_id = existing_contracts.get(key)
+            if existing_id:
+                contract_map[row["ext_id"]] = existing_id
+                continue
+
+            ext_list = pending_exts.setdefault(key, [])
+            if ext_list:
+                ext_list.append(row["ext_id"])
+                continue
+
+            is_primary = 1 if str(row.get("is_primary", "1")).lower() in {"1", "true", "yes"} else 0
+            ext_list.append(row["ext_id"])
+            pending_rows.append(
+                (
+                    employee_id,
+                    employer_id,
+                    row.get("position_title") or "Employee",
+                    start_date,
+                    row.get("end_date") or None,
+                    is_primary,
+                )
+            )
+            pending_keys.append(key)
+
+        if pending_rows:
+            inserted_contracts = insertmany_with_ids(
+                cur,
+                """
+                INSERT INTO employment_contract(
+                    employee_party_id, employer_party_id, position_title, start_date, end_date, is_primary
+                )
+                VALUES (%s,%s,%s,%s,%s,%s)
+                """,
+                pending_rows,
+            )
+            for key, new_id in zip(pending_keys, inserted_contracts):
+                existing_contracts[key] = new_id
+                for ext in pending_exts[key]:
+                    contract_map[ext] = new_id
+
+        for row in contracts:
+            if row["ext_id"] not in contract_map:
+                employee_id = party_map.get(row["employee_party_ext_id"])
+                employer_id = party_map.get(row["employer_party_ext_id"])
+                start_date = row.get("start_date") or "2023-01-01"
+                key = (employee_id, employer_id, start_date)
+                existing_id = existing_contracts.get(key)
+                if existing_id:
+                    contract_map[row["ext_id"]] = existing_id
+
+        if grants:
+            grant_rows = []
+            for row in grants:
+                contract_id = contract_map.get(row["contract_ext_id"])
+                app_user_id = app_user_map.get(row["app_user_ext_id"])
+                role_code = row.get("role_code")
+                if not (contract_id and app_user_id and role_code):
+                    continue
+                grant_rows.append(
+                    (
+                        contract_id,
+                        app_user_id,
+                        role_code,
+                        row.get("granted_at") or None,
+                        row.get("revoked_at") or None,
+                    )
+                )
+            if grant_rows:
+                executemany_in_chunks(
+                    cur,
+                    """
+                    INSERT INTO company_access_grant(
+                        contract_id, app_user_id, role_code, granted_at, revoked_at
+                    )
+                    VALUES (%s,%s,%s,%s,%s)
+                    ON DUPLICATE KEY UPDATE
+                        revoked_at=VALUES(revoked_at)
+                    """,
+                    grant_rows,
+                )
+
+        if relationships:
+            relationship_rows = []
+            for row in relationships:
+                from_id = party_map.get(row["from_party_ext_id"])
+                to_id = party_map.get(row["to_party_ext_id"])
+                if not from_id or not to_id:
+                    continue
+                relationship_rows.append(
+                    (
+                        from_id,
+                        to_id,
+                        row.get("relationship_type") or "RELATED",
+                        row.get("start_date") or None,
+                        row.get("end_date") or None,
+                    )
+                )
+            if relationship_rows:
+                executemany_in_chunks(
+                    cur,
+                    """
+                    INSERT INTO party_relationship(
+                        from_party_id, to_party_id, relationship_type, start_date, end_date
+                    )
+                    VALUES (%s,%s,%s,%s,%s)
+                    ON DUPLICATE KEY UPDATE
+                        relationship_type=VALUES(relationship_type),
+                        end_date=VALUES(end_date)
+                    """,
+                    relationship_rows,
+                )
+
+    return contract_map
+
+
+def load_journal_entries(party_map: Dict[str, int]) -> Dict[str, int]:
+    entries = read_rows("journal_entries.csv")
+    if not entries:
+        return {}
+
+    with conn() as c:
+        cur = c.cursor()
+        rows: list[tuple] = []
+        for entry in entries:
+            counterparty_ext = entry.get("counterparty_party_ext_id") or ""
+            counterparty_id = party_map.get(counterparty_ext) if counterparty_ext else None
+            rows.append(
+                (
+                    entry["entry_code"],
+                    entry["txn_date"],
+                    entry["posted_at"],
+                    entry.get("description") or None,
+                    entry.get("channel_code") or None,
+                    counterparty_id,
+                    entry.get("transfer_reference") or None,
+                    entry.get("external_reference") or None,
+                )
+            )
+
+        if rows:
+            executemany_in_chunks(
+                cur,
+                """
+                INSERT INTO journal_entry(
+                    entry_code, txn_date, posted_at, description, channel_code,
+                    counterparty_party_id, transfer_reference, external_reference
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                ON DUPLICATE KEY UPDATE
+                    txn_date=VALUES(txn_date),
+                    posted_at=VALUES(posted_at),
+                    description=VALUES(description),
+                    channel_code=VALUES(channel_code),
+                    counterparty_party_id=VALUES(counterparty_party_id),
+                    transfer_reference=VALUES(transfer_reference),
+                    external_reference=VALUES(external_reference)
+                """,
+                rows,
+            )
+
+        cur.execute("SELECT entry_code, id FROM journal_entry")
+        return {row["entry_code"]: row["id"] for row in cur.fetchall()}
+
+
+def load_journal_lines(
+    entry_map: Dict[str, int],
+    acct_map: Dict[str, int],
+    party_map: Dict[str, int],
+) -> None:
+    lines = read_rows("journal_lines.csv")
+    if not lines:
+        return
+
+    with conn() as c:
+        cur = c.cursor()
+        cur.execute("SELECT id, name FROM section")
+        section_map = {row["name"].lower(): row["id"] for row in cur.fetchall()}
+
+        batch: list[tuple] = []
+        for line in lines:
+            entry_id = entry_map.get(line["entry_code"])
+            if not entry_id:
+                continue
+
+            account_id = acct_map.get(line["account_ext_id"])
+            if not account_id:
+                continue
+
+            party_ext = line.get("party_ext_id") or ""
+            party_id = party_map.get(party_ext) if party_ext else None
+
+            try:
+                amount_value = Decimal(line["amount"])
+            except Exception:
+                continue
+
+            currency_code = line["currency_code"]
+            section_name = (line.get("section_name") or "transfer").lower()
+            section_id = section_map.get(section_name)
+            if section_id is None:
+                section_id = section_map.get("transfer")
+
+            category_name = line.get("category_name") or ""
+            category_id = None
+            if category_name and section_id:
+                category_id = get_or_create_category(cur, section_id, category_name)
+
+            line_memo = line.get("line_memo") or None
+
+            batch.append(
+                (
+                    entry_id,
+                    account_id,
+                    party_id,
+                    amount_value,
+                    currency_code,
+                    category_id,
+                    line_memo,
+                )
+            )
+
+        if batch:
+            executemany_in_chunks(
+                cur,
+                """
+                INSERT INTO journal_line(
+                    entry_id, account_id, party_id, amount, currency_code, category_id, line_memo
+                )
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """,
+                batch,
+            )
+
+def load_users_orgs_accounts(party_map: Dict[str, int]):
     users = read_rows("users.csv")
     orgs  = read_rows("orgs.csv")
     accts = read_rows("accounts.csv")
-    mems  = read_rows("account_memberships.csv")
+    account_role_rows = read_rows("account_party_roles.csv")
     employment = read_rows("memberships.csv")
 
     user_map, org_map, acct_map = {}, {}, {}
@@ -221,6 +692,18 @@ def load_users_orgs_accounts_and_memberships():
                 for ext in pending_user_exts[email]:
                     user_map[ext] = new_id
 
+        user_party_rows = [
+            (uid, party_map[ext])
+            for ext, uid in user_map.items()
+            if ext in party_map
+        ]
+        if user_party_rows:
+            executemany_in_chunks(
+                cur,
+                "REPLACE INTO user_party_map(user_id, party_id) VALUES (%s,%s)",
+                user_party_rows,
+            )
+
         # orgs
         cur.execute("SELECT id, name FROM org")
         existing_orgs = {row["name"]: row["id"] for row in cur.fetchall()}
@@ -252,10 +735,26 @@ def load_users_orgs_accounts_and_memberships():
                 for ext in pending_org_exts[name]:
                     org_map[ext] = new_id
 
+        org_party_rows = [
+            (oid, party_map[ext])
+            for ext, oid in org_map.items()
+            if ext in party_map
+        ]
+        if org_party_rows:
+            executemany_in_chunks(
+                cur,
+                "REPLACE INTO org_party_map(org_id, party_id) VALUES (%s,%s)",
+                org_party_rows,
+            )
+
         # accounts
-        cur.execute("SELECT id, owner_type, owner_id, type, name FROM account")
+        cur.execute("SELECT code FROM account_type")
+        allowed_account_types = {row["code"] for row in cur.fetchall()}
+        cur.execute("SELECT code FROM currency")
+        allowed_currencies = {row["code"] for row in cur.fetchall()}
+        cur.execute("SELECT id, party_id, account_type_code, currency_code, name FROM account")
         existing_accounts = {
-            (row["owner_type"], row["owner_id"], row["type"], row["name"] or None): row["id"]
+            (row["party_id"], row["account_type_code"], row["currency_code"], row["name"] or None): row["id"]
             for row in cur.fetchall()
         }
         pending_accounts: list[tuple] = []
@@ -263,29 +762,27 @@ def load_users_orgs_accounts_and_memberships():
         pending_account_exts: Dict[tuple, list[str]] = {}
 
         for a in accts:
-            owner_type = a["owner_type"]
-            owner_ext = a["owner_ext_id"]
+            party_ext = a["party_ext_id"]
+            party_id = party_map.get(party_ext)
+            if not party_id:
+                raise ValueError(f"Account references unknown party_ext_id '{party_ext}'")
 
-            if owner_type not in ("user", "org"):
+            account_type_code = a["account_type_code"]
+            if account_type_code not in allowed_account_types:
                 raise ValueError(
-                    f"Unknown owner_type '{owner_type}' in accounts.csv for ext_id {a['ext_id']}"
+                    f"Unsupported account type '{account_type_code}' for account {a['ext_id']}; "
+                    f"expected one of {sorted(allowed_account_types)}"
                 )
 
-            if a["type"] not in ALLOWED_ACCOUNT_TYPES:
+            currency_code = a["currency_code"]
+            if currency_code not in allowed_currencies:
                 raise ValueError(
-                    f"Unsupported account type '{a['type']}' for owner {owner_type}:{owner_ext}; "
-                    f"expected one of {sorted(ALLOWED_ACCOUNT_TYPES)}"
+                    f"Unsupported currency '{currency_code}' for account {a['ext_id']}; "
+                    f"expected one of {sorted(allowed_currencies)}"
                 )
-
-            try:
-                owner_id = user_map[owner_ext] if owner_type == "user" else org_map[owner_ext]
-            except KeyError as exc:
-                raise ValueError(
-                    f"Account owner reference '{owner_ext}' (type {owner_type}) not found while loading accounts"
-                ) from exc
 
             name = a.get("name") or None
-            key = (owner_type, owner_id, a["type"], name)
+            key = (party_id, account_type_code, currency_code, name)
             existing_id = existing_accounts.get(key)
             if existing_id:
                 acct_map[a["ext_id"]] = existing_id
@@ -299,13 +796,13 @@ def load_users_orgs_accounts_and_memberships():
             ext_list.append(a["ext_id"])
             pending_accounts.append(
                 (
-                    owner_type,
-                    owner_id,
-                    a["type"],
-                    a["currency"],
+                    party_id,
+                    account_type_code,
+                    currency_code,
                     name,
                     a.get("iban") or None,
                     a.get("opened_at") or None,
+                    a.get("closed_at") or None,
                 )
             )
             pending_account_keys.append(key)
@@ -314,7 +811,7 @@ def load_users_orgs_accounts_and_memberships():
             inserted_accounts = insertmany_with_ids(
                 cur,
                 """
-                INSERT INTO account (owner_type, owner_id, type, currency, name, iban, opened_at)
+                INSERT INTO account (party_id, account_type_code, currency_code, name, iban, opened_at, closed_at)
                 VALUES (%s,%s,%s,%s,%s,%s,%s)
                 """,
                 pending_accounts,
@@ -324,51 +821,34 @@ def load_users_orgs_accounts_and_memberships():
                 for ext in pending_account_exts[key]:
                     acct_map[ext] = new_id
 
-        # memberships
-        cur.execute("SELECT party_type, party_id, account_id FROM account_membership")
-        existing_memberships = {
-            (row["party_type"], row["party_id"], row["account_id"]) for row in cur.fetchall()
-        }
-        pending_memberships: list[tuple] = []
-        for m in mems:
-            party_type = m["party_type"]
-            party_ext = m["party_ext_id"]
-            if party_type == "user":
-                try:
-                    party_id = user_map[party_ext]
-                except KeyError as exc:
-                    raise ValueError(f"Membership references unknown user ext_id '{party_ext}'") from exc
-            elif party_type == "org":
-                try:
-                    party_id = org_map[party_ext]
-                except KeyError as exc:
-                    raise ValueError(f"Membership references unknown org ext_id '{party_ext}'") from exc
-            else:
-                raise ValueError(f"Unknown party_type '{party_type}' in account_memberships.csv")
+        if account_role_rows:
+            pending_roles: list[tuple] = []
+            for role_row in account_role_rows:
+                account_id = acct_map.get(role_row["account_ext_id"])
+                party_id = party_map.get(role_row["party_ext_id"])
+                role_code = role_row.get("role_code")
+                if not account_id or not party_id or not role_code:
+                    continue
+                start_date = role_row.get("start_date") or None
+                end_date = role_row.get("end_date") or None
+                is_primary = 1 if str(role_row.get("is_primary", "0")).lower() in {"1", "true", "yes"} else 0
+                pending_roles.append((account_id, party_id, role_code, start_date, end_date, bool(is_primary)))
 
-            try:
-                account_id = acct_map[m["account_ext_id"]]
-            except KeyError as exc:
-                raise ValueError(
-                    f"Membership references unknown account ext_id '{m['account_ext_id']}'"
-                ) from exc
-
-            key = (party_type, party_id, account_id)
-            if key in existing_memberships:
-                continue
-
-            existing_memberships.add(key)
-            pending_memberships.append((party_type, party_id, account_id, m["role"]))
-
-        if pending_memberships:
-            executemany_in_chunks(
-                cur,
-                """
-                INSERT INTO account_membership(party_type, party_id, account_id, role)
-                VALUES (%s,%s,%s,%s)
-                """,
-                pending_memberships,
-            )
+            if pending_roles:
+                executemany_in_chunks(
+                    cur,
+                    """
+                    INSERT INTO account_party_role(
+                        account_id, party_id, role_code, start_date, end_date, is_primary
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s)
+                    ON DUPLICATE KEY UPDATE
+                        start_date=VALUES(start_date),
+                        end_date=VALUES(end_date),
+                        is_primary=VALUES(is_primary)
+                    """,
+                    pending_roles,
+                )
 
         # employer memberships (user -> org)
         employment_rows: list[tuple] = []
@@ -412,23 +892,35 @@ def load_users_orgs_accounts_and_memberships():
 
 def load_instruments_prices_fx():
     insts = read_rows("instruments.csv")
-    prices = read_rows("price_daily.csv")
+    identifiers = read_rows("instrument_identifiers.csv")
+    prices = read_rows("price_quotes.csv")
+    if not prices:
+        logger.warning(
+            "price_quotes.csv not found or empty; skip loading prices. "
+            "Run scripts/fetch_stock_prices.py to generate fresh market data."
+        )
     fx = read_rows("fx_rate_daily.csv")
     inst_map: Dict[str, int] = {}
 
     with conn() as c:
         cur = c.cursor()
 
-        cur.execute("SELECT id, symbol, mic FROM instrument")
+        cur.execute("SELECT mic, id FROM market")
+        market_map = {row["mic"]: row["id"] for row in cur.fetchall()}
+
+        cur.execute("SELECT id, symbol, primary_market_id FROM instrument")
         existing_instruments = {
-            (row["symbol"], row["mic"] or None): row["id"] for row in cur.fetchall()
+            (row["symbol"], row["primary_market_id"]): row["id"] for row in cur.fetchall()
         }
+
         pending_instruments: list[tuple] = []
-        pending_inst_keys: list[tuple[str, Optional[str]]] = []
+        pending_inst_keys: list[tuple[str, Optional[int]]] = []
         pending_inst_exts: Dict[tuple, list[str]] = {}
 
         for ins in insts:
-            key = (ins["symbol"], ins.get("mic") or None)
+            market_mic = ins.get("primary_market_mic") or ""
+            market_id = market_map.get(market_mic) if market_mic else None
+            key = (ins["symbol"], market_id)
             iid = existing_instruments.get(key)
             if iid:
                 inst_map[ins["ext_id"]] = iid
@@ -443,11 +935,10 @@ def load_instruments_prices_fx():
             pending_instruments.append(
                 (
                     ins["symbol"],
-                    ins.get("mic") or None,
                     ins["name"],
-                    ins["type"],
-                    ins["currency"],
-                    ins.get("isin") or None,
+                    ins["instrument_type_code"],
+                    ins["primary_currency_code"],
+                    market_id,
                 )
             )
             pending_inst_keys.append(key)
@@ -456,8 +947,8 @@ def load_instruments_prices_fx():
             inserted_instruments = insertmany_with_ids(
                 cur,
                 """
-                INSERT INTO instrument(symbol, mic, name, type, currency, isin)
-                VALUES (%s,%s,%s,%s,%s,%s)
+                INSERT INTO instrument(symbol, name, instrument_type_code, primary_currency_code, primary_market_id)
+                VALUES (%s,%s,%s,%s,%s)
                 """,
                 pending_instruments,
             )
@@ -466,22 +957,55 @@ def load_instruments_prices_fx():
                 for ext in pending_inst_exts[key]:
                     inst_map[ext] = new_id
 
-        price_rows: list[tuple] = []
+        for key, iid in existing_instruments.items():
+            ext_list = pending_inst_exts.get(key, [])
+            for ext in ext_list:
+                inst_map.setdefault(ext, iid)
+
+        if identifiers:
+            identifier_rows: list[tuple] = []
+            for ident in identifiers:
+                inst_id = inst_map.get(ident["instrument_ext_id"])
+                if not inst_id:
+                    continue
+                identifier_rows.append(
+                    (
+                        inst_id,
+                        ident.get("identifier_type") or "GENERIC",
+                        ident.get("identifier_value") or "",
+                    )
+                )
+            if identifier_rows:
+                executemany_in_chunks(
+                    cur,
+                    """
+                    INSERT INTO instrument_identifier(instrument_id, identifier_type, identifier_value)
+                    VALUES (%s,%s,%s)
+                    ON DUPLICATE KEY UPDATE instrument_id=VALUES(instrument_id)
+                    """,
+                    identifier_rows,
+                )
+
+        quote_rows: list[tuple] = []
         for pr in prices:
-            iid = inst_map.get(pr["instrument_ext_id"])
+            iid = inst_map.get(pr.get("instrument_ext_id"))
             if not iid:
                 continue
-            price_rows.append((iid, pr["price_date"], pr["close_price"], pr["currency"]))
+            quote_type = (pr.get("quote_type") or "CLOSE").upper()
+            quote_value = pr.get("quote_value") or pr.get("close_price")
+            if not quote_value:
+                continue
+            quote_rows.append((iid, pr["price_date"], quote_type, quote_value))
 
-        if price_rows:
+        if quote_rows:
             executemany_in_chunks(
                 cur,
                 """
-                INSERT INTO price_daily(instrument_id, price_date, close_price, currency)
+                INSERT INTO price_quote(instrument_id, price_date, quote_type, quote_value)
                 VALUES (%s,%s,%s,%s)
-                ON DUPLICATE KEY UPDATE close_price=VALUES(close_price), currency=VALUES(currency)
+                ON DUPLICATE KEY UPDATE quote_value=VALUES(quote_value)
                 """,
-                price_rows,
+                quote_rows,
             )
 
         fx_rows = [(r["base"], r["quote"], r["rate_date"], r["rate"]) for r in fx]
@@ -497,217 +1021,6 @@ def load_instruments_prices_fx():
             )
 
     return inst_map
-
-def load_transactions(acct_map):
-    total_rows = count_rows("transactions.csv")
-    if total_rows == 0:
-        logger.info("No transactions.csv found — skipping transaction load.")
-        return 0
-
-    logger.info("Loading %s transactions from CSV", total_rows)
-
-    with conn() as c:
-        cur = c.cursor()
-
-        # cache sections by name and pre-fill category cache
-        cur.execute("SELECT id, name FROM section")
-        sec_map = {row["name"]: row["id"] for row in cur.fetchall()}
-
-        CATEGORY_CACHE.clear()
-        COUNTERPARTY_CACHE.clear()
-        cur.execute("SELECT id, section_id, name FROM category")
-        for row in cur.fetchall():
-            CATEGORY_CACHE[(row["section_id"], row["name"])] = row["id"]
-
-        transfer_refs = set()
-        processed = 0
-        insert_batch_size = 1000
-        commit_batch_size = 20000
-        rows_since_commit = 0
-
-        insert_stmt = """
-            INSERT INTO `transaction`(
-              account_id, posted_at, txn_date, amount, currency, direction,
-              section_id, category_id, channel, description,
-              counterparty_id, transfer_group_id, ext_reference
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """
-
-        def flush_batch(*, final: bool = False) -> None:
-            nonlocal processed, rows_since_commit
-            if not batch:
-                return
-            cur.executemany(insert_stmt, batch)
-            inserted_now = len(batch)
-            processed += inserted_now
-            rows_since_commit += inserted_now
-            timer.add(inserted_now)
-            task.advance(inserted_now)
-            batch.clear()
-
-            if rows_since_commit >= commit_batch_size or final:
-                c.commit()
-                rows_since_commit = 0
-                logger.info("Committed %s transactions", processed)
-
-        batch: list[tuple] = []
-
-        with timeit(
-            "transaction import",
-            logger=logger,
-            unit="rows",
-            total=total_rows,
-        ) as timer, progress_manager.task(
-            "Inserting transactions", total=total_rows, unit="rows"
-        ) as task:
-            for t in stream_rows("transactions.csv"):
-                try:
-                    account_id = acct_map[t["account_ext_id"]]
-                except KeyError as exc:
-                    logger.error(
-                        "Transaction references unknown account ext_id '%s'",
-                        t["account_ext_id"],
-                    )
-                    raise ValueError(
-                        f"Transaction references unknown account ext_id '{t['account_ext_id']}'"
-                    ) from exc
-
-                posted_at = t["posted_at"]
-                txn_date = t["txn_date"]
-                amount = t["amount"]
-                currency = t["currency"]
-                direction = (t["direction"] or "").upper()
-                channel = (t["channel"] or "").upper()
-                description = t.get("description") or None
-                cp_name = t.get("counterparty_name") or None
-                cp_acct = t.get("counterparty_account") or None
-                cp_bic = t.get("counterparty_bic") or None
-                transfer_ref = t.get("transfer_ref") or None
-                ext_ref = t.get("ext_reference") or None
-
-                if direction not in ALLOWED_DIRECTIONS:
-                    logger.error(
-                        "Unsupported transaction direction '%s' for account %s",
-                        t["direction"],
-                        t["account_ext_id"],
-                    )
-                    raise ValueError(
-                        f"Unsupported transaction direction '{t['direction']}' for account {t['account_ext_id']}"
-                    )
-
-                if channel not in ALLOWED_CHANNELS:
-                    logger.error(
-                        "Unsupported transaction channel '%s' for account %s",
-                        t["channel"],
-                        t["account_ext_id"],
-                    )
-                    raise ValueError(
-                        f"Unsupported transaction channel '{t['channel']}' for account {t['account_ext_id']}"
-                    )
-
-                section_name = t.get("section_name") or None
-                category_name = t.get("category_name") or None
-
-                if section_name and section_name not in sec_map:
-                    logger.error("Unknown section %s", section_name)
-                    raise ValueError(
-                        f"Unknown section {section_name} (expected one of {list(sec_map)})"
-                    )
-                section_id = sec_map.get(section_name) if section_name else sec_map["transfer"]
-
-                category_id = (
-                    get_or_create_category(cur, section_id, category_name)
-                    if category_name
-                    else None
-                )
-                counterparty_id = None
-                if any([cp_name, cp_acct, cp_bic]):
-                    counterparty_id = get_or_create_counterparty(cur, cp_name, cp_acct, cp_bic)
-
-                batch.append(
-                    (
-                        account_id,
-                        posted_at,
-                        txn_date,
-                        amount,
-                        currency,
-                        direction,
-                        section_id,
-                        category_id,
-                        channel,
-                        description,
-                        counterparty_id,
-                        transfer_ref,
-                        ext_ref,
-                    )
-                )
-
-                if transfer_ref:
-                    transfer_refs.add(transfer_ref)
-
-                if len(batch) >= insert_batch_size:
-                    flush_batch()
-
-        flush_batch(final=True)
-
-        # ensure final batch is committed before creating transfer links
-        c.commit()
-
-        if transfer_refs:
-            logger.info("Linking %s transfer groups", len(transfer_refs))
-            refs_list = list(transfer_refs)
-            chunk_size = 1000
-
-            with progress_manager.spinner(
-                f"Linking {len(refs_list):,} transfer groups"
-            ):
-                for i in range(0, len(refs_list), chunk_size):
-                    chunk = refs_list[i : i + chunk_size]
-                    placeholders = ",".join(["%s"] * len(chunk))
-                    cur.execute(
-                        f"""
-                        INSERT IGNORE INTO transfer_link(debit_txn_id, credit_txn_id)
-                        SELECT d.id, c.id
-                        FROM `transaction` d
-                        JOIN `transaction` c
-                          ON d.transfer_group_id = c.transfer_group_id
-                         AND d.direction = 'DEBIT'
-                         AND c.direction = 'CREDIT'
-                        WHERE d.transfer_group_id IN ({placeholders})
-                    """,
-                        chunk,
-                    )
-
-                anomalies = []
-                for i in range(0, len(refs_list), chunk_size):
-                    chunk = refs_list[i : i + chunk_size]
-                    placeholders = ",".join(["%s"] * len(chunk))
-                    cur.execute(
-                        f"""
-                        SELECT transfer_group_id AS ref,
-                               COUNT(*) AS cnt,
-                               SUM(direction='DEBIT') AS debits,
-                               SUM(direction='CREDIT') AS credits
-                        FROM `transaction`
-                        WHERE transfer_group_id IN ({placeholders})
-                        GROUP BY transfer_group_id
-                        HAVING cnt <> 2 OR debits <> 1 OR credits <> 1
-                    """,
-                        chunk,
-                    )
-                    anomalies.extend(cur.fetchall())
-
-            for row in anomalies:
-                logger.warning(
-                    "transfer_ref %s has %s entries (%s debits/%s credits); skipping link.",
-                    row["ref"],
-                    row["cnt"],
-                    row["debits"],
-                    row["credits"],
-                )
-
-        return processed
 
 def load_trades_and_holdings(acct_map, inst_map):
     trades = read_rows("trades.csv")
@@ -889,57 +1202,277 @@ def load_trades_and_holdings(acct_map, inst_map):
 
             flush_trade_batch(final=True)
 
-def load_user_salary_monthly(user_map, org_map):
-    salaries = read_rows("user_salary_monthly.csv")
-    if not salaries:
-        return 0
+def label_to_start(label: str) -> Optional[date]:
+    try:
+        year_str, month_str = label.split("-", 1)
+        year = int(year_str)
+        month = int(month_str)
+        return date(year, month, 1)
+    except Exception:
+        logger.warning("Skipping invalid reporting period label '%s'", label)
+        return None
+
+
+def ensure_reporting_periods(extra_labels: Optional[Iterable[str]] = None) -> Dict[str, int]:
+    extra_starts: set[date] = set()
+    if extra_labels:
+        for label in extra_labels:
+            start = label_to_start(label)
+            if start:
+                extra_starts.add(start)
+
     with conn() as c:
         cur = c.cursor()
-        logger.info("Loading %s user_salary_monthly rows…", len(salaries))
-        rows: list[tuple] = []
-        for r in salaries:
-            user_ext = r["user_ext_id"]
-            org_ext = r["org_ext_id"]
-            try:
-                uid = user_map[user_ext]
-                oid = org_map[org_ext]
-            except KeyError:
-                continue
-            rows.append(
-                (
-                    uid,
-                    oid,
-                    int(r["year"]),
-                    int(r["month"]),
-                    r["salary_amount"],
-                )
-            )
-        if rows:
+
+        cur.execute("SELECT DISTINCT txn_date FROM journal_entry")
+        period_starts = {
+            month_start(row["txn_date"])
+            for row in cur.fetchall()
+            if row.get("txn_date")
+        }
+        period_starts.update(extra_starts)
+
+        if period_starts:
+            period_rows = [
+                (start, month_end(start), f"{start.year}-{start.month:02d}")
+                for start in sorted(period_starts)
+            ]
             executemany_in_chunks(
                 cur,
                 """
-                INSERT INTO user_salary_monthly(user_id, employer_org_id, year, month, salary_amount)
-                VALUES (%s,%s,%s,%s,%s)
-                ON DUPLICATE KEY UPDATE salary_amount=VALUES(salary_amount)
+                INSERT INTO reporting_period(period_start, period_end, label)
+                VALUES (%s,%s,%s)
+                ON DUPLICATE KEY UPDATE
+                  period_start=VALUES(period_start),
+                  period_end=VALUES(period_end)
                 """,
-                rows,
+                period_rows,
             )
-    return len(rows)
+
+        cur.execute("SELECT id, label FROM reporting_period")
+        return {row["label"]: row["id"] for row in cur.fetchall()}
+
+
+def load_payroll_fact(contract_map: Dict[str, int]) -> int:
+    payroll_rows = read_rows("payroll_fact.csv")
+    if not payroll_rows:
+        ensure_reporting_periods()
+        return 0
+
+    labels = [row["reporting_period_label"] for row in payroll_rows if row.get("reporting_period_label")]
+    period_map = ensure_reporting_periods(labels)
+
+    with conn() as c:
+        cur = c.cursor()
+        cur.execute("DELETE FROM payroll_fact")
+
+        insert_rows: list[tuple] = []
+        for row in payroll_rows:
+            label = row.get("reporting_period_label")
+            contract_ext = row.get("contract_ext_id")
+            if not (label and contract_ext):
+                continue
+
+            period_id = period_map.get(label)
+            contract_id = contract_map.get(contract_ext)
+            if not (period_id and contract_id):
+                continue
+
+            insert_rows.append(
+                (
+                    period_id,
+                    contract_id,
+                    row.get("gross_amount") or 0,
+                    row.get("net_amount") or 0,
+                    row.get("taxes_withheld") or 0,
+                )
+            )
+
+        if insert_rows:
+            executemany_in_chunks(
+                cur,
+                """
+                INSERT INTO payroll_fact(
+                    reporting_period_id,
+                    contract_id,
+                    gross_amount,
+                    net_amount,
+                    taxes_withheld
+                )
+                VALUES (%s,%s,%s,%s,%s)
+                ON DUPLICATE KEY UPDATE
+                    gross_amount=VALUES(gross_amount),
+                    net_amount=VALUES(net_amount),
+                    taxes_withheld=VALUES(taxes_withheld)
+                """,
+                insert_rows,
+            )
+
+        return len(insert_rows)
+
+
+def rebuild_cash_flow_fact() -> int:
+    """Recompute cash flow facts from the journal tables."""
+    with conn() as c:
+        cur = c.cursor()
+        cur.execute("DELETE FROM cash_flow_fact")
+        cur.execute("SELECT id FROM section WHERE name = 'transfer'")
+        transfer_row = cur.fetchone()
+        transfer_section_id = transfer_row["id"] if transfer_row else None
+
+        insert_sql = """
+            INSERT INTO cash_flow_fact(
+                reporting_period_id,
+                party_id,
+                section_id,
+                inflow_amount,
+                outflow_amount,
+                net_amount
+            )
+            SELECT
+                rp.id AS reporting_period_id,
+                jl.party_id,
+                CASE
+                    WHEN jl.category_id IS NOT NULL THEN (
+                        SELECT section_id FROM category WHERE id = jl.category_id
+                    )
+                    ELSE %(transfer_section_id)s
+                END AS section_id,
+                SUM(CASE WHEN jl.amount > 0 THEN jl.amount ELSE 0 END) AS inflow_amount,
+                SUM(CASE WHEN jl.amount < 0 THEN -jl.amount ELSE 0 END) AS outflow_amount,
+                SUM(jl.amount) AS net_amount
+            FROM journal_line jl
+            JOIN journal_entry je ON je.id = jl.entry_id
+            JOIN reporting_period rp
+              ON je.txn_date BETWEEN rp.period_start AND rp.period_end
+            JOIN party p ON p.id = jl.party_id
+            WHERE jl.party_id IS NOT NULL
+              AND p.display_name <> 'Ledger Clearing'
+              AND p.party_type IN ('INDIVIDUAL', 'COMPANY')
+              AND (
+                  jl.category_id IS NOT NULL
+                  OR %(transfer_section_id)s IS NOT NULL
+              )
+            GROUP BY rp.id, jl.party_id, section_id
+        """
+
+        cur.execute(insert_sql, {"transfer_section_id": transfer_section_id})
+        return cur.rowcount or 0
+
+
+def rebuild_holding_performance_fact() -> int:
+    """Recompute holding performance using the latest reporting period."""
+    with conn() as c:
+        cur = c.cursor()
+        
+        logger.info("Fetching latest reporting period...")
+        cur.execute(
+            "SELECT id, period_end FROM reporting_period ORDER BY period_end DESC LIMIT 1"
+        )
+        latest = cur.fetchone()
+        if not latest:
+            logger.warning("No reporting periods found, skipping holding performance rebuild")
+            return 0
+
+        period_id = latest["id"]
+        period_end = latest["period_end"]
+        logger.info("Using reporting period %s ending %s", period_id, period_end)
+
+        logger.info("Clearing existing holding performance facts for period %s...", period_id)
+        cur.execute(
+            "DELETE FROM holding_performance_fact WHERE reporting_period_id = %s",
+            (period_id,),
+        )
+        deleted = cur.rowcount or 0
+        logger.info("Deleted %s old holding performance fact rows", deleted)
+
+        logger.info("Computing holding performance facts...")
+        try:
+            # Use window function to get latest price - much faster than self-join
+            cur.execute(
+                """
+                INSERT INTO holding_performance_fact(
+                    reporting_period_id,
+                    party_id,
+                    instrument_id,
+                    quantity,
+                    cost_basis,
+                    market_value,
+                    unrealized_pl
+                )
+                SELECT
+                    %s AS reporting_period_id,
+                    a.party_id,
+                    h.instrument_id,
+                    SUM(h.qty)                                                   AS quantity,
+                    SUM(h.qty * h.avg_cost)                                      AS cost_basis,
+                    SUM(h.qty * COALESCE(price_data.quote_value, h.avg_cost))    AS market_value,
+                    SUM(h.qty * (COALESCE(price_data.quote_value, h.avg_cost) - h.avg_cost)) AS unrealized_pl
+                FROM holding h
+                JOIN account a ON a.id = h.account_id
+                LEFT JOIN (
+                    SELECT 
+                        instrument_id,
+                        quote_value
+                    FROM (
+                        SELECT 
+                            instrument_id,
+                            quote_value,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY instrument_id 
+                                ORDER BY price_date DESC
+                            ) AS rn
+                        FROM price_quote
+                        WHERE price_date <= %s
+                          AND quote_type = 'CLOSE'
+                    ) ranked
+                    WHERE rn = 1
+                ) AS price_data
+                  ON price_data.instrument_id = h.instrument_id
+                WHERE h.qty <> 0
+                GROUP BY a.party_id, h.instrument_id
+                """,
+                (period_id, period_end),
+            )
+            inserted = cur.rowcount or 0
+            logger.info("Inserted %s holding performance fact rows", inserted)
+            return inserted
+        except Exception as e:
+            logger.exception("Failed to rebuild holding performance facts: %s", e)
+            raise
 
 
 def main():
+    logger.info("Loading parties and profiles…")
+    party_map = load_parties_and_profiles()
+    logger.info("Loaded %s parties", len(party_map))
+    logger.info("Loading app users and roles…")
+    app_user_map = load_app_users_and_roles(party_map)
+    logger.info("Loaded %s app users", len(app_user_map))
+    logger.info("Loading employment contracts and company access…")
+    contract_map = load_employment_and_access(party_map, app_user_map)
     logger.info("Loading users/orgs/accounts/memberships…")
-    user_map, org_map, acct_map = load_users_orgs_accounts_and_memberships()
+    _user_map, _org_map, acct_map = load_users_orgs_accounts(party_map)
     logger.info("Loading instruments/prices/fx…")
     inst_map = load_instruments_prices_fx()
-    logger.info("Loading transactions…")
-    inserted = load_transactions(acct_map)
-    logger.info("Inserted %s transactions", inserted)
-    logger.info("Loading user monthly salaries…")
-    sal_inserted = load_user_salary_monthly(user_map, org_map)
-    logger.info("Inserted %s user_salary_monthly rows", sal_inserted)
+    logger.info("Loading journal entries…")
+    entry_map = load_journal_entries(party_map)
+    logger.info("Loaded %s journal entries", len(entry_map))
+    logger.info("Loading journal lines…")
+    load_journal_lines(entry_map, acct_map, party_map)
+    logger.info("Ensuring reporting periods for journal activity…")
+    ensure_reporting_periods()
+    logger.info("Loading payroll facts…")
+    payroll_rows = load_payroll_fact(contract_map)
+    logger.info("Inserted %s payroll_fact rows", payroll_rows)
     logger.info("Loading trades & updating holdings (WAC)…")
     load_trades_and_holdings(acct_map, inst_map)
+    logger.info("Rebuilding cash flow facts…")
+    cash_rows = rebuild_cash_flow_fact()
+    logger.info("Inserted %s cash_flow_fact rows", cash_rows)
+    logger.info("Rebuilding holding performance facts…")
+    holding_rows = rebuild_holding_performance_fact()
+    logger.info("Inserted %s holding_performance_fact rows", holding_rows)
     logger.info("Load complete.")
 
 if __name__ == "__main__":
