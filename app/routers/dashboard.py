@@ -2,21 +2,87 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from dataclasses import dataclass
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.logger import get_logger
 from app.core.security import AuthenticatedUser, require_admin_user
-from app.db.session import get_sessionmaker
-from app.services import AdminService
-from app.schemas.admin import DashboardCharts, LineChartData, PieChartData
 from app.core.templates import templates
+from app.db.session import get_sessionmaker
+from app.schemas.admin import DashboardCharts, LineChartData, PieChartData
+from app.services import AdminService
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 SESSION_FACTORY: sessionmaker = get_sessionmaker()
 LOGGER = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class PanelConfig:
+    list_methods: tuple[str, ...]
+    chart_attr: str
+    chart_type: str
+    list_id: str
+
+
+PANEL_CONFIGS = {
+    "individuals": PanelConfig(
+        list_methods=("get_individual_overview",),
+        chart_attr="individuals_income",
+        chart_type="pie",
+        list_id="individuals-list",
+    ),
+    "companies": PanelConfig(
+        list_methods=("get_company_overview",),
+        chart_attr="companies_profit_margin",
+        chart_type="pie",
+        list_id="companies-list",
+    ),
+    "transactions": PanelConfig(
+        list_methods=("get_transaction_overview",),
+        chart_attr="transactions_amounts",
+        chart_type="pie",
+        list_id="transactions-list",
+    ),
+    "stocks": PanelConfig(
+        list_methods=("get_stock_holdings_overview", "get_company_overview"),
+        chart_attr="stock_price_trend",
+        chart_type="line",
+        list_id="stocks-list",
+    ),
+}
+
+
+FALLBACK_CHARTS = DashboardCharts(
+    individuals_income=PieChartData(
+        title="Income mix",
+        labels=["Demo"],
+        values=[1.0],
+        hint="Demo data",
+    ),
+    companies_profit_margin=PieChartData(
+        title="Profit margin",
+        labels=["Demo"],
+        values=[1.0],
+        hint="Demo data",
+    ),
+    transactions_amounts=PieChartData(
+        title="Transactions",
+        labels=["Demo"],
+        values=[1.0],
+        hint="Demo data",
+    ),
+    stock_price_trend=LineChartData(
+        title="Stock price trend",
+        labels=["T0", "T1"],
+        values=[100.0, 100.0],
+        series_label="Demo",
+        hint="Demo data",
+    ),
+)
 
 
 def get_db_session() -> Generator[Session, None, None]:
@@ -35,11 +101,64 @@ def get_admin_service() -> AdminService:
     return AdminService()
 
 
-@router.get(
-    "/",
-    summary="Finance dashboard",
-    response_class=HTMLResponse,
-)
+def _resolve_chart(
+    admin_service: AdminService,
+    session: Session,
+    chart_attr: str,
+) -> PieChartData | LineChartData:
+    if hasattr(admin_service, "get_dashboard_charts"):
+        charts = admin_service.get_dashboard_charts(session)
+    else:  # pragma: no cover - simplified stubs in tests
+        charts = FALLBACK_CHARTS
+    return getattr(charts, chart_attr, getattr(FALLBACK_CHARTS, chart_attr))
+
+
+def _panel_payload(
+    panel_name: str,
+    admin_service: AdminService,
+    session: Session,
+) -> tuple[PanelConfig, PieChartData | LineChartData, object]:
+    config = PANEL_CONFIGS.get(panel_name)
+    if config is None:
+        raise HTTPException(status_code=404, detail="Unknown dashboard panel")
+
+    list_getter = None
+    for method in config.list_methods:
+        list_getter = getattr(admin_service, method, None)
+        if list_getter is not None:
+            break
+    if list_getter is None:
+        raise HTTPException(status_code=404, detail="Panel data unavailable")
+
+    view = list_getter(session)
+    chart = _resolve_chart(admin_service, session, config.chart_attr)
+
+    return config, chart, view
+
+
+def _render_panel(
+    request: Request,
+    panel_name: str,
+    admin_service: AdminService,
+    session: Session,
+) -> HTMLResponse:
+    config, chart, view = _panel_payload(panel_name, admin_service, session)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="admin/partials/panel.html",
+        context={
+            "chart": chart,
+            "chart_type": config.chart_type,
+            "list_id": config.list_id,
+            "panel_key": panel_name,
+            "request": request,
+            "view": view,
+        },
+    )
+
+
+@router.get("/", summary="Finance dashboard", response_class=HTMLResponse)
 async def read_dashboard(
     request: Request,
     _: AuthenticatedUser = Depends(require_admin_user),
@@ -50,51 +169,19 @@ async def read_dashboard(
 
     LOGGER.info("Dashboard endpoint requested")
     metrics = admin_service.get_metrics(session)
-    individuals_list = admin_service.get_individual_overview(session)
-    companies_list = admin_service.get_company_overview(session)
-    if hasattr(admin_service, "get_stock_holdings_overview"):
-        stock_holdings_list = admin_service.get_stock_holdings_overview(session)
-    else:  # pragma: no cover - fallback for simplified stubs used in tests
-        stock_holdings_list = companies_list
-    transactions_list = admin_service.get_transaction_overview(session)
-    if hasattr(admin_service, "get_dashboard_charts"):
-        charts = admin_service.get_dashboard_charts(session)
-    else:  # pragma: no cover - fallback for simplified stubs used in tests
-        charts = DashboardCharts(
-            individuals_income=PieChartData(
-                title="Income mix",
-                labels=["Demo"],
-                values=[1.0],
-                hint="Demo data",
-            ),
-            companies_profit_margin=PieChartData(
-                title="Profit margin",
-                labels=["Demo"],
-                values=[1.0],
-                hint="Demo data",
-            ),
-            transactions_amounts=PieChartData(
-                title="Transactions",
-                labels=["Demo"],
-                values=[1.0],
-                hint="Demo data",
-            ),
-            stock_price_trend=LineChartData(
-                title="Stock price trend",
-                labels=["T0", "T1"],
-                values=[100.0, 100.0],
-                series_label="Demo",
-                hint="Demo data",
-            ),
-        )
+    panel_config, panel_chart, panel_view = _panel_payload(
+        panel_name="individuals",
+        admin_service=admin_service,
+        session=session,
+    )
+
     context = {
         "request": request,
         "metrics": metrics,
-        "individuals_list": individuals_list,
-        "companies_list": companies_list,
-        "stock_holdings_list": stock_holdings_list,
-        "transactions_list": transactions_list,
-        "charts": charts,
+        "panel_chart": panel_chart,
+        "panel_config": panel_config,
+        "panel_name": "individuals",
+        "panel_view": panel_view,
     }
     return templates.TemplateResponse(
         request=request,
@@ -104,39 +191,22 @@ async def read_dashboard(
 
 
 @router.get(
-    "/api/stocks",
-    summary="Get available stocks",
+    "/panel/{panel_name}",
+    summary="Dashboard detail panel",
+    response_class=HTMLResponse,
 )
-async def get_available_stocks(
+async def render_panel(
+    request: Request,
+    panel_name: str,
+    _: AuthenticatedUser = Depends(require_admin_user),
     admin_service: AdminService = Depends(get_admin_service),
     session: Session = Depends(get_db_session),
-) -> JSONResponse:
-    """Return a list of all available stocks with price data."""
-    
-    stocks = admin_service.get_available_stocks(session)
-    return JSONResponse(content={"stocks": stocks})
+) -> HTMLResponse:
+    """Return a panel partial for HTMX swaps."""
 
-
-@router.get(
-    "/api/stocks/{instrument_id}/prices",
-    summary="Get stock price data",
-)
-async def get_stock_prices(
-    instrument_id: int,
-    admin_service: AdminService = Depends(get_admin_service),
-    session: Session = Depends(get_db_session),
-) -> JSONResponse:
-    """Return price series for a specific stock."""
-    
-    series, label, hint = admin_service.get_stock_price_data(session, instrument_id)
-    
-    labels = [point[0] for point in series]
-    values = [point[1] for point in series]
-    
-    return JSONResponse(content={
-        "title": f"{label} price trend",
-        "labels": labels,
-        "values": values,
-        "series_label": "Closing price",
-        "hint": hint,
-    })
+    return _render_panel(
+        request=request,
+        panel_name=panel_name,
+        admin_service=admin_service,
+        session=session,
+    )
