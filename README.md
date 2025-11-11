@@ -1,17 +1,15 @@
-# Finance Platform (Rebuild)
+# Finance Platform
 
 This project is a finance dashboard that simulates the clients of a bank and their transactions.
 The application is built using an architecture that separates APIs, services, models, and data
 access. 
 
 ## Tech Stack
-- Python 3.11+
-- FastAPI (application framework)
-- SQLAlchemy (database access)
-- MariaDB via Docker Compose
-- Alembic (migrations placeholder)
-- Pytest (tests)
-- Faker & CSV scripts for synthetic data generation
+- Backend: Python 3.11, FastAPI, Uvicorn
+- Persistence: MariaDB (Docker Compose), SQLAlchemy 2.x, Alembic, PyMySQL
+- Validation & Auth: Pydantic v2, python-multipart, PyJWT
+- Presentation: Jinja2 templates, static assets served by FastAPI
+- Tooling & Data: pytest, httpx, rich, Faker, yfinance, python-dotenv
 
 ## Project Layout
 ```

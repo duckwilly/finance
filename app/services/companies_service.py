@@ -12,6 +12,7 @@ from app.models import (
     Account,
     AccountType,
     CashFlowFact,
+    EmploymentContract,
     HoldingPerformanceFact,
     JournalEntry,
     JournalLine,
