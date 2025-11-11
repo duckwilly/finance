@@ -17,21 +17,12 @@
       <div class="page__headline">
         <p class="eyebrow">Finance platform</p>
         <h1 class="page__title">Admin dashboard</h1>
-        <p class="page__subtitle">
-          Four quick entry points into the data with fast swaps powered by HTMX.
-        </p>
+
       </div>
       {% set first_date = metrics.first_transaction_at.date() if metrics.first_transaction_at else '—' %}
       {% set last_date = metrics.last_transaction_at.date() if metrics.last_transaction_at else '—' %}
       <div class="page__meta">
         <div class="badge">Simulated data • {{ first_date }} to {{ last_date }}</div>
-        {% if dashboard_links %}
-        <nav class="page__links" aria-label="Other dashboards">
-          {% for link in dashboard_links %}
-          <a class="page__link{% if link.active %} is-active{% endif %}" href="{{ link.href }}">{{ link.label }}</a>
-          {% endfor %}
-        </nav>
-        {% endif %}
         <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
           <span class="theme-toggle__icon">🌙</span>
           <span class="theme-toggle__label">Dark mode</span>
@@ -108,7 +99,7 @@
     </main>
 
     <footer class="page__footer">
-      <p>Need more context? Jump into the dedicated dashboards linked above for deep dives.</p>
+      <p>Wie dit leest is gek</p>
     </footer>
 
     <script>

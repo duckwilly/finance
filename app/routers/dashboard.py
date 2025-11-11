@@ -56,35 +56,6 @@ PANEL_CONFIGS = {
 }
 
 
-FALLBACK_CHARTS = DashboardCharts(
-    individuals_income=PieChartData(
-        title="Income mix",
-        labels=["Demo"],
-        values=[1.0],
-        hint="Demo data",
-    ),
-    companies_profit_margin=PieChartData(
-        title="Profit margin",
-        labels=["Demo"],
-        values=[1.0],
-        hint="Demo data",
-    ),
-    transactions_amounts=PieChartData(
-        title="Transactions",
-        labels=["Demo"],
-        values=[1.0],
-        hint="Demo data",
-    ),
-    stock_price_trend=LineChartData(
-        title="Stock price trend",
-        labels=["T0", "T1"],
-        values=[100.0, 100.0],
-        series_label="Demo",
-        hint="Demo data",
-    ),
-)
-
-
 def get_db_session() -> Generator[Session, None, None]:
     """Yield a database session and ensure it is closed after use."""
 
@@ -106,11 +77,17 @@ def _resolve_chart(
     session: Session,
     chart_attr: str,
 ) -> PieChartData | LineChartData:
-    if hasattr(admin_service, "get_dashboard_charts"):
-        charts = admin_service.get_dashboard_charts(session)
-    else:  # pragma: no cover - simplified stubs in tests
-        charts = FALLBACK_CHARTS
-    return getattr(charts, chart_attr, getattr(FALLBACK_CHARTS, chart_attr))
+    if not hasattr(admin_service, "get_dashboard_charts"):
+        LOGGER.error("AdminService is missing get_dashboard_charts implementation")
+        raise HTTPException(status_code=500, detail="Dashboard charts unavailable")
+
+    charts: DashboardCharts = admin_service.get_dashboard_charts(session)
+
+    if not hasattr(charts, chart_attr):
+        LOGGER.error("DashboardCharts missing attribute '%s'", chart_attr)
+        raise HTTPException(status_code=500, detail="Dashboard chart missing")
+
+    return getattr(charts, chart_attr)
 
 
 def _panel_payload(
