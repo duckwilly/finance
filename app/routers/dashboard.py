@@ -12,7 +12,7 @@ from app.core.logger import get_logger
 from app.core.security import AuthenticatedUser, require_admin_user
 from app.core.templates import templates
 from app.db.session import get_sessionmaker
-from app.schemas.admin import DashboardCharts, LineChartData, PieChartData
+from app.schemas.admin import DashboardCharts, LineChartData, ListView, PieChartData
 from app.services import AdminService
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -117,7 +117,7 @@ def _panel_payload(
     panel_name: str,
     admin_service: AdminService,
     session: Session,
-) -> tuple[PanelConfig, PieChartData | LineChartData, object]:
+) -> tuple[PanelConfig, PieChartData | LineChartData, ListView]:
     config = PANEL_CONFIGS.get(panel_name)
     if config is None:
         raise HTTPException(status_code=404, detail="Unknown dashboard panel")
@@ -134,6 +134,51 @@ def _panel_payload(
     chart = _resolve_chart(admin_service, session, config.chart_attr)
 
     return config, chart, view
+
+
+
+def _first_link(view: ListView | None) -> str | None:
+    if view and view.rows:
+        for row in view.rows:
+            if row.links:
+                for url in row.links.values():
+                    if url:
+                        return url
+    return None
+
+
+
+def _collect_dashboard_links(
+    request: Request,
+    admin_service: AdminService,
+    session: Session,
+    initial_panel: str,
+    initial_view: ListView,
+) -> list[dict[str, str]]:
+    links = [
+        {"label": "Admin dashboard", "href": request.url_for("read_dashboard"), "active": True}
+    ]
+
+    views: dict[str, ListView] = {initial_panel: initial_view}
+
+    if "individuals" not in views:
+        views["individuals"] = admin_service.get_individual_overview(session)
+    if "companies" not in views:
+        views["companies"] = admin_service.get_company_overview(session)
+
+    label_map = {
+        "individuals": "Individuals dashboard",
+        "companies": "Companies dashboard",
+    }
+
+    for key, label in label_map.items():
+        view = views.get(key)
+        url = _first_link(view)
+        if url:
+            links.append({"label": label, "href": url, "active": False})
+
+    return links
+
 
 
 def _render_panel(
@@ -175,9 +220,18 @@ async def read_dashboard(
         session=session,
     )
 
+    dashboard_links = _collect_dashboard_links(
+        request=request,
+        admin_service=admin_service,
+        session=session,
+        initial_panel="individuals",
+        initial_view=panel_view,
+    )
+
     context = {
         "request": request,
         "metrics": metrics,
+        "dashboard_links": dashboard_links,
         "panel_chart": panel_chart,
         "panel_config": panel_config,
         "panel_name": "individuals",

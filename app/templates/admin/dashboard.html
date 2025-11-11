@@ -8,73 +8,91 @@
     <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+    <script src="{{ url_for('static', path='js/theme-switcher.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/admin-charts.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/list-view.js') }}" defer></script>
   </head>
-  <body class="admin">
-    <main class="dashboard" aria-labelledby="dashboard-heading">
-      <header class="dashboard__header">
-        <div>
-          <p class="dashboard__eyebrow">Finance platform</p>
-          <h1 id="dashboard-heading" class="dashboard__title">Admin dashboard</h1>
-          <p class="dashboard__subtitle">Four quick entry points into the data.</p>
-        </div>
-        {% set first_date = metrics.first_transaction_at.date() if metrics.first_transaction_at else '—' %}
-        {% set last_date = metrics.last_transaction_at.date() if metrics.last_transaction_at else '—' %}
-        <p class="dashboard__range">Simulated data • {{ first_date }} to {{ last_date }}</p>
-      </header>
+  <body class="page">
+    <header class="page__header">
+      <div class="page__headline">
+        <p class="eyebrow">Finance platform</p>
+        <h1 class="page__title">Admin dashboard</h1>
+        <p class="page__subtitle">
+          Four quick entry points into the data with fast swaps powered by HTMX.
+        </p>
+      </div>
+      {% set first_date = metrics.first_transaction_at.date() if metrics.first_transaction_at else '—' %}
+      {% set last_date = metrics.last_transaction_at.date() if metrics.last_transaction_at else '—' %}
+      <div class="page__meta">
+        <div class="badge">Simulated data • {{ first_date }} to {{ last_date }}</div>
+        {% if dashboard_links %}
+        <nav class="page__links" aria-label="Other dashboards">
+          {% for link in dashboard_links %}
+          <a class="page__link{% if link.active %} is-active{% endif %}" href="{{ link.href }}">{{ link.label }}</a>
+          {% endfor %}
+        </nav>
+        {% endif %}
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+          <span class="theme-toggle__icon">🌙</span>
+          <span class="theme-toggle__label">Dark mode</span>
+        </button>
+        <a class="logout-link" href="{{ request.url_for('logout') }}">Log out</a>
+      </div>
+    </header>
 
-      <section class="dashboard__cards" role="group" aria-label="Panels">
+    <main class="page__content">
+      <section class="card-grid" role="group" aria-label="Dashboard panels">
         <button
           type="button"
-          class="dashboard__card is-active"
+          class="card card--action is-active"
           data-panel-button="individuals"
           hx-get="{{ request.url_for('render_panel', panel_name='individuals') }}"
           hx-target="#dashboard-panel"
           hx-swap="outerHTML"
           aria-pressed="true"
         >
-          <span class="dashboard__card-label">Individuals</span>
-          <span class="dashboard__card-value">{{ '{:,}'.format(metrics.total_individuals) }}</span>
-          <span class="dashboard__card-hint">People we track across the platform.</span>
+          <span class="card__label">Individuals</span>
+          <span class="card__value">{{ '{:,}'.format(metrics.total_individuals) }}</span>
+          <span class="card__hint">People we track across the platform.</span>
         </button>
         <button
           type="button"
-          class="dashboard__card"
+          class="card card--action"
           data-panel-button="companies"
           hx-get="{{ request.url_for('render_panel', panel_name='companies') }}"
           hx-target="#dashboard-panel"
           hx-swap="outerHTML"
           aria-pressed="false"
         >
-          <span class="dashboard__card-label">Companies</span>
-          <span class="dashboard__card-value">{{ '{:,}'.format(metrics.total_companies) }}</span>
-          <span class="dashboard__card-hint">Businesses on file with us.</span>
+          <span class="card__label">Companies</span>
+          <span class="card__value">{{ '{:,}'.format(metrics.total_companies) }}</span>
+          <span class="card__hint">Businesses on file with us.</span>
         </button>
         <button
           type="button"
-          class="dashboard__card"
+          class="card card--action"
           data-panel-button="transactions"
           hx-get="{{ request.url_for('render_panel', panel_name='transactions') }}"
           hx-target="#dashboard-panel"
           hx-swap="outerHTML"
           aria-pressed="false"
         >
-          <span class="dashboard__card-label">Transactions</span>
-          <span class="dashboard__card-value">{{ '{:,}'.format(metrics.total_transactions) }}</span>
-          <span class="dashboard__card-hint">Simulated records to explore.</span>
+          <span class="card__label">Transactions</span>
+          <span class="card__value">{{ '{:,}'.format(metrics.total_transactions) }}</span>
+          <span class="card__hint">Simulated records to explore.</span>
         </button>
         <button
           type="button"
-          class="dashboard__card"
+          class="card card--action"
           data-panel-button="stocks"
           hx-get="{{ request.url_for('render_panel', panel_name='stocks') }}"
           hx-target="#dashboard-panel"
           hx-swap="outerHTML"
           aria-pressed="false"
         >
-          <span class="dashboard__card-label">Assets under management</span>
-          <span class="dashboard__card-value">{{ humanize_currency(metrics.total_aum, short=true, decimals=1) }}</span>
-          <span class="dashboard__card-hint">
+          <span class="card__label">Assets under management</span>
+          <span class="card__value">{{ humanize_currency(metrics.total_aum, short=true, decimals=1) }}</span>
+          <span class="card__hint">
             {{ humanize_currency(metrics.total_cash, short=true, decimals=1) }} in cash •
             {{ humanize_currency(metrics.total_holdings, short=true, decimals=1) }} invested
           </span>
@@ -88,6 +106,10 @@
       {% set view = panel_view %}
       {% include 'admin/partials/panel.html' %}
     </main>
+
+    <footer class="page__footer">
+      <p>Need more context? Jump into the dedicated dashboards linked above for deep dives.</p>
+    </footer>
 
     <script>
       (function () {
