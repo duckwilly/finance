@@ -1,0 +1,23 @@
+{% import 'components/list_view.html' as list_view %}
+<section id="dashboard-panel" class="details" data-panel="{{ panel_key }}">
+  <div class="details__panel details__panel--focus">
+    <div
+      class="chart-card"
+      data-chart
+      data-chart-type="{{ chart_type }}"
+      data-chart-config='{{ chart.model_dump() | tojson }}'
+    >
+      <div class="chart-card__header">
+        <h3 class="chart-card__title">{{ chart.title }}</h3>
+        {% if chart.hint %}
+        <p class="chart-card__hint">{{ chart.hint }}</p>
+        {% endif %}
+      </div>
+      <div class="chart-card__canvas">
+        <canvas role="img" aria-label="{{ chart.title }}"></canvas>
+      </div>
+    </div>
+
+    {{ list_view.render_list_view(list_id, view) }}
+  </div>
+</section>

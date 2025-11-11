@@ -3,151 +3,129 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Admin Dashboard • Finance Platform</title>
+    <title>Admin dashboard • Finance</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/base.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
+    <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
     <script src="{{ url_for('static', path='js/theme-switcher.js') }}" defer></script>
-    <script src="{{ url_for('static', path='js/admin-charts.js') }}?v={{ range(1000, 9999) | random }}" defer></script>
-    <script src="{{ url_for('static', path='js/list-view.js') }}?v={{ range(1000, 9999) | random }}" defer></script>
+    <script src="{{ url_for('static', path='js/admin-charts.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/list-view.js') }}" defer></script>
   </head>
   <body class="page">
-    {% import 'components/list_view.html' as list_view %}
     <header class="page__header">
-      <div>
-        <h1 class="page__title">Finance dashboard</h1>
-        <p class="page__subtitle">
-          Admin overview of the platform.
-        </p>
+      <div class="page__headline">
+        <p class="eyebrow">Finance platform</p>
+        <h1 class="page__title">Admin dashboard</h1>
+
       </div>
       {% set first_date = metrics.first_transaction_at.date() if metrics.first_transaction_at else '—' %}
       {% set last_date = metrics.last_transaction_at.date() if metrics.last_transaction_at else '—' %}
-      <div class="badge">Data simulated from {{ first_date }} to {{ last_date }}</div>
-      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
-        <span class="theme-toggle__icon">🌙</span>
-        <span class="theme-toggle__label">Dark mode</span>
-      </button>
-      <a class="logout-link" href="{{ request.url_for('logout') }}">Log out</a>
+      <div class="page__meta">
+        <div class="badge">Simulated data • {{ first_date }} to {{ last_date }}</div>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+          <span class="theme-toggle__icon">🌙</span>
+          <span class="theme-toggle__label">Dark mode</span>
+        </button>
+        <a class="logout-link" href="{{ request.url_for('logout') }}">Log out</a>
+      </div>
     </header>
 
     <main class="page__content">
-      <section class="card-grid">
-        <article class="card">
-          <p class="card__label">Individuals</p>
-          <p class="card__value">{{ '{:,}'.format(metrics.total_individuals) }}</p>
-          <p class="card__hint">Individual users tracked on the platform.</p>
-        </article>
-        <article class="card">
-          <p class="card__label">Companies</p>
-          <p class="card__value">{{ '{:,}'.format(metrics.total_companies) }}</p>
-          <p class="card__hint">Business entities tracked on the platform.</p>
-        </article>
-        <article class="card">
-          <p class="card__label">Transactions</p>
-          <p class="card__value">{{ '{:,}'.format(metrics.total_transactions) }}</p>
-          <p class="card__hint">Transactions simulated.</p>
-        </article>
-        <article class="card">
-          <p class="card__label">Assets under management</p>
-          <p class="card__value">{{ humanize_currency(metrics.total_aum, decimals=1) }}</p>
-          <p class="card__hint">Current net balance across all client accounts ({{ humanize_currency(metrics.total_cash, short=true, decimals=1) }}) and stock holdings ({{ humanize_currency(metrics.total_holdings, short=true, decimals=1) }}).</p>
-        </article>
+      <section class="card-grid" role="group" aria-label="Dashboard panels">
+        <button
+          type="button"
+          class="card card--action is-active"
+          data-panel-button="individuals"
+          hx-get="{{ request.url_for('render_panel', panel_name='individuals') }}"
+          hx-target="#dashboard-panel"
+          hx-swap="outerHTML"
+          aria-pressed="true"
+        >
+          <span class="card__label">Individuals</span>
+          <span class="card__value">{{ '{:,}'.format(metrics.total_individuals) }}</span>
+          <span class="card__hint">People we track across the platform.</span>
+        </button>
+        <button
+          type="button"
+          class="card card--action"
+          data-panel-button="companies"
+          hx-get="{{ request.url_for('render_panel', panel_name='companies') }}"
+          hx-target="#dashboard-panel"
+          hx-swap="outerHTML"
+          aria-pressed="false"
+        >
+          <span class="card__label">Companies</span>
+          <span class="card__value">{{ '{:,}'.format(metrics.total_companies) }}</span>
+          <span class="card__hint">Businesses on file with us.</span>
+        </button>
+        <button
+          type="button"
+          class="card card--action"
+          data-panel-button="transactions"
+          hx-get="{{ request.url_for('render_panel', panel_name='transactions') }}"
+          hx-target="#dashboard-panel"
+          hx-swap="outerHTML"
+          aria-pressed="false"
+        >
+          <span class="card__label">Transactions</span>
+          <span class="card__value">{{ '{:,}'.format(metrics.total_transactions) }}</span>
+          <span class="card__hint">Simulated records to explore.</span>
+        </button>
+        <button
+          type="button"
+          class="card card--action"
+          data-panel-button="stocks"
+          hx-get="{{ request.url_for('render_panel', panel_name='stocks') }}"
+          hx-target="#dashboard-panel"
+          hx-swap="outerHTML"
+          aria-pressed="false"
+        >
+          <span class="card__label">Assets under management</span>
+          <span class="card__value">{{ humanize_currency(metrics.total_aum, short=true, decimals=1) }}</span>
+          <span class="card__hint">
+            {{ humanize_currency(metrics.total_cash, short=true, decimals=1) }} in cash •
+            {{ humanize_currency(metrics.total_holdings, short=true, decimals=1) }} invested
+          </span>
+        </button>
       </section>
 
-      <section class="details">
-        <div class="details__panel">
-          <div
-            class="chart-card"
-            data-chart-type="pie"
-            data-chart-config='{{ charts.individuals_income.model_dump() | tojson }}'
-          >
-            <div class="chart-card__header">
-              <h3 class="chart-card__title">{{ charts.individuals_income.title }}</h3>
-              {% if charts.individuals_income.hint %}
-              <p class="chart-card__hint">{{ charts.individuals_income.hint }}</p>
-              {% endif %}
-            </div>
-            <div class="chart-card__canvas">
-              <canvas aria-label="{{ charts.individuals_income.title }}" role="img"></canvas>
-            </div>
-          </div>
-          {{ list_view.render_list_view('individual-users', individuals_list) }}
-        </div>
-        <div class="details__panel">
-          <div
-            class="chart-card"
-            data-chart-type="pie"
-            data-chart-config='{{ charts.companies_profit_margin.model_dump() | tojson }}'
-          >
-            <div class="chart-card__header">
-              <h3 class="chart-card__title">{{ charts.companies_profit_margin.title }}</h3>
-              {% if charts.companies_profit_margin.hint %}
-              <p class="chart-card__hint">{{ charts.companies_profit_margin.hint }}</p>
-              {% endif %}
-            </div>
-            <div class="chart-card__canvas">
-              <canvas aria-label="{{ charts.companies_profit_margin.title }}" role="img"></canvas>
-            </div>
-          </div>
-          {{ list_view.render_list_view('corporate-users', companies_list) }}
-        </div>
-      </section>
-      <section class="details">
-        <div class="details__panel">
-          <div
-            class="chart-card"
-            data-chart-type="pie"
-            data-chart-config='{{ charts.transactions_amounts.model_dump() | tojson }}'
-          >
-            <div class="chart-card__header">
-              <h3 class="chart-card__title">{{ charts.transactions_amounts.title }}</h3>
-              {% if charts.transactions_amounts.hint %}
-              <p class="chart-card__hint">{{ charts.transactions_amounts.hint }}</p>
-              {% endif %}
-            </div>
-            <div class="chart-card__canvas">
-              <canvas aria-label="{{ charts.transactions_amounts.title }}" role="img"></canvas>
-            </div>
-          </div>
-          {{ list_view.render_list_view('transactions', transactions_list) }}
-        </div>
-
-        <div class="details__panel">
-          <div
-            class="chart-card"
-            data-chart-type="line"
-            data-chart-config='{{ charts.stock_price_trend.model_dump() | tojson }}'
-          >
-            <div class="chart-card__header">
-              <div style="display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
-                <div style="flex: 1;">
-                  <h3 class="chart-card__title">{{ charts.stock_price_trend.title }}</h3>
-                  {% if charts.stock_price_trend.hint %}
-                  <p class="chart-card__hint">{{ charts.stock_price_trend.hint }}</p>
-                  {% endif %}
-                </div>
-                <div style="min-width: 200px;">
-                  <select 
-                    id="stock-selector" 
-                    class="stock-selector"
-                    style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-soft, #e0e0e0); border-radius: 4px; background: white; font-size: 0.875rem; color: var(--text-primary, #1a1a1a);"
-                  >
-                    <option value="">Select a stock...</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            <div class="chart-card__canvas">
-              <canvas aria-label="{{ charts.stock_price_trend.title }}" role="img"></canvas>
-            </div>
-          </div>
-          {{ list_view.render_list_view('stock-holdings', stock_holdings_list) }}
-        </div>
-      </section>
+      {% set chart = panel_chart %}
+      {% set chart_type = panel_config.chart_type %}
+      {% set list_id = panel_config.list_id %}
+      {% set panel_key = panel_name | default('individuals') %}
+      {% set view = panel_view %}
+      {% include 'admin/partials/panel.html' %}
     </main>
 
     <footer class="page__footer">
       <p>Wie dit leest is gek</p>
     </footer>
+
+    <script>
+      (function () {
+        const setActive = (panel) => {
+          document.querySelectorAll('[data-panel-button]').forEach((button) => {
+            const isActive = button.dataset.panelButton === panel;
+            button.classList.toggle('is-active', isActive);
+            button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+          });
+        };
+
+        document.addEventListener('click', (event) => {
+          const button = event.target.closest('[data-panel-button]');
+          if (button) {
+            setActive(button.dataset.panelButton);
+          }
+        });
+
+        document.body.addEventListener('htmx:afterSwap', (event) => {
+          const { panel } = event.target.dataset || {};
+          if (panel) {
+            setActive(panel);
+          }
+        });
+      })();
+    </script>
   </body>
 </html>
