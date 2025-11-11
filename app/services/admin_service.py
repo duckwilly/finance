@@ -128,7 +128,12 @@ class AdminService:
             return "unbound"
         try:
             url = bind.url
-            return url.render_as_string(hide_password=True)
+            key = url.render_as_string(hide_password=True)
+            if getattr(url, "drivername", "") == "sqlite" and (
+                url.database in {None, ":memory:"}
+            ):
+                return f"{key}-{id(bind)}"
+            return key
         except AttributeError:  # pragma: no cover - fallback for unusual engines
             return str(id(bind))
 

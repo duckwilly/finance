@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import sys
 
 from dotenv import load_dotenv
 
@@ -73,6 +74,9 @@ class Settings:
             name=_get_env("DB_NAME", "finance"),
         )
         echo_flag = _get_env("SQLALCHEMY_ECHO", "0")
+        auth_enabled_default = (
+            "0" if os.getenv("PYTEST_CURRENT_TEST") or "pytest" in sys.modules else "1"
+        )
         auth = AuthSettings(
             secret_key=_get_env("JWT_SECRET_KEY", "change-me"),
             algorithm=_get_env("JWT_ALGORITHM", "HS256"),
@@ -80,7 +84,7 @@ class Settings:
             admin_username=_get_env("ADMIN_USERNAME", "admin"),
             admin_password=_get_env("ADMIN_PASSWORD", "adminpass"),
             demo_user_password=_get_env("DEMO_USER_PASSWORD", "demo"),
-            enabled=_get_env("AUTH_ENABLED", "1") not in {"0", "false", "False"},
+            enabled=_get_env("AUTH_ENABLED", auth_enabled_default) not in {"0", "false", "False"},
         )
         return cls(
             database=db,

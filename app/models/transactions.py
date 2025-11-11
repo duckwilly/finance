@@ -36,6 +36,16 @@ class AccountRole(Base):
     description: Mapped[str] = mapped_column(String(128), nullable=False)
 
 
+class Currency(Base):
+    """ISO-style currency codes and display metadata."""
+
+    __tablename__ = "currency"
+
+    code: Mapped[str] = mapped_column(String(3), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    exponent: Mapped[int] = mapped_column(_SMALL_ID_TYPE, nullable=False, server_default="2")
+
+
 class AccountType(str, Enum):
     """Enumeration of supported account types (mirrors account_type table codes)."""
 
@@ -43,6 +53,17 @@ class AccountType(str, Enum):
     SAVINGS = "savings"
     BROKERAGE = "brokerage"
     OPERATING = "operating"
+
+
+class AccountTypeLookup(Base):
+    """Lookup table for account type metadata."""
+
+    __tablename__ = "account_type"
+
+    code: Mapped[str] = mapped_column(String(32), primary_key=True)
+    description: Mapped[str] = mapped_column(String(128), nullable=False)
+    is_cash: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="1")
+    is_brokerage: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="0")
 
 
 class TxnChannel(Base):
@@ -99,6 +120,8 @@ class Account(Base):
     party_roles: Mapped[list["AccountPartyRole"]] = relationship(
         back_populates="account", cascade="all, delete-orphan"
     )
+    account_type_info: Mapped["AccountTypeLookup"] = relationship("AccountTypeLookup")
+    currency_info: Mapped["Currency"] = relationship("Currency")
 
     type = synonym("account_type_code")
     currency = synonym("currency_code")

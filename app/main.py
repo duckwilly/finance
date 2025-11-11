@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import OperationalError
 
 from app.core import get_logger
 from app.core.security import get_security_provider
@@ -45,6 +46,11 @@ def create_app() -> FastAPI:
             admin_service.get_stock_holdings_overview(session)
             admin_service.get_transaction_overview(session)
             admin_service.get_dashboard_charts(session)
+        except OperationalError:
+            LOGGER.warning(
+                "Skipping admin dashboard pre-computation because the database is unavailable",
+                exc_info=True,
+            )
         except Exception:  # pragma: no cover - fail fast on startup issues
             LOGGER.exception("Failed to precompute admin dashboard data")
             raise

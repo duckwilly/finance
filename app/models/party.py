@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Enum as SQLEnum,
     ForeignKey,
+    Integer,
     String,
     UniqueConstraint,
 )
@@ -18,6 +19,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.models.base import Base
+
+_ID_TYPE = BigInteger().with_variant(Integer, "sqlite")
 
 
 class PartyType(str, Enum):
@@ -32,7 +35,7 @@ class Party(Base):
 
     __tablename__ = "party"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(_ID_TYPE, primary_key=True, autoincrement=True)
     party_type: Mapped[PartyType] = mapped_column(
         SQLEnum(PartyType, native_enum=False), nullable=False
     )
@@ -50,7 +53,7 @@ class IndividualProfile(Base):
     __tablename__ = "individual_profile"
 
     party_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("party.id"), primary_key=True
+        _ID_TYPE, ForeignKey("party.id"), primary_key=True
     )
     given_name: Mapped[str] = mapped_column(String(80), nullable=False)
     family_name: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -65,7 +68,7 @@ class CompanyProfile(Base):
     __tablename__ = "company_profile"
 
     party_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("party.id"), primary_key=True
+        _ID_TYPE, ForeignKey("party.id"), primary_key=True
     )
     legal_name: Mapped[str] = mapped_column(String(160), nullable=False)
     registration_number: Mapped[str | None] = mapped_column(String(32), unique=True)
@@ -89,7 +92,7 @@ class AppUser(Base):
     __tablename__ = "app_user"
     __table_args__ = (UniqueConstraint("party_id", name="uq_app_user_party"),)
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(_ID_TYPE, primary_key=True, autoincrement=True)
     party_id: Mapped[int | None] = mapped_column(ForeignKey("party.id"), nullable=True)
     username: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
@@ -111,7 +114,7 @@ class AppUserRole(Base):
     __tablename__ = "app_user_role"
 
     app_user_id: Mapped[int] = mapped_column(
-        BigInteger,
+        _ID_TYPE,
         ForeignKey("app_user.id"),
         primary_key=True,
     )
@@ -130,7 +133,7 @@ class LegacyUser(Base):
 
     __tablename__ = "user"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(_ID_TYPE, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), unique=True)
     job_title: Mapped[str | None] = mapped_column(String(120))
@@ -144,7 +147,7 @@ class LegacyOrg(Base):
 
     __tablename__ = "org"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(_ID_TYPE, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.current_timestamp()
@@ -157,10 +160,10 @@ class UserPartyMap(Base):
     __tablename__ = "user_party_map"
 
     user_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("user.id"), primary_key=True
+        _ID_TYPE, ForeignKey("user.id"), primary_key=True
     )
     party_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("party.id"), nullable=False
+        _ID_TYPE, ForeignKey("party.id"), nullable=False
     )
 
 
@@ -170,8 +173,8 @@ class OrgPartyMap(Base):
     __tablename__ = "org_party_map"
 
     org_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("org.id"), primary_key=True
+        _ID_TYPE, ForeignKey("org.id"), primary_key=True
     )
     party_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("party.id"), nullable=False
+        _ID_TYPE, ForeignKey("party.id"), nullable=False
     )
