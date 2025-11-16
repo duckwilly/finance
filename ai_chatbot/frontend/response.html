@@ -1,0 +1,26 @@
+<!-- HTMX Response Fragment -->
+<div class="chat-response-wrapper" data-response-id="{{ mode }}-{{ range(1000, 9999) | random }}">
+    <script>
+    (function() {
+        // This script runs when HTMX injects this response
+        const responseData = {
+            response: {{ response | tojson }},
+            chart_config: {% if chart_config %}{{ chart_config | safe }}{% else %}null{% endif %},
+            chart_title: {{ chart_title | tojson }},
+            table_data: {{ table_data | tojson }},
+            mode: {{ mode | tojson }}
+        };
+
+        // Call the global handler
+        if (window.handleChatbotResponse) {
+            window.handleChatbotResponse(responseData);
+        }
+
+        // Remove this wrapper element after processing
+        const wrapper = document.querySelector('[data-response-id="{{ mode }}-{{ range(1000, 9999) | random }}"]');
+        if (wrapper) {
+            wrapper.remove();
+        }
+    })();
+    </script>
+</div>

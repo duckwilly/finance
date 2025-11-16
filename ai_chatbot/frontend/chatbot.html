@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Financial Assistant</title>
+
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="/static/ai_chatbot/chatbot.css">
+</head>
+<body>
+    <div class="chatbot-container">
+        <!-- Header -->
+        <div class="chatbot-header">
+            <h1>AI Financial Assistant</h1>
+            <div class="model-selector">
+                <label for="model-select">AI Model:</label>
+                <select id="model-select" name="model">
+                    <option value="ollama:llama3:latest">Llama 3 (Local)</option>
+                    <option value="ollama:llama3.2:1b">Llama 3.2 1B (Fast)</option>
+                    <option value="ollama:deepseek-r1:8b">DeepSeek R1 (Reasoning)</option>
+                    <option value="claude">Claude Sonnet 4</option>
+                    <option value="chatgpt">GPT-4o</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Chat Messages Area -->
+        <div class="chat-messages" id="chat-messages">
+            <div class="welcome-message">
+                <h2>Welcome! 👋</h2>
+                <p>I'm your AI financial assistant. I can help you:</p>
+                <ul>
+                    <li>Analyze your income and expenses</li>
+                    <li>Generate charts and visualizations</li>
+                    <li>Provide financial insights and advice</li>
+                    <li>Answer questions about your transactions</li>
+                </ul>
+                <p class="example-prompt">Try asking: "Show me my expenses by category" or "How is my spending this month?"</p>
+            </div>
+        </div>
+
+        <!-- Chart Area -->
+        <div class="chart-container" id="chart-container" style="display: none;">
+            <h3 id="chart-title"></h3>
+            <canvas id="chart-canvas"></canvas>
+        </div>
+
+        <!-- Table Area -->
+        <div class="table-container" id="table-container" style="display: none;">
+            <table id="data-table">
+                <thead id="table-head"></thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+
+        <!-- Input Form -->
+        <div class="chat-input-container">
+            <form id="chat-form"
+                  hx-post="/ai-chatbot/query/htmx"
+                  hx-target="#response-target"
+                  hx-swap="afterbegin"
+                  hx-indicator="#loading-indicator">
+
+                <input type="hidden" name="model" id="model-input">
+
+                <div class="input-wrapper">
+                    <input
+                        type="text"
+                        name="question"
+                        id="question-input"
+                        placeholder="Ask me anything about your finances..."
+                        autocomplete="off"
+                        required
+                    >
+                    <button type="submit" id="send-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="loading-indicator" id="loading-indicator">
+                    <div class="spinner"></div>
+                    <span>Thinking...</span>
+                </div>
+            </form>
+        </div>
+
+        <!-- Response Target (hidden, HTMX will inject here) -->
+        <div id="response-target" style="display: none;"></div>
+    </div>
+
+    <script src="/static/ai_chatbot/chatbot.js"></script>
+</body>
+</html>

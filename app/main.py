@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
+from fastapi.templating import Jinja2Templates
 
 from app.core import get_logger
 from app.core.security import get_security_provider
@@ -11,6 +12,18 @@ from app.middleware.auth import AuthMiddleware
 from app.routers import auth_router, corporate_router, dashboard_router, individuals_router
 from app.db.session import get_sessionmaker
 from app.services import AdminService
+
+# Import chatbot integration
+from ai_chatbot.backend import (
+    router as chatbot_router,
+    configure_dependencies as configure_chatbot_dependencies,
+    configure_templates as configure_chatbot_templates,
+)
+from app.chatbot_integration import (
+    get_db_session,
+    get_current_user_context,
+    get_database_schema,
+)
 
 LOGGER = get_logger(__name__)
 
@@ -30,6 +43,17 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router)
     app.include_router(individuals_router)
     app.include_router(corporate_router)
+
+    # Configure AI Chatbot
+    templates = Jinja2Templates(directory="app/templates")
+    configure_chatbot_templates(templates)
+    configure_chatbot_dependencies(
+        get_db=get_db_session,
+        get_user=get_current_user_context,
+        database_schema=get_database_schema(),
+    )
+    app.include_router(chatbot_router)
+    LOGGER.info("AI Chatbot integrated successfully")
 
     session_factory = get_sessionmaker()
 

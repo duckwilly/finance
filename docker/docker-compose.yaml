@@ -11,7 +11,7 @@ services:
       MARIADB_USER: ${MARIADB_USER:-app}
       MARIADB_PASSWORD: ${MARIADB_PASSWORD:-apppwd}
     ports:
-      - "${DB_PORT:-3306}:3306"
+      - "3307:3306"
     volumes:
       - db_data:/var/lib/mysql
 

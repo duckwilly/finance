@@ -1,0 +1,18 @@
+<!-- HTMX Error Fragment -->
+<div class="chat-error-wrapper">
+    <script>
+    (function() {
+        const error = {{ error | tojson }};
+
+        if (window.handleChatbotError) {
+            window.handleChatbotError(error);
+        }
+
+        // Remove this wrapper
+        const wrapper = document.querySelector('.chat-error-wrapper');
+        if (wrapper) {
+            wrapper.remove();
+        }
+    })();
+    </script>
+</div>

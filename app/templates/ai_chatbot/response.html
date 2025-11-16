@@ -1,0 +1,26 @@
+<!-- HTMX Response Fragment -->
+<script>
+(function() {
+    console.log('Response script executing...');
+
+    // This script runs when HTMX injects this response
+    const responseData = {
+        response: {{ response | tojson }},
+        chart_config: {% if chart_config %}{{ chart_config | safe }}{% else %}null{% endif %},
+        chart_title: {{ chart_title | tojson }},
+        table_data: {{ table_data | tojson }},
+        mode: {{ mode | tojson }}
+    };
+
+    console.log('Response data:', responseData);
+
+    // Call the global handler to add assistant message and render visualizations
+    if (window.handleChatbotResponse) {
+        console.log('Calling handleChatbotResponse...');
+        window.handleChatbotResponse(responseData);
+        console.log('handleChatbotResponse completed');
+    } else {
+        console.error('handleChatbotResponse not found');
+    }
+})();
+</script>

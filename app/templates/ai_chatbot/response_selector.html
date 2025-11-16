@@ -1,0 +1,109 @@
+<!-- Response Type Selector - Injected into chat messages -->
+<div class="response-selector">
+    <p class="selector-prompt">How would you like me to respond?</p>
+    <div class="selector-buttons">
+        <button class="selector-button chat-button" type="button" data-question="{{ question }}" data-model="{{ model }}" data-mode="conversational">
+            <span class="button-icon">💬</span>
+            <span class="button-text">Chat Response</span>
+            <span class="button-desc">Get advice and explanations</span>
+        </button>
+        <button class="selector-button data-button" type="button" data-question="{{ question }}" data-model="{{ model }}" data-mode="visualization">
+            <span class="button-icon">📊</span>
+            <span class="button-text">Show Data</span>
+            <span class="button-desc">Generate charts and tables</span>
+        </button>
+    </div>
+</div>
+
+<script>
+(function() {
+    // Auto-scroll to show selector
+    const chatMessages = document.getElementById('chat-messages');
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    // Attach click handlers to selector buttons
+    const buttons = document.querySelectorAll('.response-selector .selector-button');
+    console.log('Found selector buttons:', buttons.length);
+
+    buttons.forEach(button => {
+        button.addEventListener('click', function() {
+            console.log('Selector button clicked!');
+            const question = this.dataset.question;
+            const model = this.dataset.model;
+            const responseMode = this.dataset.mode;
+            console.log('Request params:', {question, model, responseMode});
+
+            // Remove selector from chat
+            const selector = this.closest('.response-selector');
+            if (selector) {
+                selector.remove();
+            }
+
+            // Show loading indicator
+            const loadingIndicator = document.getElementById('loading-indicator');
+            if (loadingIndicator) {
+                loadingIndicator.classList.add('htmx-request');
+            }
+
+            // Make request with chosen mode
+            const formData = new FormData();
+            formData.append('question', question);
+            formData.append('model', model);
+            formData.append('response_mode', responseMode);
+
+            console.log('Sending request to /chatbot/query/htmx...');
+            fetch('/chatbot/query/htmx', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                console.log('Received response:', response.status);
+                return response.text();
+            })
+            .then(html => {
+                console.log('Response HTML length:', html.length);
+                console.log('Response HTML:', html.substring(0, 200));
+
+                // Create a temporary container to parse the HTML
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = html;
+
+                // Extract and execute script tags
+                const scripts = tempDiv.querySelectorAll('script');
+                scripts.forEach(script => {
+                    const newScript = document.createElement('script');
+                    if (script.src) {
+                        newScript.src = script.src;
+                    } else {
+                        newScript.textContent = script.textContent;
+                    }
+                    document.body.appendChild(newScript);
+                    // Remove after execution
+                    setTimeout(() => newScript.remove(), 100);
+                });
+
+                console.log('Scripts executed');
+
+                if (loadingIndicator) {
+                    loadingIndicator.classList.remove('htmx-request');
+                }
+
+                // Scroll to bottom
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            })
+            .catch(error => {
+                console.error('Fetch error:', error);
+
+                // Show error in chat
+                if (window.handleChatbotError) {
+                    window.handleChatbotError(error.message || 'Failed to get response');
+                }
+
+                if (loadingIndicator) {
+                    loadingIndicator.classList.remove('htmx-request');
+                }
+            });
+        });
+    });
+})();
+</script>
