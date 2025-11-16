@@ -50,3 +50,4 @@ data/stream/
 # --- Docker local volumes
 docker/db_data/
 nul
+.claude/
