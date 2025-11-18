@@ -412,11 +412,16 @@
 
     // Global response handler for widget
     window.handleChatbotResponse = function(responseData) {
-        const { response, chart_config, chart_title, table_data, mode } = responseData;
+        const { response, chart_config, chart_title, table_data, mode, visualizations } = responseData;
 
         addWidgetAssistantMessage(response);
 
-        if (mode === 'visualization' && chart_config) {
+        const vizList = Array.isArray(visualizations) ? visualizations : [];
+        const primaryViz = vizList.length ? vizList[0] : null;
+
+        if (primaryViz && primaryViz.chart_config) {
+            renderWidgetChart(primaryViz.chart_config, primaryViz.chart_title || chart_title);
+        } else if (mode === 'visualization' && chart_config) {
             renderWidgetChart(chart_config, chart_title);
         }
 
@@ -453,7 +458,26 @@
         if (widgetChart) widgetChart.destroy();
 
         const ctx = canvas.getContext('2d');
-        widgetChart = new Chart(ctx, chartConfig);
+        const parsedConfig = parseWidgetConfig(chartConfig);
+        if (parsedConfig) {
+            widgetChart = new Chart(ctx, parsedConfig);
+        }
+    }
+
+    function parseWidgetConfig(rawConfig) {
+        if (!rawConfig) return null;
+        if (typeof rawConfig !== 'string') return rawConfig;
+
+        try {
+            return JSON.parse(rawConfig);
+        } catch (err) {
+            try {
+                return Function('"use strict";return (' + rawConfig + ')')();
+            } catch (e) {
+                console.error('Failed to parse widget chart config', e);
+                return null;
+            }
+        }
     }
 
     function escapeHtml(text) {

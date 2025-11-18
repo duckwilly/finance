@@ -35,6 +35,7 @@ class ChatbotQueryRequest(BaseModel):
     model: str = "ollama:llama3:latest"
     conversation_history: Optional[List[dict]] = None
     response_mode: Optional[Literal["visualization", "conversational"]] = None
+    page_context: Optional[str] = None
 
 
 class ChatbotQueryResponse(BaseModel):
@@ -45,6 +46,7 @@ class ChatbotQueryResponse(BaseModel):
     table_data: Optional[List[dict]] = None
     sql_query: Optional[str] = None
     mode: str
+    visualizations: Optional[List[dict]] = None
 
 
 # Dependency injection placeholders (to be configured by integrating app)
@@ -112,6 +114,7 @@ async def chatbot_page(request: Request):
 @router.post("/query", response_model=ChatbotQueryResponse)
 async def chatbot_query(
     request: ChatbotQueryRequest,
+    http_request: Request,
     db: Session = Depends(get_db_session),
     user_context: dict = Depends(get_current_user)
 ):
@@ -146,7 +149,8 @@ async def chatbot_query(
             db_session=db,
             conversation_history=request.conversation_history,
             response_mode=request.response_mode,
-            financial_summary=financial_summary
+            financial_summary=financial_summary,
+            page_context=request.page_context
         )
 
         return ChatbotQueryResponse(**result)
@@ -191,6 +195,7 @@ async def chatbot_query_htmx(
         question = form.get("question", "")
         model = form.get("model", "ollama:llama3:latest")
         response_mode = form.get("response_mode")  # Get user's choice
+        page_context = form.get("page_context")
 
         if not question:
             return templates.TemplateResponse(
@@ -232,7 +237,8 @@ async def chatbot_query_htmx(
             db_session=db,
             conversation_history=conversation_history,
             response_mode=response_mode,
-            financial_summary=financial_summary
+            financial_summary=financial_summary,
+            page_context=page_context
         )
 
         # Format chart config for frontend
@@ -240,6 +246,18 @@ async def chatbot_query_htmx(
         if result["chart_config"]:
             chart_gen = ChartGenerator()
             chart_config_str = chart_gen.format_for_frontend(result["chart_config"])
+
+        visualizations_payload = []
+        if result.get("visualizations"):
+            visualizations_payload = [
+                {
+                    "chart_config": viz.get("chart_config"),
+                    "chart_title": viz.get("chart_title"),
+                    "table_data": viz.get("table_data"),
+                    "sql_query": viz.get("sql_query"),
+                }
+                for viz in result["visualizations"]
+            ]
 
         # Return HTML fragment with response
         return templates.TemplateResponse(
@@ -250,7 +268,8 @@ async def chatbot_query_htmx(
                 "chart_config": chart_config_str,
                 "chart_title": result["chart_title"],
                 "table_data": result["table_data"],
-                "mode": result["mode"]
+                "mode": result["mode"],
+                "visualizations": visualizations_payload,
             }
         )
 

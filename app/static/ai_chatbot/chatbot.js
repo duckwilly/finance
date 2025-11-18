@@ -5,7 +5,7 @@
 
 // Global state
 let conversationHistory = [];
-let currentChart = null;
+let currentCharts = [];
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
@@ -48,7 +48,7 @@ function initializeChatbot() {
 
 // Global handler for HTMX responses
 window.handleChatbotResponse = function(responseData) {
-    const { response, chart_config, chart_title, table_data, mode } = responseData;
+    const { response, chart_config, chart_title, table_data, mode, visualizations } = responseData;
 
     // Add assistant message to chat
     addAssistantMessage(response);
@@ -68,17 +68,23 @@ window.handleChatbotResponse = function(responseData) {
         conversationHistory = conversationHistory.slice(-6);
     }
 
-    // Handle visualization mode
-    if (mode === 'visualization' && chart_config) {
+    const vizList = Array.isArray(visualizations) ? visualizations : [];
+
+    if (vizList.length > 0) {
+        renderVisualizations(vizList);
+    } else if (mode === 'visualization' && chart_config) {
         renderChart(chart_config, chart_title);
 
         if (table_data && table_data.length > 0) {
             renderTable(table_data);
         }
     } else {
-        // Hide chart and table for conversational mode
         document.getElementById('chart-container').style.display = 'none';
         document.getElementById('table-container').style.display = 'none';
+        const grid = document.getElementById('chart-grid');
+        if (grid) {
+            grid.innerHTML = '';
+        }
     }
 
     // Scroll to bottom of messages
@@ -150,9 +156,15 @@ function renderChart(chartConfig, title) {
     const chartContainer = document.getElementById('chart-container');
     const chartCanvas = document.getElementById('chart-canvas');
     const chartTitle = document.getElementById('chart-title');
+    const chartGrid = document.getElementById('chart-grid');
 
     // Show container
     chartContainer.style.display = 'block';
+    chartCanvas.style.display = 'block';
+    chartTitle.style.display = 'block';
+    if (chartGrid) {
+        chartGrid.innerHTML = '';
+    }
 
     // Set title
     if (title) {
@@ -160,13 +172,15 @@ function renderChart(chartConfig, title) {
     }
 
     // Destroy previous chart if exists
-    if (currentChart) {
-        currentChart.destroy();
-    }
+    currentCharts.forEach(chart => chart.destroy());
+    currentCharts = [];
 
     // Create new chart
     const ctx = chartCanvas.getContext('2d');
-    currentChart = new Chart(ctx, chartConfig);
+    const configObject = parseChartConfig(chartConfig);
+    if (configObject) {
+        currentCharts.push(new Chart(ctx, configObject));
+    }
 
     // Scroll to chart
     chartContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -224,11 +238,104 @@ function renderTable(data) {
     });
 }
 
+function renderVisualizations(visualizations) {
+    const chartContainer = document.getElementById('chart-container');
+    const grid = document.getElementById('chart-grid');
+    const chartCanvas = document.getElementById('chart-canvas');
+    const chartTitle = document.getElementById('chart-title');
+
+    if (!grid) {
+        return;
+    }
+
+    chartContainer.style.display = visualizations.length ? 'block' : 'none';
+    if (chartCanvas) {
+        chartCanvas.style.display = 'none';
+    }
+    if (chartTitle) {
+        chartTitle.style.display = 'none';
+    }
+    grid.innerHTML = '';
+
+    currentCharts.forEach(chart => chart.destroy());
+    currentCharts = [];
+
+    visualizations.forEach((viz, index) => {
+        const card = document.createElement('div');
+        card.className = 'chart-card';
+
+        if (viz.chart_title) {
+            const titleEl = document.createElement('h3');
+            titleEl.textContent = viz.chart_title;
+            card.appendChild(titleEl);
+        }
+
+        if (viz.chart_config) {
+            const canvas = document.createElement('canvas');
+            canvas.id = `chart-${Date.now()}-${index}`;
+            card.appendChild(canvas);
+
+            const ctx = canvas.getContext('2d');
+            const parsedConfig = parseChartConfig(viz.chart_config);
+            if (parsedConfig) {
+                currentCharts.push(new Chart(ctx, parsedConfig));
+            }
+        }
+
+        if (viz.table_data && viz.table_data.length) {
+            const table = document.createElement('table');
+            table.className = 'viz-table';
+
+            const columns = Object.keys(viz.table_data[0]);
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            columns.forEach(col => {
+                const th = document.createElement('th');
+                th.textContent = col.replace(/_/g, ' ').toUpperCase();
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            viz.table_data.forEach(row => {
+                const tr = document.createElement('tr');
+                columns.forEach(col => {
+                    const td = document.createElement('td');
+                    td.textContent = row[col];
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            card.appendChild(table);
+        }
+
+        grid.appendChild(card);
+    });
+}
+
 function formatCurrency(value) {
     return '€' + value.toLocaleString('de-DE', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
     });
+}
+
+function parseChartConfig(rawConfig) {
+    if (!rawConfig) return null;
+    if (typeof rawConfig !== 'string') return rawConfig;
+
+    try {
+        return JSON.parse(rawConfig);
+    } catch (err) {
+        try {
+            return Function('"use strict";return (' + rawConfig + ')')();
+        } catch (e) {
+            console.error('Failed to parse chart config', e);
+            return null;
+        }
+    }
 }
 
 function escapeHtml(text) {
@@ -252,9 +359,7 @@ window.chatbot = {
         document.getElementById('chat-messages').innerHTML = '';
         document.getElementById('chart-container').style.display = 'none';
         document.getElementById('table-container').style.display = 'none';
-        if (currentChart) {
-            currentChart.destroy();
-            currentChart = null;
-        }
+        currentCharts.forEach(chart => chart.destroy());
+        currentCharts = [];
     }
 };

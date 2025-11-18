@@ -4,12 +4,14 @@ Main entry point for chatbot functionality
 """
 import json
 import logging
+import re
 from typing import Dict, Any, Optional, List, Literal
 from sqlalchemy.orm import Session
 
 from .sql_generator import SQLGenerator, QuickTemplateManager
 from .chart_generator import ChartGenerator
 from .llm_providers import LLMProviderFactory
+from .prompt_builder import ChatbotPromptBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ class FinancialChatbot:
         self.sql_generator = SQLGenerator(database_schema)
         self.chart_generator = ChartGenerator()
         self.template_manager = QuickTemplateManager()
+        self.prompt_builder = ChatbotPromptBuilder()
 
     async def process_query(
         self,
@@ -36,7 +39,8 @@ class FinancialChatbot:
         db_session: Session,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         response_mode: Optional[Literal["visualization", "conversational"]] = None,
-        financial_summary: Optional[str] = None
+        financial_summary: Optional[str] = None,
+        page_context: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Process a chatbot query end-to-end
@@ -78,8 +82,13 @@ class FinancialChatbot:
             # Step 2: Handle based on mode
             if response_mode == "visualization" and not is_small_model:
                 return await self._handle_visualization_mode(
-                    question, provider_name, user_context, db_session,
-                    conversation_history, financial_summary
+                    question,
+                    provider_name,
+                    user_context,
+                    db_session,
+                    conversation_history,
+                    financial_summary,
+                    page_context,
                 )
             elif response_mode == "visualization" and is_small_model:
                 # Small model requested visualization - inform user
@@ -115,22 +124,54 @@ class FinancialChatbot:
         user_context: Dict[str, Any],
         db_session: Session,
         conversation_history: Optional[List[Dict[str, str]]],
-        financial_summary: Optional[str]
+        financial_summary: Optional[str],
+        page_context: Optional[str],
     ) -> Dict[str, Any]:
         """Handle visualization mode (SQL + Charts)"""
 
-        # Check for quick template match
+        plan = await self._plan_visualizations(
+            question=question,
+            provider_name=provider_name,
+            user_context=user_context,
+            conversation_history=conversation_history,
+            financial_summary=financial_summary,
+            page_context=page_context,
+        )
+
+        if plan:
+            visualizations = await self._execute_visualization_plan(
+                plan.get("visualizations", []),
+                user_context,
+                db_session,
+                question,
+                provider_name=provider_name,
+                financial_summary=financial_summary,
+                conversation_history=conversation_history,
+            )
+
+            if visualizations:
+                first = visualizations[0]
+                return {
+                    "response": plan.get("message", "Here's what I found."),
+                    "chart_config": first.get("chart_config"),
+                    "chart_title": first.get("chart_title"),
+                    "table_data": first.get("table_data"),
+                    "sql_query": first.get("sql_query"),
+                    "mode": "visualization",
+                    "visualizations": visualizations,
+                }
+
+        logger.info("Visualization planner unavailable, using legacy SQL generation path")
+
         template = self.template_manager.render_template(question, user_context)
 
         if template:
-            # Use quick template
             sql_query = template["sql"]
             explanation = template["explanation"]
             template_params = template.get("params") or {}
             template_name = template.get("name")
             logger.info("Using quick template for query")
         else:
-            # Generate SQL using LLM
             sql_result = await self.sql_generator.generate_sql(
                 question=question,
                 provider_name=provider_name,
@@ -145,7 +186,6 @@ class FinancialChatbot:
 
         sql_query = self.sql_generator.enforce_scope_constraints(sql_query, user_context)
 
-        # Execute SQL
         logger.info(f"Executing SQL: {sql_query}")
         results = self.sql_generator.execute_sql(sql_query, db_session, template_params)
         logger.info(f"SQL returned {len(results)} rows")
@@ -157,19 +197,17 @@ class FinancialChatbot:
                 "chart_title": None,
                 "table_data": None,
                 "sql_query": sql_query,
-                "mode": "visualization"
+                "mode": "visualization",
+                "visualizations": [],
             }
 
-        # Detect if multi-series data (e.g., income vs expenses)
         first_row = results[0]
         has_multiple_value_fields = len([
             k for k in first_row.keys()
             if self.chart_generator._is_currency_field(k)
         ]) > 1
 
-        # Generate chart config
         if has_multiple_value_fields:
-            # Multi-series chart
             x_field = next(
                 (k for k in first_row.keys() if k.lower() in ["month", "year", "date", "category"]),
                 list(first_row.keys())[0]
@@ -183,13 +221,11 @@ class FinancialChatbot:
                 title=explanation
             )
         else:
-            # Single-series chart
             chart_config = self.chart_generator.generate_chart_config(
                 data=results,
                 title=explanation
             )
 
-        # Build response text
         response_text = f"Here's what I found: {explanation}"
         if template:
             trend_note = self.template_manager.build_trend_narrative(
@@ -204,8 +240,186 @@ class FinancialChatbot:
             "chart_title": explanation,
             "table_data": results,
             "sql_query": sql_query,
-            "mode": "visualization"
+            "mode": "visualization",
+            "visualizations": [
+                {
+                    "chart_config": chart_config,
+                    "chart_title": explanation,
+                    "table_data": results,
+                    "sql_query": sql_query,
+                }
+            ],
         }
+
+    async def _plan_visualizations(
+        self,
+        question: str,
+        provider_name: str,
+        user_context: Dict[str, Any],
+        conversation_history: Optional[List[Dict[str, str]]],
+        financial_summary: Optional[str],
+        page_context: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Ask the LLM for a structured visualization plan."""
+
+        try:
+            system_prompt, user_prompt = self.prompt_builder.build_prompts(
+                question=question,
+                user_context=user_context,
+                page_context=page_context,
+                financial_summary=financial_summary,
+                conversation_history=conversation_history,
+            )
+
+            provider = LLMProviderFactory.create(provider_name)
+            response = await provider.query(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                conversation_history=conversation_history,
+                json_mode=True,
+            )
+
+            raw_content = response.get("content", "")
+            try:
+                payload = json.loads(raw_content)
+            except json.JSONDecodeError:
+                json_match = re.search(r"\{.*\}", raw_content, re.DOTALL)
+                if not json_match:
+                    raise ValueError("Planner did not return JSON")
+                payload = json.loads(json_match.group())
+
+            visualizations = payload.get("visualizations") or []
+            if not isinstance(visualizations, list):
+                visualizations = []
+
+            cleaned: list[dict[str, Any]] = []
+            for viz in visualizations[:3]:
+                if not isinstance(viz, dict):
+                    continue
+                keyword = viz.get("keyword")
+                if not keyword:
+                    continue
+                cleaned.append(
+                    {
+                        "keyword": str(keyword),
+                        "title": viz.get("title"),
+                        "chart_type": viz.get("chart_type"),
+                        "focus": viz.get("focus"),
+                        "limit": viz.get("limit"),
+                    }
+                )
+
+            return {
+                "message": payload.get("message", ""),
+                "visualizations": cleaned,
+            }
+
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Visualization planning failed: {exc}")
+            return None
+
+    async def _execute_visualization_plan(
+        self,
+        visualizations: List[Dict[str, Any]],
+        user_context: Dict[str, Any],
+        db_session: Session,
+        fallback_question: str,
+        provider_name: Optional[str] = None,
+        financial_summary: Optional[str] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Convert planned visualizations into executed results."""
+
+        executed: List[Dict[str, Any]] = []
+
+        for viz in visualizations[:3]:
+            keyword = (viz.get("keyword") or "").strip()
+            if not keyword:
+                continue
+
+            title_override = viz.get("title")
+            chart_type = viz.get("chart_type")
+            focus = viz.get("focus")
+            limit = viz.get("limit") if isinstance(viz.get("limit"), int) else None
+
+            template = self.template_manager.get_template_by_name(keyword)
+            if not template:
+                template = self.template_manager.render_template(keyword, user_context)
+
+            template_params: Dict[str, Any] = {}
+            explanation = title_override or (template.get("explanation") if template else "")
+
+            if template:
+                sql_query = self.template_manager.apply_filter(
+                    template["sql"], user_context
+                )
+                template_params = template.get("params") or {}
+            else:
+                sql_result = await self.sql_generator.generate_sql(
+                    question=focus or keyword or fallback_question,
+                    provider_name=provider_name or "ollama",
+                    user_context=user_context,
+                    financial_summary=financial_summary,
+                    conversation_history=conversation_history,
+                )
+                sql_query = sql_result["sql"]
+                explanation = explanation or sql_result.get("explanation", "")
+
+            if limit:
+                sql_query = f"{sql_query} LIMIT {limit}"
+
+            sql_query = self.sql_generator.enforce_scope_constraints(
+                sql_query, user_context
+            )
+            logger.info(f"Executing planned SQL: {sql_query}")
+            results = self.sql_generator.execute_sql(
+                sql_query, db_session, template_params
+            )
+
+            if not results:
+                continue
+
+            first_row = results[0]
+            has_multiple_value_fields = len([
+                k for k in first_row.keys()
+                if self.chart_generator._is_currency_field(k)
+            ]) > 1
+
+            if has_multiple_value_fields:
+                x_field = next(
+                    (
+                        k
+                        for k in first_row.keys()
+                        if k.lower() in ["month", "year", "date", "category"]
+                    ),
+                    list(first_row.keys())[0],
+                )
+                y_fields = [k for k in first_row.keys() if k != x_field]
+
+                chart_config = self.chart_generator.generate_multi_series_chart(
+                    data=results,
+                    x_field=x_field,
+                    y_fields=y_fields,
+                    chart_type="line" if chart_type == "line" else "bar",
+                    title=explanation or keyword,
+                )
+            else:
+                chart_config = self.chart_generator.generate_chart_config(
+                    data=results,
+                    chart_type=chart_type if chart_type != "auto" else None,
+                    title=explanation or keyword,
+                )
+
+            executed.append(
+                {
+                    "chart_config": chart_config,
+                    "chart_title": explanation or keyword,
+                    "table_data": results,
+                    "sql_query": sql_query,
+                }
+            )
+
+        return executed
 
     async def _handle_conversational_mode(
         self,

@@ -562,3 +562,47 @@ body {
     }
 }
 
+.chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+    margin-top: 12px;
+}
+
+.chart-card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.chart-card h3 {
+    margin: 0 0 12px;
+    color: var(--text-primary);
+}
+
+.chart-card canvas {
+    width: 100% !important;
+    height: 260px !important;
+}
+
+.chart-card .viz-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+}
+
+.chart-card .viz-table th,
+.chart-card .viz-table td {
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    text-align: left;
+}
+
+.chart-card .viz-table th {
+    background: var(--panel-bg);
+    color: var(--text-secondary);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+}
+

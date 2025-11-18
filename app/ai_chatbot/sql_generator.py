@@ -637,6 +637,20 @@ class QuickTemplateManager:
 
         return None
 
+    def get_template_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a template directly by its registered name."""
+
+        template = self.templates.get(name)
+        if not template:
+            return None
+
+        return {
+            "name": name,
+            "sql": template["sql"],
+            "explanation": template.get("explanation", ""),
+            "params": {},
+        }
+
     def _prepare_template_sql(
         self, template_name: str, template_data: Dict[str, Any], question_lower: str
     ) -> tuple[str, Dict[str, Any]]:
