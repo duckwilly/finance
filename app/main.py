@@ -14,7 +14,7 @@ from app.db.session import get_sessionmaker
 from app.services import AdminService
 
 # Import chatbot integration
-from ai_chatbot.backend import (
+from app.ai_chatbot import (
     router as chatbot_router,
     configure_dependencies as configure_chatbot_dependencies,
     configure_templates as configure_chatbot_templates,

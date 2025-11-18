@@ -1,7 +1,7 @@
 import pytest
 
-from ai_chatbot.backend.chatbot_core import FinancialChatbot
-from ai_chatbot.backend.sql_generator import QuickTemplateManager, SQLGenerator
+from app.ai_chatbot.chatbot_core import FinancialChatbot
+from app.ai_chatbot.sql_generator import QuickTemplateManager, SQLGenerator
 
 
 @pytest.fixture()

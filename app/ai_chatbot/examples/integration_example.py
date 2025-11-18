@@ -12,12 +12,12 @@ from typing import Dict, Any
 import os
 
 # Import chatbot package
-from ai_chatbot_package.backend import (
+from app.ai_chatbot import (
     router as chatbot_router,
     configure_dependencies,
     configure_templates,
     chatbot_config,
-    llm_config
+    llm_config,
 )
 
 # ============================================================================
@@ -252,7 +252,7 @@ async def dashboard(user: dict = Depends(get_current_user)):
 # 8. EXAMPLE: PROGRAMMATIC CHATBOT USAGE
 # ============================================================================
 
-from ai_chatbot_package.backend import FinancialChatbot
+from app.ai_chatbot import FinancialChatbot
 
 @app.get("/api/quick-insights")
 async def get_quick_insights(
@@ -369,7 +369,7 @@ INTEGRATION CHECKLIST:
 
 # Example: Custom LLM Provider
 """
-from ai_chatbot_package.backend.llm_providers import LLMProvider
+from app.ai_chatbot.llm_providers import LLMProvider
 
 class CustomLLMProvider(LLMProvider):
     async def query(self, system_prompt, user_prompt, conversation_history=None, json_mode=True):
@@ -382,13 +382,13 @@ class CustomLLMProvider(LLMProvider):
         }
 
 # Register custom provider
-from ai_chatbot_package.backend.llm_providers import LLMProviderFactory
+from app.ai_chatbot.llm_providers import LLMProviderFactory
 LLMProviderFactory.providers["custom"] = CustomLLMProvider
 """
 
 # Example: Custom Quick Template
 """
-from ai_chatbot_package.backend import QuickTemplateManager
+from app.ai_chatbot import QuickTemplateManager
 
 template_mgr = QuickTemplateManager()
 template_mgr.templates["profit_loss"] = {
