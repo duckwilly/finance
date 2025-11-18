@@ -1,0 +1,12 @@
+# Normalize text files in repo and ensure Unix tooling keeps LF endings
+* text=auto
+
+# Scripts & tooling must stay LF so shebangs work in WSL/macOS
+*.sh text eol=lf
+*.bash text eol=lf
+*.py text eol=lf
+Makefile text eol=lf
+*.mk text eol=lf
+*.env text eol=lf
+*.sql text eol=lf
+

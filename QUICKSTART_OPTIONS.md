@@ -14,6 +14,12 @@ The quickstart script now supports various configuration options to generate dif
 make -f quickstart-win.mk quickstart
 ```
 
+> **WSL tip:** If you run `make quickstart` inside WSL, make sure the repo files
+> have LF line endings so the `#!/usr/bin/env bash` shebangs resolve correctly.
+> After pulling on Windows, run `git config core.autocrlf input` once (or clone
+> fresh) and re-check out the repo so scripts like `scripts/quickstart.sh` stay
+> executable on both macOS and Linux.
+
 ## Options
 
 - `--size SIZE`: Simulation size preset (small, medium, large)
