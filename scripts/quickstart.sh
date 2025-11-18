@@ -149,12 +149,39 @@ else
   echo ".venv already exists, reusing"
 fi
 
+# Try to activate the virtual environment. Support both Unix and Windows layouts.
 # shellcheck disable=SC1091
-source .venv/bin/activate
+VENV_ACTIVATE=""
+if [[ -f ".venv/bin/activate" ]]; then
+  VENV_ACTIVATE=".venv/bin/activate"
+elif [[ -f ".venv/Scripts/activate" ]]; then
+  VENV_ACTIVATE=".venv/Scripts/activate"
+fi
+
+if [[ -n "${VENV_ACTIVATE}" ]]; then
+  # shellcheck source=/dev/null
+  source "${VENV_ACTIVATE}"
+else
+  echo "Warning: venv activation script not found; using venv python/pip directly if available"
+  # Prefer venv python if present
+  if [[ -x ".venv/bin/python" ]]; then
+    PYTHON_BIN=".venv/bin/python"
+  elif [[ -x ".venv/Scripts/python.exe" ]]; then
+    PYTHON_BIN=".venv/Scripts/python.exe"
+  fi
+  # Use pip via python -m pip to avoid relying on shell-installed pip
+  PIP_CMD="${PYTHON_BIN:-python3} -m pip"
+fi
 
 step "Installing Python dependencies"
-pip install -q -U pip
-pip install -q -r requirements.txt
+# Use pip command if set (invokes venv pip), otherwise rely on pip in PATH
+if [[ -n "${PIP_CMD:-}" ]]; then
+  ${PIP_CMD} install -q -U pip
+  ${PIP_CMD} install -q -r requirements.txt
+else
+  pip install -q -U pip
+  pip install -q -r requirements.txt
+fi
 
 step "Starting MariaDB with Docker Compose"
 docker compose -f docker/docker-compose.yaml up -d
