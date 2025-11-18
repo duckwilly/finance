@@ -33,10 +33,17 @@
       </div>
     </header>
 
-    <!-- Floating chatbot button -->
-    <a href="/chatbot/" class="floating-chatbot-button" aria-label="Open AI Chat">
+    <!-- Floating chatbot button toggles in-place chat workspace -->
+    <button
+      type="button"
+      id="chatbot-toggle"
+      class="floating-chatbot-button"
+      aria-label="Open AI Chat"
+      aria-expanded="false"
+      aria-controls="dashboard-chat"
+    >
       💬
-    </a>
+    </button>
 
     <main class="page__content">
       <section class="card-grid" role="group" aria-label="Dashboard panels">
@@ -50,7 +57,7 @@
           aria-pressed="true"
         >
           <span class="card__label">Individuals</span>
-          <span class="card__value">{{ '{:,'.format(metrics.total_individuals) }}</span>
+          <span class="card__value">{{ '{:,}'.format(metrics.total_individuals) }}</span>
           <span class="card__hint">People we track across the platform.</span>
         </button>
         <button
@@ -63,7 +70,7 @@
           aria-pressed="false"
         >
           <span class="card__label">Companies</span>
-          <span class="card__value">{{ '{:,'.format(metrics.total_companies) }}</span>
+          <span class="card__value">{{ '{:,}'.format(metrics.total_companies) }}</span>
           <span class="card__hint">Businesses on file with us.</span>
         </button>
         <button
@@ -76,7 +83,7 @@
           aria-pressed="false"
         >
           <span class="card__label">Transactions</span>
-          <span class="card__value">{{ '{:,'.format(metrics.total_transactions) }}</span>
+          <span class="card__value">{{ '{:,}'.format(metrics.total_transactions) }}</span>
           <span class="card__hint">Simulated records to explore.</span>
         </button>
         <button
@@ -97,22 +104,30 @@
         </button>
       </section>
 
-      <section class="workspace" aria-label="Dashboard content and AI assistant">
-        <div class="workspace__chat">
-          <div class="chat-panel" id="dashboard-chat">
+      <section class="workspace" aria-label="Dashboard content and AI assistant" data-workspace>
+        <div class="workspace__dashboard" id="dashboard-view">
+          {% set chart = panel_chart %}
+          {% set chart_type = panel_config.chart_type %}
+          {% set list_id = panel_config.list_id %}
+          {% set panel_key = panel_name | default('individuals') %}
+          {% set view = panel_view %}
+          {% include 'admin/partials/panel.html' %}
+        </div>
+
+        <aside class="workspace__chat" id="dashboard-chat" aria-label="AI assistant">
+          <div class="chat-panel">
             <div class="chat-panel__header">
               <div>
                 <p class="eyebrow">AI assistant</p>
                 <h2 class="chat-panel__title">Chat-driven insights</h2>
-                <p class="chat-panel__hint">Keep the chat in view while charts and tables render alongside the dashboard.</p>
+                <p class="chat-panel__hint">Toggle to split the dashboard and keep your chat in view.</p>
               </div>
-              <button class="chat-panel__toggle" type="button" data-chat-toggle>Collapse</button>
             </div>
             <div class="chat-panel__body" id="chat-panel-body">
               <div class="chat-messages" id="chat-messages" aria-live="polite">
                 <div class="welcome-message">
                   <p>💬 Ask for spending breakdowns, income trends, or specific categories.</p>
-                  <p>Charts and tables will load on the right without hiding this chat.</p>
+                  <p>Charts and tables will replace the dashboard below using HTMX.</p>
                 </div>
               </div>
 
@@ -120,8 +135,8 @@
                 <form
                   id="chat-form"
                   hx-post="/chatbot/query/htmx"
-                  hx-target="#chatbot-response-target"
-                  hx-swap="afterbegin"
+                  hx-target="#dashboard-panel"
+                  hx-swap="outerHTML"
                   hx-indicator="#loading-indicator"
                 >
                   <input type="hidden" name="response_mode" value="visualization" />
@@ -158,32 +173,7 @@
               <div id="chatbot-response-target" style="display: none;"></div>
             </div>
           </div>
-        </div>
-
-        <div class="workspace__dashboard">
-          {% set chart = panel_chart %}
-          {% set chart_type = panel_config.chart_type %}
-          {% set list_id = panel_config.list_id %}
-          {% set panel_key = panel_name | default('individuals') %}
-          {% set view = panel_view %}
-          {% include 'admin/partials/panel.html' %}
-
-          <div class="chatbot-visuals" aria-live="polite">
-            <div class="chart-container" id="chart-container" style="display: none;">
-              <h3 class="chart-title" id="chart-title"></h3>
-              <canvas id="chart-canvas"></canvas>
-            </div>
-
-            <div class="table-container" id="table-container" style="display: none;">
-              <table id="data-table">
-                <thead id="table-head"></thead>
-                <tbody id="table-body"></tbody>
-              </table>
-            </div>
-
-            <div id="chat-visualizations" class="chat-visualizations"></div>
-          </div>
-        </div>
+        </aside>
       </section>
     </main>
 
@@ -209,21 +199,36 @@
           }
         });
 
+        const workspace = document.querySelector('[data-workspace]');
+        const chatToggleButton = document.getElementById('chatbot-toggle');
+        const chatForm = document.getElementById('chat-form');
+
+        const updateWorkspaceState = (isOpen) => {
+          if (!workspace || !chatToggleButton) return;
+          workspace.classList.toggle('workspace--chat-open', isOpen);
+          chatToggleButton.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+          chatToggleButton.classList.toggle('is-open', isOpen);
+        };
+
+        if (chatToggleButton) {
+          chatToggleButton.addEventListener('click', () => {
+            const isOpen = !(workspace?.classList.contains('workspace--chat-open'));
+            updateWorkspaceState(isOpen);
+          });
+        }
+
+        if (chatForm) {
+          chatForm.addEventListener('submit', () => {
+            updateWorkspaceState(true);
+          });
+        }
+
         document.body.addEventListener('htmx:afterSwap', (event) => {
           const { panel } = event.target.dataset || {};
           if (panel) {
             setActive(panel);
           }
         });
-
-        const chatPanel = document.getElementById('dashboard-chat');
-        const chatToggle = document.querySelector('[data-chat-toggle]');
-        if (chatPanel && chatToggle) {
-          chatToggle.addEventListener('click', () => {
-            chatPanel.classList.toggle('is-collapsed');
-            chatToggle.textContent = chatPanel.classList.contains('is-collapsed') ? 'Expand' : 'Collapse';
-          });
-        }
       })();
     </script>
   </body>

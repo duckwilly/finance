@@ -80,14 +80,23 @@ body.page {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) 2fr;
+  grid-template-columns: 1fr;
   gap: 1.5rem;
   align-items: start;
+}
+
+.workspace--chat-open {
+  grid-template-columns: 2fr minmax(320px, 1fr);
 }
 
 .workspace__chat {
   position: relative;
   height: 100%;
+  display: none;
+}
+
+.workspace--chat-open .workspace__chat {
+  display: block;
 }
 
 .workspace__dashboard {
