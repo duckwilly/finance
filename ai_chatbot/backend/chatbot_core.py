@@ -120,14 +120,14 @@ class FinancialChatbot:
         """Handle visualization mode (SQL + Charts)"""
 
         # Check for quick template match
-        template = self.template_manager.match_template(question)
+        template = self.template_manager.render_template(question, user_context)
 
         if template:
             # Use quick template
-            sql_query = self.template_manager.apply_filter(
-                template["sql"], user_context
-            )
+            sql_query = template["sql"]
             explanation = template["explanation"]
+            template_params = template.get("params") or {}
+            template_name = template.get("name")
             logger.info("Using quick template for query")
         else:
             # Generate SQL using LLM
@@ -140,12 +140,14 @@ class FinancialChatbot:
             )
             sql_query = sql_result["sql"]
             explanation = sql_result["explanation"]
+            template_params = {}
+            template_name = None
 
         sql_query = self.sql_generator.enforce_scope_constraints(sql_query, user_context)
 
         # Execute SQL
         logger.info(f"Executing SQL: {sql_query}")
-        results = self.sql_generator.execute_sql(sql_query, db_session)
+        results = self.sql_generator.execute_sql(sql_query, db_session, template_params)
         logger.info(f"SQL returned {len(results)} rows")
 
         if not results:
@@ -189,6 +191,12 @@ class FinancialChatbot:
 
         # Build response text
         response_text = f"Here's what I found: {explanation}"
+        if template:
+            trend_note = self.template_manager.build_trend_narrative(
+                template_name or "", results
+            )
+            if trend_note:
+                response_text = f"{response_text} {trend_note}"
 
         return {
             "response": response_text,
@@ -233,6 +241,7 @@ Capabilities:
 - Admins can look up users by id/username/email and companies by id or legal/display name.
 - Individuals can only reference their own accounts/party_id.
 - Company representatives can only reference their company's accounts/party_id.
+- Quick insights include 30-day and quarter-to-date summaries, category-specific spend/earn reports, and monthly trend charts with rolling averages.
 
 {financial_context}
 

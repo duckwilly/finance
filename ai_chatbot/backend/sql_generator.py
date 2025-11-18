@@ -6,7 +6,7 @@ import re
 import json
 import logging
 from decimal import Decimal
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -90,6 +90,7 @@ Allowed lookup patterns (keep queries to SELECT only):
 - Admin company lookup: query party p with p.party_type = 'COMPANY' (optionally JOIN company_profile cp ON cp.party_id = p.id) and filter by "p.id = <company_id>" or name matches like "p.display_name LIKE '%<name>%'" or "cp.legal_name LIKE '%<name>%'"
 - Self individual scope: filter owned accounts with "AND a.party_id = {person_id}" (party_type='INDIVIDUAL')
 - Self company scope: filter owned accounts with "AND a.party_id = {company_id}" (party_type='COMPANY')
+- Insight templates the assistant may answer directly: 30-day and quarter-to-date summaries, category-level spend/earn questions (with c.name filters), and monthly trends that include rolling averages for income or expenses.
 
 CRITICAL Rules:
 1. Generate ONLY valid SELECT queries
@@ -350,7 +351,7 @@ class QuickTemplateManager:
     def __init__(self):
         self.templates = self._build_templates()
 
-    def _build_templates(self) -> Dict[str, Dict[str, str]]:
+    def _build_templates(self) -> Dict[str, Dict[str, Any]]:
         """Build quick template dictionary"""
         return {
             "expenses_by_category": {
@@ -367,7 +368,7 @@ class QuickTemplateManager:
                     ORDER BY total DESC
                     LIMIT 10
                 """,
-                "explanation": "Total expenses grouped by category"
+                "explanation": "Total expenses grouped by category",
             },
             "income_by_category": {
                 "keywords": ["income by category", "revenue by category", "where did my money come from"],
@@ -383,14 +384,14 @@ class QuickTemplateManager:
                     ORDER BY total DESC
                     LIMIT 10
                 """,
-                "explanation": "Total income grouped by category"
+                "explanation": "Total income grouped by category",
             },
             "monthly_comparison": {
                 "keywords": ["monthly income vs expenses", "income vs expenses by month"],
                 "sql": """
                     SELECT
                         DATE_FORMAT(je.txn_date, '%Y-%m') as month,
-                        SUM(CASE WHEN s.name = 'income' THEN ABS(jl.amount) ELSE 0 END) as income,
+                        SUM(CASE WHEN s.name = 'income' THEN ABS(jl.amount) ELSE 0 END) as income_total,
                         SUM(CASE WHEN s.name = 'expense' THEN ABS(jl.amount) ELSE 0 END) as expenses
                     FROM journal_line jl
                     JOIN journal_entry je ON jl.entry_id = je.id
@@ -402,7 +403,143 @@ class QuickTemplateManager:
                     ORDER BY month DESC
                     LIMIT 12
                 """,
-                "explanation": "Monthly income vs expenses comparison"
+                "explanation": "Monthly income vs expenses comparison",
+                "trend_value_key": "income_total",
+                "trend_time_key": "month",
+            },
+            "thirty_day_summary": {
+                "keywords": ["last 30 days", "past month summary", "30 day summary"],
+                "sql": """
+                    SELECT 'Income' as metric, SUM(ABS(jl.amount)) as total
+                    FROM journal_line jl
+                    JOIN journal_entry je ON jl.entry_id = je.id
+                    JOIN account a ON jl.account_id = a.id
+                    LEFT JOIN category c ON jl.category_id = c.id
+                    LEFT JOIN section s ON c.section_id = s.id
+                    WHERE s.name = 'income' AND je.txn_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) {filter}
+                    UNION ALL
+                    SELECT 'Expenses' as metric, SUM(ABS(jl.amount)) as total
+                    FROM journal_line jl
+                    JOIN journal_entry je ON jl.entry_id = je.id
+                    JOIN account a ON jl.account_id = a.id
+                    LEFT JOIN category c ON jl.category_id = c.id
+                    LEFT JOIN section s ON c.section_id = s.id
+                    WHERE s.name = 'expense' AND je.txn_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) {filter}
+                """,
+                "explanation": "Income and expenses over the last 30 days",
+            },
+            "quarter_to_date_summary": {
+                "keywords": ["quarter to date", "this quarter", "quarter summary"],
+                "sql": """
+                    SELECT 'Income' as metric, SUM(ABS(jl.amount)) as total
+                    FROM journal_line jl
+                    JOIN journal_entry je ON jl.entry_id = je.id
+                    JOIN account a ON jl.account_id = a.id
+                    LEFT JOIN category c ON jl.category_id = c.id
+                    LEFT JOIN section s ON c.section_id = s.id
+                    WHERE s.name = 'income'
+                      AND QUARTER(je.txn_date) = QUARTER(CURDATE())
+                      AND YEAR(je.txn_date) = YEAR(CURDATE()) {filter}
+                    UNION ALL
+                    SELECT 'Expenses' as metric, SUM(ABS(jl.amount)) as total
+                    FROM journal_line jl
+                    JOIN journal_entry je ON jl.entry_id = je.id
+                    JOIN account a ON jl.account_id = a.id
+                    LEFT JOIN category c ON jl.category_id = c.id
+                    LEFT JOIN section s ON c.section_id = s.id
+                    WHERE s.name = 'expense'
+                      AND QUARTER(je.txn_date) = QUARTER(CURDATE())
+                      AND YEAR(je.txn_date) = YEAR(CURDATE()) {filter}
+                """,
+                "explanation": "Quarter-to-date income and expenses",
+            },
+            "category_spend": {
+                "keywords": ["spend on", "spent on", "expenses for"],
+                "sql": """
+                    SELECT DATE_FORMAT(je.txn_date, '%Y-%m') as month,
+                           SUM(ABS(jl.amount)) as category_spend
+                    FROM journal_line jl
+                    JOIN journal_entry je ON jl.entry_id = je.id
+                    JOIN account a ON jl.account_id = a.id
+                    LEFT JOIN category c ON jl.category_id = c.id
+                    LEFT JOIN section s ON c.section_id = s.id
+                    WHERE s.name = 'expense' {filter} {category_clause}
+                    GROUP BY DATE_FORMAT(je.txn_date, '%Y-%m')
+                    ORDER BY month DESC
+                    LIMIT 12
+                """,
+                "explanation": "Monthly spending for the requested category",
+                "dynamic_category": True,
+                "trend_value_key": "category_spend",
+                "trend_time_key": "month",
+            },
+            "category_income": {
+                "keywords": ["income from", "earnings from", "revenue from"],
+                "sql": """
+                    SELECT DATE_FORMAT(je.txn_date, '%Y-%m') as month,
+                           SUM(ABS(jl.amount)) as category_income
+                    FROM journal_line jl
+                    JOIN journal_entry je ON jl.entry_id = je.id
+                    JOIN account a ON jl.account_id = a.id
+                    LEFT JOIN category c ON jl.category_id = c.id
+                    LEFT JOIN section s ON c.section_id = s.id
+                    WHERE s.name = 'income' {filter} {category_clause}
+                    GROUP BY DATE_FORMAT(je.txn_date, '%Y-%m')
+                    ORDER BY month DESC
+                    LIMIT 12
+                """,
+                "explanation": "Monthly income for the requested category",
+                "dynamic_category": True,
+                "trend_value_key": "category_income",
+                "trend_time_key": "month",
+            },
+            "monthly_expense_trend": {
+                "keywords": ["expense trend", "monthly expenses", "spending trend"],
+                "sql": """
+                    SELECT month,
+                           monthly_total,
+                           ROUND(AVG(monthly_total) OVER (ORDER BY month ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) as rolling_3_month_avg
+                    FROM (
+                        SELECT DATE_FORMAT(je.txn_date, '%Y-%m') as month,
+                               SUM(ABS(jl.amount)) as monthly_total
+                        FROM journal_line jl
+                        JOIN journal_entry je ON jl.entry_id = je.id
+                        JOIN account a ON jl.account_id = a.id
+                        LEFT JOIN category c ON jl.category_id = c.id
+                        LEFT JOIN section s ON c.section_id = s.id
+                        WHERE s.name = 'expense' {filter}
+                        GROUP BY DATE_FORMAT(je.txn_date, '%Y-%m')
+                    ) monthly
+                    ORDER BY month DESC
+                    LIMIT 12
+                """,
+                "explanation": "Expense trend with month-over-month totals and 3-month rolling average",
+                "trend_value_key": "monthly_total",
+                "trend_time_key": "month",
+            },
+            "monthly_income_trend": {
+                "keywords": ["income trend", "revenue trend", "earnings trend"],
+                "sql": """
+                    SELECT month,
+                           monthly_total,
+                           ROUND(AVG(monthly_total) OVER (ORDER BY month ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) as rolling_3_month_avg
+                    FROM (
+                        SELECT DATE_FORMAT(je.txn_date, '%Y-%m') as month,
+                               SUM(ABS(jl.amount)) as monthly_total
+                        FROM journal_line jl
+                        JOIN journal_entry je ON jl.entry_id = je.id
+                        JOIN account a ON jl.account_id = a.id
+                        LEFT JOIN category c ON jl.category_id = c.id
+                        LEFT JOIN section s ON c.section_id = s.id
+                        WHERE s.name = 'income' {filter}
+                        GROUP BY DATE_FORMAT(je.txn_date, '%Y-%m')
+                    ) monthly
+                    ORDER BY month DESC
+                    LIMIT 12
+                """,
+                "explanation": "Income trend with month-over-month totals and 3-month rolling average",
+                "trend_value_key": "monthly_total",
+                "trend_time_key": "month",
             },
             "spending_this_month": {
                 "keywords": ["spending this month", "expenses this month", "how much spent this month"],
@@ -421,7 +558,7 @@ class QuickTemplateManager:
                     ORDER BY total DESC
                     LIMIT 10
                 """,
-                "explanation": "Your spending this month by category"
+                "explanation": "Your spending this month by category",
             },
             "spending_last_month": {
                 "keywords": ["spending last month", "expenses last month", "how much spent last month"],
@@ -440,7 +577,7 @@ class QuickTemplateManager:
                     ORDER BY total DESC
                     LIMIT 10
                 """,
-                "explanation": "Your spending last month by category"
+                "explanation": "Your spending last month by category",
             },
             "total_income": {
                 "keywords": ["total income", "how much income", "my income"],
@@ -453,7 +590,7 @@ class QuickTemplateManager:
                     LEFT JOIN section s ON c.section_id = s.id
                     WHERE s.name = 'income' {filter}
                 """,
-                "explanation": "Your total income"
+                "explanation": "Your total income",
             },
             "total_expenses": {
                 "keywords": ["total expenses", "total spending", "how much spent"],
@@ -466,11 +603,11 @@ class QuickTemplateManager:
                     LEFT JOIN section s ON c.section_id = s.id
                     WHERE s.name = 'expense' {filter}
                 """,
-                "explanation": "Your total expenses"
+                "explanation": "Your total expenses",
             }
         }
 
-    def match_template(self, question: str) -> Optional[Dict[str, str]]:
+    def match_template(self, question: str) -> Optional[Dict[str, Any]]:
         """
         Check if question matches a quick template
 
@@ -488,12 +625,66 @@ class QuickTemplateManager:
         for template_name, template_data in self.templates.items():
             for keyword in template_data["keywords"]:
                 if keyword in question_lower:
+                    prepared_sql, params = self._prepare_template_sql(
+                        template_name, template_data, question_lower
+                    )
                     return {
-                        "sql": template_data["sql"],
-                        "explanation": template_data["explanation"]
+                        "name": template_name,
+                        "sql": prepared_sql,
+                        "explanation": template_data["explanation"],
+                        "params": params,
                     }
 
         return None
+
+    def _prepare_template_sql(
+        self, template_name: str, template_data: Dict[str, Any], question_lower: str
+    ) -> tuple[str, Dict[str, Any]]:
+        sql = template_data["sql"]
+        params: Dict[str, Any] = {}
+
+        if template_data.get("dynamic_category"):
+            category_name = self._extract_category_name(question_lower)
+            if category_name:
+                params["category_name"] = f"%{category_name}%"
+                category_clause = "AND c.name LIKE :category_name"
+            else:
+                category_clause = "AND c.name IS NOT NULL"
+            sql = sql.replace("{category_clause}", category_clause)
+        else:
+            sql = sql.replace("{category_clause}", "")
+
+        return sql, params
+
+    def _extract_category_name(self, question_lower: str) -> Optional[str]:
+        patterns = [
+            r"spend on (?P<category>[a-zA-Z\s]+)",
+            r"spent on (?P<category>[a-zA-Z\s]+)",
+            r"expenses for (?P<category>[a-zA-Z\s]+)",
+            r"income from (?P<category>[a-zA-Z\s]+)",
+            r"revenue from (?P<category>[a-zA-Z\s]+)",
+            r"earnings from (?P<category>[a-zA-Z\s]+)",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, question_lower)
+            if match:
+                return match.group("category").strip()
+
+        return None
+
+    def render_template(
+        self, question: str, user_context: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        template = self.match_template(question)
+        if not template:
+            return None
+
+        sql_with_filter = self.apply_filter(template["sql"], user_context)
+        return {
+            **template,
+            "sql": sql_with_filter,
+        }
 
     def apply_filter(self, sql: str, user_context: Dict[str, Any]) -> str:
         """
@@ -518,3 +709,38 @@ class QuickTemplateManager:
             filter_clause = ""
 
         return sql.replace("{filter}", filter_clause)
+
+    def build_trend_narrative(
+        self, template_name: str, results: list[Dict[str, Any]]
+    ) -> Optional[str]:
+        template = self.templates.get(template_name)
+        if not template or not results:
+            return None
+
+        value_key = template.get("trend_value_key")
+        time_key = template.get("trend_time_key")
+        if not value_key or not time_key:
+            return None
+
+        ordered = sorted(
+            [row for row in results if value_key in row and time_key in row],
+            key=lambda row: row[time_key],
+        )
+
+        if len(ordered) < 2:
+            return None
+
+        latest, previous = ordered[-1], ordered[-2]
+        latest_value = latest[value_key]
+        previous_value = previous[value_key]
+
+        if previous_value == 0:
+            change_text = "from zero previously"
+        else:
+            change_pct = ((latest_value - previous_value) / previous_value) * 100
+            direction = "increased" if change_pct >= 0 else "decreased"
+            change_text = f"{direction} by {abs(change_pct):.1f}% since {previous[time_key]}"
+
+        return (
+            f"Latest value {latest_value:,.2f} for {latest[time_key]} {change_text}."
+        )

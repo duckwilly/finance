@@ -1,11 +1,16 @@
 import pytest
 
-from ai_chatbot.backend.sql_generator import SQLGenerator
+from ai_chatbot.backend.sql_generator import QuickTemplateManager, SQLGenerator
 
 
 @pytest.fixture()
 def sql_generator():
     return SQLGenerator()
+
+
+@pytest.fixture()
+def template_manager():
+    return QuickTemplateManager()
 
 
 def test_enforce_scope_appends_filter_without_where(sql_generator):
@@ -58,3 +63,27 @@ def test_admin_allows_other_party_selectors(sql_generator):
     scoped_sql = sql_generator.enforce_scope_constraints(sql, user_context)
 
     assert scoped_sql == sql
+
+
+def test_category_template_injects_scope_and_category(template_manager):
+    template = template_manager.render_template(
+        "Show my spend on groceries", {"role": "person", "person_id": 5}
+    )
+
+    assert template is not None
+    assert "c.name LIKE :category_name" in template["sql"]
+    assert template["params"]["category_name"] == "%groceries%"
+    assert "a.party_id = 5" in template["sql"]
+
+
+def test_trend_narrative_reports_direction(template_manager):
+    narrative = template_manager.build_trend_narrative(
+        "monthly_expense_trend",
+        [
+            {"month": "2024-05", "monthly_total": 1000},
+            {"month": "2024-06", "monthly_total": 1250},
+        ],
+    )
+
+    assert narrative is not None
+    assert "increased" in narrative.lower()
