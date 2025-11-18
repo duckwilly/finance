@@ -6,11 +6,13 @@
     <title>Admin dashboard • Finance</title>
     <link rel="stylesheet" href="{{ url_for('static', path='css/base.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', path='ai_chatbot/chatbot.css') }}" />
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
     <script src="{{ url_for('static', path='js/theme-switcher.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/admin-charts.js') }}" defer></script>
     <script src="{{ url_for('static', path='js/list-view.js') }}" defer></script>
+    <script src="{{ url_for('static', path='ai_chatbot/chatbot.js') }}" defer></script>
   </head>
   <body class="page">
     <header class="page__header">
@@ -31,10 +33,17 @@
       </div>
     </header>
 
-    <!-- Floating chatbot button -->
-    <a href="/chatbot/" class="floating-chatbot-button" aria-label="Open AI Chat">
+    <!-- Floating chatbot button toggles in-place chat workspace -->
+    <button
+      type="button"
+      id="chatbot-toggle"
+      class="floating-chatbot-button"
+      aria-label="Open AI Chat"
+      aria-expanded="false"
+      aria-controls="dashboard-chat"
+    >
       💬
-    </a>
+    </button>
 
     <main class="page__content">
       <section class="card-grid" role="group" aria-label="Dashboard panels">
@@ -95,12 +104,77 @@
         </button>
       </section>
 
-      {% set chart = panel_chart %}
-      {% set chart_type = panel_config.chart_type %}
-      {% set list_id = panel_config.list_id %}
-      {% set panel_key = panel_name | default('individuals') %}
-      {% set view = panel_view %}
-      {% include 'admin/partials/panel.html' %}
+      <section class="workspace" aria-label="Dashboard content and AI assistant" data-workspace>
+        <div class="workspace__dashboard" id="dashboard-view">
+          {% set chart = panel_chart %}
+          {% set chart_type = panel_config.chart_type %}
+          {% set list_id = panel_config.list_id %}
+          {% set panel_key = panel_name | default('individuals') %}
+          {% set view = panel_view %}
+          {% include 'admin/partials/panel.html' %}
+        </div>
+
+        <aside class="workspace__chat" id="dashboard-chat" aria-label="AI assistant">
+          <div class="chat-panel">
+            <div class="chat-panel__header">
+              <div>
+                <p class="eyebrow">AI assistant</p>
+                <h2 class="chat-panel__title">Chat-driven insights</h2>
+                <p class="chat-panel__hint">Toggle to split the dashboard and keep your chat in view.</p>
+              </div>
+            </div>
+            <div class="chat-panel__body" id="chat-panel-body">
+              <div class="chat-messages" id="chat-messages" aria-live="polite">
+                <div class="welcome-message">
+                  <p>💬 Ask for spending breakdowns, income trends, or specific categories.</p>
+                  <p>Charts and tables will replace the dashboard below using HTMX.</p>
+                </div>
+              </div>
+
+              <div class="chat-input-container">
+                <form
+                  id="chat-form"
+                  hx-post="/chatbot/query/htmx"
+                  hx-target="#dashboard-panel"
+                  hx-swap="outerHTML"
+                  hx-indicator="#loading-indicator"
+                >
+                  <input type="hidden" name="response_mode" value="visualization" />
+                  <div class="chat-input-row">
+                    <label class="chat-model-label" for="model-select">Model</label>
+                    <select id="model-select" name="model">
+                      <option value="ollama:llama3:latest">Llama 3 (charts + data)</option>
+                      <option value="ollama:deepseek-r1:8b">DeepSeek R1 8B</option>
+                      <option value="ollama:llama3.2:1b">Llama 3.2 1B (chat only)</option>
+                      <option value="claude">Claude Sonnet</option>
+                      <option value="chatgpt">GPT-4o</option>
+                    </select>
+                    <input type="hidden" name="model" id="model-input" value="ollama:llama3:latest" />
+                  </div>
+                  <div class="input-wrapper">
+                    <input
+                      type="text"
+                      name="question"
+                      id="question-input"
+                      placeholder="Ask for dashboards, charts, or tables"
+                      autocomplete="off"
+                      required
+                    />
+                    <button type="submit" class="primary-button">
+                      <span>Send</span>
+                    </button>
+                  </div>
+                  <div class="loading-indicator" id="loading-indicator">
+                    <div class="spinner"></div>
+                    <span>Thinking...</span>
+                  </div>
+                </form>
+              </div>
+              <div id="chatbot-response-target" style="display: none;"></div>
+            </div>
+          </div>
+        </aside>
+      </section>
     </main>
 
     <footer class="page__footer">
@@ -124,6 +198,30 @@
             setActive(button.dataset.panelButton);
           }
         });
+
+        const workspace = document.querySelector('[data-workspace]');
+        const chatToggleButton = document.getElementById('chatbot-toggle');
+        const chatForm = document.getElementById('chat-form');
+
+        const updateWorkspaceState = (isOpen) => {
+          if (!workspace || !chatToggleButton) return;
+          workspace.classList.toggle('workspace--chat-open', isOpen);
+          chatToggleButton.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+          chatToggleButton.classList.toggle('is-open', isOpen);
+        };
+
+        if (chatToggleButton) {
+          chatToggleButton.addEventListener('click', () => {
+            const isOpen = !(workspace?.classList.contains('workspace--chat-open'));
+            updateWorkspaceState(isOpen);
+          });
+        }
+
+        if (chatForm) {
+          chatForm.addEventListener('submit', () => {
+            updateWorkspaceState(true);
+          });
+        }
 
         document.body.addEventListener('htmx:afterSwap', (event) => {
           const { panel } = event.target.dataset || {};

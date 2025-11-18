@@ -351,6 +351,17 @@ class QuickTemplateManager:
     def __init__(self):
         self.templates = self._build_templates()
 
+    def describe_templates(self) -> list[dict]:
+        """Return keyword/description pairs for prompt construction."""
+
+        return [
+            {
+                "keyword": name,
+                "description": template.get("explanation", ""),
+            }
+            for name, template in self.templates.items()
+        ]
+
     def _build_templates(self) -> Dict[str, Dict[str, Any]]:
         """Build quick template dictionary"""
         return {
@@ -684,6 +695,23 @@ class QuickTemplateManager:
         return {
             **template,
             "sql": sql_with_filter,
+        }
+
+    def render_template_by_keyword(
+        self, keyword: str, user_context: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Render a template by its keyword name with role-based filtering."""
+
+        template = self.templates.get(keyword)
+        if not template:
+            return None
+
+        sql_with_filter = self.apply_filter(template["sql"], user_context)
+        return {
+            "name": keyword,
+            "sql": sql_with_filter,
+            "explanation": template.get("explanation", ""),
+            "params": template.get("params", {}),
         }
 
     def apply_filter(self, sql: str, user_context: Dict[str, Any]) -> str:

@@ -327,6 +327,38 @@ body {
     font-weight: 500;
 }
 
+.chat-visualizations {
+    display: grid;
+    gap: 1rem;
+    margin-top: 1.25rem;
+}
+
+.chat-visualization {
+    background: var(--card-background);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: var(--shadow-light);
+}
+
+.chat-visualization__title {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+}
+
+.chat-visualization__table table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.75rem;
+}
+
+.chat-visualization__table th,
+.chat-visualization__table td {
+    text-align: left;
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
 /* Input Form */
 .chat-input-container {
     background: var(--card-background);
