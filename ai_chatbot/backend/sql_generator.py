@@ -171,6 +171,9 @@ Response format:
             # Fix SQL parameter syntax for SQLAlchemy
             sql_query = self.fix_sql_parameters(sql_query, user_context)
 
+            # Enforce scope-based filtering and selector validation
+            sql_query = self.enforce_scope_constraints(sql_query, user_context)
+
             return {
                 "sql": sql_query,
                 "explanation": explanation,
@@ -223,6 +226,76 @@ Response format:
             sql = re.sub(r'\s+AND\s+a\.party_id\s*=\s*\d+', '', sql, flags=re.IGNORECASE)
 
         return sql
+
+    def enforce_scope_constraints(self, sql: str, user_context: Dict[str, Any]) -> str:
+        """
+        Apply required party filters and validate selector usage based on role.
+
+        Non-admin users must be restricted to their own party scope. Queries that
+        attempt to select other parties or omit the required party filter will be
+        rejected or amended to include the current user's scope.
+        """
+
+        role = user_context.get("role")
+
+        if role == "admin":
+            return sql
+
+        scope_id = None
+        if role == "person":
+            scope_id = user_context.get("person_id")
+        elif role == "company":
+            scope_id = user_context.get("company_id")
+
+        if not scope_id:
+            raise ValueError("User scope could not be determined for this query")
+
+        self._validate_selector_scope(sql, scope_id)
+
+        if self._has_party_filter(sql, scope_id):
+            return sql
+
+        return self._append_party_filter(sql, scope_id)
+
+    def _validate_selector_scope(self, sql: str, scope_id: Any) -> None:
+        """Reject queries that target other parties for non-admin users."""
+
+        selector_patterns = [
+            r"party_id\s*(=|IN)\s*([^\s;]+)",
+            r"person_id\s*(=|IN)\s*([^\s;]+)",
+            r"company_id\s*(=|IN)\s*([^\s;]+)",
+            r"p\.id\s*(=|IN)\s*([^\s;]+)",
+        ]
+
+        allowed_placeholders = re.compile(r":(person_id|company_id|party_id)", re.IGNORECASE)
+
+        for pattern in selector_patterns:
+            for match in re.finditer(pattern, sql, re.IGNORECASE):
+                value_fragment = match.group(2)
+                if str(scope_id) in value_fragment:
+                    continue
+                if allowed_placeholders.search(value_fragment):
+                    continue
+                raise ValueError("Query contains unauthorized person/company selector")
+
+    def _has_party_filter(self, sql: str, scope_id: Any) -> bool:
+        """Check if the query already filters on the current party scope."""
+
+        for match in re.finditer(r"a\.party_id\s*(=|IN)\s*([^\s;]+)", sql, re.IGNORECASE):
+            value_fragment = match.group(2)
+            if str(scope_id) in value_fragment:
+                return True
+            if re.search(r":(person_id|company_id|party_id)", value_fragment, re.IGNORECASE):
+                return True
+        return False
+
+    def _append_party_filter(self, sql: str, scope_id: Any) -> str:
+        """Append a party filter to the query, preserving existing WHERE clauses."""
+
+        if re.search(r"\bWHERE\b", sql, re.IGNORECASE):
+            return f"{sql} AND a.party_id = {scope_id}"
+
+        return f"{sql} WHERE a.party_id = {scope_id}"
 
     def execute_sql(
         self,

@@ -141,6 +141,8 @@ class FinancialChatbot:
             sql_query = sql_result["sql"]
             explanation = sql_result["explanation"]
 
+        sql_query = self.sql_generator.enforce_scope_constraints(sql_query, user_context)
+
         # Execute SQL
         logger.info(f"Executing SQL: {sql_query}")
         results = self.sql_generator.execute_sql(sql_query, db_session)
