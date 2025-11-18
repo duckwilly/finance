@@ -8,6 +8,12 @@ The quickstart script now supports various configuration options to generate dif
 ./scripts/quickstart.sh [OPTIONS]
 ```
 
+### Windows
+
+```bash
+make -f quickstart-win.mk quickstart
+```
+
 ## Options
 
 - `--size SIZE`: Simulation size preset (small, medium, large)
