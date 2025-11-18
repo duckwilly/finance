@@ -21,12 +21,23 @@ class SQLGenerator:
 
     # Default database schema for financial applications
     DEFAULT_SCHEMA = """
-Database Schema:
-- transactions table: id, account_id, category_id, posted_at, transaction_date, amount, direction (CREDIT/DEBIT), channel, description
-- transaction_categories table: id, section_name (income/expense/transfer), category_name
-- accounts table: id, account_type, person_id, company_id
-- persons table: id, first_name, last_name
-- companies table: id, name, industry_category
+Authoritative Database Schema (MariaDB/MySQL)
+- party: id PK, party_type ENUM('INDIVIDUAL','COMPANY'), display_name, created_at
+- individual_profile: party_id PK/FK->party, given_name, family_name, primary_email
+- company_profile: party_id PK/FK->party, legal_name, registration_number, tax_identifier
+- app_user: id PK, party_id FK->party, username (UNIQUE), email (UNIQUE), is_active; app_user_role links to app_role
+- account: id PK, party_id FK->party (owner), account_type_code FK, currency_code FK, name, opened_at, closed_at
+- journal_entry: id PK, entry_code UNIQUE, txn_date, posted_at, description, channel_code FK->txn_channel, counterparty_party_id FK->party
+- journal_line: id PK, entry_id FK->journal_entry, account_id FK->account, party_id FK->party (line-level counterparty), amount DECIMAL, currency_code FK, category_id FK->category, created_at
+- category: id PK, section_id FK->section (income/expense/transfer), name; section has values income/expense/transfer
+- Access & roles: account_party_role links account_id to additional party_id with role_code; employment_contract joins employee_party_id to employer_party_id; company_access_grant grants app_user_id to contract_id with role_code
+
+Identity & Join Paths
+- User identity: app_user.party_id -> party.id; individual vs company determined by party.party_type
+- Company identity: company_profile.party_id -> party.id (party_type='COMPANY')
+- Account ownership: account.party_id -> party.id (owner). Additional access via account_party_role.party_id
+- Transactions: journal_line.account_id -> account.id -> account.party_id -> party (owner)
+- Category classification: journal_line.category_id -> category.id -> section.id/name
 """
 
     def __init__(self, database_schema: str = None):
@@ -55,15 +66,30 @@ Database Schema:
         # Build role-based filter guidance
         filter_guidance = ""
         if role == "person" and person_id:
-            filter_guidance = f"\nIMPORTANT: Always include 'AND a.person_id = {person_id}' to filter by user's data only."
+            filter_guidance = (
+                "\nSelf-scope: Add 'AND a.party_id = {person_id}' to restrict to the"
+                " signed-in individual's accounts."
+            )
         elif role == "company" and company_id:
-            filter_guidance = f"\nIMPORTANT: Always include 'AND a.company_id = {company_id}' to filter by company data only."
+            filter_guidance = (
+                "\nSelf-scope: Add 'AND a.party_id = {company_id}' to restrict to the"
+                " active company accounts."
+            )
         elif role == "admin":
-            filter_guidance = "\nYou have admin access - no filtering required unless specifically requested."
+            filter_guidance = (
+                "\nAdmin scope: You may omit account-party filters when explicitly"
+                " looking up other users/companies."
+            )
 
         return f"""You are a SQL query generator for a MariaDB/MySQL financial database.
 
 {self.database_schema}
+
+Allowed lookup patterns (keep queries to SELECT only):
+- Admin user lookup: query app_user au joined to party p on au.party_id = p.id and filter by id/username/email (e.g. "WHERE au.id = <id>" or "WHERE au.username LIKE '%<name>%'" or "WHERE au.email LIKE '%<name>%'")
+- Admin company lookup: query party p with p.party_type = 'COMPANY' (optionally JOIN company_profile cp ON cp.party_id = p.id) and filter by "p.id = <company_id>" or name matches like "p.display_name LIKE '%<name>%'" or "cp.legal_name LIKE '%<name>%'"
+- Self individual scope: filter owned accounts with "AND a.party_id = {person_id}" (party_type='INDIVIDUAL')
+- Self company scope: filter owned accounts with "AND a.party_id = {company_id}" (party_type='COMPANY')
 
 CRITICAL Rules:
 1. Generate ONLY valid SELECT queries
@@ -193,10 +219,8 @@ Response format:
 
         # Remove admin filters for admin users
         if user_context.get("role") == "admin":
-            sql = re.sub(r'\s+AND\s+a\.person_id\s*=\s*:?person_id', '', sql, flags=re.IGNORECASE)
-            sql = re.sub(r'\s+AND\s+a\.company_id\s*=\s*:?company_id', '', sql, flags=re.IGNORECASE)
-            sql = re.sub(r'\s+AND\s+a\.person_id\s*=\s*\d+', '', sql, flags=re.IGNORECASE)
-            sql = re.sub(r'\s+AND\s+a\.company_id\s*=\s*\d+', '', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'\s+AND\s+a\.party_id\s*=\s*:?\w+', '', sql, flags=re.IGNORECASE)
+            sql = re.sub(r'\s+AND\s+a\.party_id\s*=\s*\d+', '', sql, flags=re.IGNORECASE)
 
         return sql
 
@@ -414,9 +438,9 @@ class QuickTemplateManager:
         company_id = user_context.get("company_id")
 
         if role == "person" and person_id:
-            filter_clause = f"AND a.person_id = {person_id}"
+            filter_clause = f"AND a.party_id = {person_id}"
         elif role == "company" and company_id:
-            filter_clause = f"AND a.company_id = {company_id}"
+            filter_clause = f"AND a.party_id = {company_id}"
         else:
             filter_clause = ""
 

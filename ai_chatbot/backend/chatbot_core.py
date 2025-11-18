@@ -227,6 +227,11 @@ class FinancialChatbot:
 User: {user_context.get('username', 'User')}
 Role: {user_context.get('role', 'user')}
 
+Capabilities:
+- Admins can look up users by id/username/email and companies by id or legal/display name.
+- Individuals can only reference their own accounts/party_id.
+- Company representatives can only reference their company's accounts/party_id.
+
 {financial_context}
 
 IMPORTANT: Write in plain text only. Do NOT use markdown formatting (no **, *, #, -, or other markdown symbols).
@@ -315,9 +320,9 @@ Provide helpful, concise advice in a friendly tone. Focus on actionable insights
 
         # Build filter
         if role == "person" and person_id:
-            filter_clause = f"AND a.person_id = {person_id}"
+            filter_clause = f"AND a.party_id = {person_id}"
         elif role == "company" and company_id:
-            filter_clause = f"AND a.company_id = {company_id}"
+            filter_clause = f"AND a.party_id = {company_id}"
         else:
             filter_clause = ""
 
