@@ -6,10 +6,11 @@
     // This script runs when HTMX injects this response
     const responseData = {
         response: {{ response | tojson }},
-        chart_config: {% if chart_config %}{{ chart_config | safe }}{% else %}null{% endif %},
+        chart_config: {{ chart_config | tojson }},
         chart_title: {{ chart_title | tojson }},
         table_data: {{ table_data | tojson }},
-        mode: {{ mode | tojson }}
+        mode: {{ mode | tojson }},
+        visualizations: {{ visualizations | tojson }}
     };
 
     console.log('Response data:', responseData);

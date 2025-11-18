@@ -48,7 +48,7 @@ function initializeChatbot() {
 
 // Global handler for HTMX responses
 window.handleChatbotResponse = function(responseData) {
-    const { response, chart_config, chart_title, table_data, mode } = responseData;
+    const { response, chart_config, chart_title, table_data, mode, visualizations } = responseData;
 
     // Add assistant message to chat
     addAssistantMessage(response);
@@ -68,17 +68,18 @@ window.handleChatbotResponse = function(responseData) {
         conversationHistory = conversationHistory.slice(-6);
     }
 
-    // Handle visualization mode
-    if (mode === 'visualization' && chart_config) {
+    const visualizationList = visualizations || [];
+
+    if (mode === 'visualization' && visualizationList.length > 0) {
+        renderVisualizationStack(visualizationList);
+    } else if (mode === 'visualization' && chart_config) {
         renderChart(chart_config, chart_title);
 
         if (table_data && table_data.length > 0) {
             renderTable(table_data);
         }
     } else {
-        // Hide chart and table for conversational mode
-        document.getElementById('chart-container').style.display = 'none';
-        document.getElementById('table-container').style.display = 'none';
+        hideLegacyVisuals();
     }
 
     // Scroll to bottom of messages
@@ -146,10 +147,12 @@ function addErrorMessage(error) {
     chatMessages.appendChild(errorDiv);
 }
 
-function renderChart(chartConfig, title) {
-    const chartContainer = document.getElementById('chart-container');
-    const chartCanvas = document.getElementById('chart-canvas');
-    const chartTitle = document.getElementById('chart-title');
+function renderChart(chartConfig, title, targetId = 'chart-container') {
+    const chartContainer = document.getElementById(targetId);
+    if (!chartContainer) return;
+
+    const chartCanvas = chartContainer.querySelector('canvas') || document.getElementById('chart-canvas');
+    const chartTitle = chartContainer.querySelector('.chart-title') || document.getElementById('chart-title');
 
     // Show container
     chartContainer.style.display = 'block';
@@ -166,7 +169,8 @@ function renderChart(chartConfig, title) {
 
     // Create new chart
     const ctx = chartCanvas.getContext('2d');
-    currentChart = new Chart(ctx, chartConfig);
+    const hydratedConfig = hydrateChartConfig(chartConfig);
+    currentChart = new Chart(ctx, hydratedConfig);
 
     // Scroll to chart
     chartContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -189,39 +193,9 @@ function renderTable(data) {
         return;
     }
 
-    // Get column names from first row
-    const columns = Object.keys(data[0]);
-
-    // Create header row
-    const headerRow = document.createElement('tr');
-    columns.forEach(col => {
-        const th = document.createElement('th');
-        th.textContent = col.replace(/_/g, ' ').toUpperCase();
-        headerRow.appendChild(th);
-    });
-    tableHead.appendChild(headerRow);
-
-    // Create data rows
-    data.forEach(row => {
-        const tr = document.createElement('tr');
-
-        columns.forEach(col => {
-            const td = document.createElement('td');
-            const value = row[col];
-
-            // Check if value is a number (for currency formatting)
-            if (typeof value === 'number' && isFinite(value)) {
-                td.className = 'currency';
-                td.textContent = formatCurrency(value);
-            } else {
-                td.textContent = value || '-';
-            }
-
-            tr.appendChild(td);
-        });
-
-        tableBody.appendChild(tr);
-    });
+    const elements = buildTableElements(data, { withCurrency: true });
+    tableHead.appendChild(elements.head);
+    tableBody.appendChild(elements.body);
 }
 
 function formatCurrency(value) {
@@ -229,6 +203,127 @@ function formatCurrency(value) {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
     });
+}
+
+function buildTableElements(data, { withCurrency = false } = {}) {
+    const columns = Object.keys(data[0]);
+
+    const head = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    columns.forEach(col => {
+        const th = document.createElement('th');
+        th.textContent = col.replace(/_/g, ' ').toUpperCase();
+        headerRow.appendChild(th);
+    });
+    head.appendChild(headerRow);
+
+    const body = document.createElement('tbody');
+    data.forEach(row => {
+        const tr = document.createElement('tr');
+        columns.forEach(col => {
+            const td = document.createElement('td');
+            const value = row[col];
+
+            if (withCurrency && typeof value === 'number' && isFinite(value)) {
+                td.className = 'currency';
+                td.textContent = formatCurrency(value);
+            } else {
+                td.textContent = value ?? '-';
+            }
+
+            tr.appendChild(td);
+        });
+        body.appendChild(tr);
+    });
+
+    return { head, body };
+}
+
+function renderVisualizationStack(visualizations) {
+    const stack = document.getElementById('chat-visualizations');
+    if ((!stack || !visualizations.length)) {
+        const primary = visualizations[0];
+        if (primary?.chart_config) {
+            renderChart(primary.chart_config, primary.chart_title || primary.title);
+        }
+        if (primary?.table_data?.length) {
+            renderTable(primary.table_data);
+        }
+        return;
+    }
+
+    stack.innerHTML = '';
+
+    visualizations.forEach((viz, index) => {
+        const card = document.createElement('div');
+        card.className = 'chat-visualization';
+
+        if (viz.chart_title || viz.title) {
+            const titleEl = document.createElement('h4');
+            titleEl.className = 'chat-visualization__title';
+            titleEl.textContent = viz.chart_title || viz.title;
+            card.appendChild(titleEl);
+        }
+
+        if (viz.chart_config) {
+            const canvas = document.createElement('canvas');
+            canvas.id = `chat-viz-${index}`;
+            card.appendChild(canvas);
+
+            const hydrated = hydrateChartConfig(viz.chart_config);
+            new Chart(canvas.getContext('2d'), hydrated);
+        }
+
+        if (viz.table_data && viz.table_data.length) {
+            const tableWrapper = document.createElement('div');
+            tableWrapper.className = 'chat-visualization__table';
+            const table = document.createElement('table');
+            const elements = buildTableElements(viz.table_data, { withCurrency: true });
+            table.appendChild(elements.head);
+            table.appendChild(elements.body);
+            tableWrapper.appendChild(table);
+            card.appendChild(tableWrapper);
+        }
+
+        stack.appendChild(card);
+    });
+}
+
+function hydrateChartConfig(config) {
+    if (!config) return null;
+    const parsed = typeof config === 'string' ? JSON.parse(config) : config;
+    const clone = typeof structuredClone === 'function' ? structuredClone(parsed) : JSON.parse(JSON.stringify(parsed));
+
+    const revive = (value) => {
+        if (value === '##CURRENCY_CALLBACK##') {
+            return (val) => `€${Number(val).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+        if (value === '##CURRENCY_TOOLTIP##') {
+            return (context) => {
+                const label = context.dataset?.label ? `${context.dataset.label}: ` : '';
+                const amount = context.parsed?.y ?? context.raw;
+                return `${label}€${Number(amount).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            };
+        }
+        if (Array.isArray(value)) return value.map(revive);
+        if (value && typeof value === 'object') {
+            Object.keys(value).forEach((key) => {
+                value[key] = revive(value[key]);
+            });
+        }
+        return value;
+    };
+
+    return revive(clone);
+}
+
+function hideLegacyVisuals() {
+    const chartContainer = document.getElementById('chart-container');
+    const tableContainer = document.getElementById('table-container');
+    const stack = document.getElementById('chat-visualizations');
+    if (chartContainer) chartContainer.style.display = 'none';
+    if (tableContainer) tableContainer.style.display = 'none';
+    if (stack) stack.innerHTML = '';
 }
 
 function escapeHtml(text) {
@@ -252,6 +347,8 @@ window.chatbot = {
         document.getElementById('chat-messages').innerHTML = '';
         document.getElementById('chart-container').style.display = 'none';
         document.getElementById('table-container').style.display = 'none';
+        const stack = document.getElementById('chat-visualizations');
+        if (stack) stack.innerHTML = '';
         if (currentChart) {
             currentChart.destroy();
             currentChart = null;

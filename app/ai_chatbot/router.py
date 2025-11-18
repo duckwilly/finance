@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 import logging
 
 from .chatbot_core import FinancialChatbot
-from .chart_generator import ChartGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +34,7 @@ class ChatbotQueryRequest(BaseModel):
     model: str = "ollama:llama3:latest"
     conversation_history: Optional[List[dict]] = None
     response_mode: Optional[Literal["visualization", "conversational"]] = None
+    page_context: Optional[str] = None
 
 
 class ChatbotQueryResponse(BaseModel):
@@ -45,6 +45,7 @@ class ChatbotQueryResponse(BaseModel):
     table_data: Optional[List[dict]] = None
     sql_query: Optional[str] = None
     mode: str
+    visualizations: Optional[List[dict]] = None
 
 
 # Dependency injection placeholders (to be configured by integrating app)
@@ -111,7 +112,8 @@ async def chatbot_page(request: Request):
 
 @router.post("/query", response_model=ChatbotQueryResponse)
 async def chatbot_query(
-    request: ChatbotQueryRequest,
+    payload: ChatbotQueryRequest,
+    http_request: Request,
     db: Session = Depends(get_db_session),
     user_context: dict = Depends(get_current_user)
 ):
@@ -139,14 +141,17 @@ async def chatbot_query(
         financial_summary = chatbot.get_financial_summary(user_context, db)
 
         # Process query
+        page_context = payload.page_context or str(http_request.url.path)
+
         result = await chatbot.process_query(
-            question=request.question,
-            provider_name=request.model,
+            question=payload.question,
+            provider_name=payload.model,
             user_context=user_context,
             db_session=db,
-            conversation_history=request.conversation_history,
-            response_mode=request.response_mode,
-            financial_summary=financial_summary
+            conversation_history=payload.conversation_history,
+            response_mode=payload.response_mode,
+            financial_summary=financial_summary,
+            page_context=page_context,
         )
 
         return ChatbotQueryResponse(**result)
@@ -224,6 +229,8 @@ async def chatbot_query_htmx(
         # This is a simplified version - you may want to implement session management
         conversation_history = None
 
+        page_context = request.headers.get("Hx-Current-Url", str(request.url.path))
+
         # Process query with user's chosen response mode
         result = await chatbot.process_query(
             question=question,
@@ -232,14 +239,9 @@ async def chatbot_query_htmx(
             db_session=db,
             conversation_history=conversation_history,
             response_mode=response_mode,
-            financial_summary=financial_summary
+            financial_summary=financial_summary,
+            page_context=page_context,
         )
-
-        # Format chart config for frontend
-        chart_config_str = None
-        if result["chart_config"]:
-            chart_gen = ChartGenerator()
-            chart_config_str = chart_gen.format_for_frontend(result["chart_config"])
 
         # Return HTML fragment with response
         return templates.TemplateResponse(
@@ -247,10 +249,11 @@ async def chatbot_query_htmx(
             {
                 "request": request,
                 "response": result["response"],
-                "chart_config": chart_config_str,
+                "chart_config": result["chart_config"],
                 "chart_title": result["chart_title"],
                 "table_data": result["table_data"],
-                "mode": result["mode"]
+                "mode": result["mode"],
+                "visualizations": result.get("visualizations"),
             }
         )
 
