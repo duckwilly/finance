@@ -20,6 +20,13 @@
 
 ## Frontend
 
+- Each dashboard will have dashboard cards above, which open different views of the dashboard (currently implemented in the admin dashboard). The bottom central view can be populated by these cards but also dynamically by the chatbot.
 - Chat button opens a window that takes up 1/3 of the screen width underneath the dashboard cards, with the dashboard taking up the remaining 2/3
 - Chat window should be collapsible and expandable
 - Chat should be fully visible in the visible height of the screen, i.e. chatbox should be visible without scrolling down
+
+## Backend 
+
+- The LLM response will be a JSON object that contains a plaintext response to the user and keywords for sqlalchemy queries that will dynamically generate charts and tables. It should generate between 0 and 3 charts and/or tables. 
+
+- The JSON response should be formatted as follows:
