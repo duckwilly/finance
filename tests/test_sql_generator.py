@@ -1,5 +1,6 @@
 import pytest
 
+from ai_chatbot.backend.chatbot_core import FinancialChatbot
 from ai_chatbot.backend.sql_generator import QuickTemplateManager, SQLGenerator
 
 
@@ -87,3 +88,30 @@ def test_trend_narrative_reports_direction(template_manager):
 
     assert narrative is not None
     assert "increased" in narrative.lower()
+
+
+def test_financial_summary_requires_scope():
+    chatbot = FinancialChatbot()
+
+    with pytest.raises(ValueError):
+        chatbot.get_financial_summary({"role": "person"}, db_session=None)
+
+
+def test_financial_summary_uses_party_filter(monkeypatch):
+    chatbot = FinancialChatbot()
+    executed_sql: list[str] = []
+
+    def _fake_execute(sql: str, db_session, params=None):
+        executed_sql.append(sql)
+        if "GROUP BY" in sql:
+            return [{"category_name": "Rent", "total": 1200}]
+        return [{"total": 4700}]
+
+    monkeypatch.setattr(chatbot.sql_generator, "execute_sql", _fake_execute)
+
+    summary = chatbot.get_financial_summary(
+        {"role": "person", "person_id": 5}, db_session=None
+    )
+
+    assert all("a.party_id = 5" in sql for sql in executed_sql)
+    assert "Rent" in summary

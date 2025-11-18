@@ -326,16 +326,20 @@ Provide helpful, concise advice in a friendly tone. Focus on actionable insights
             Formatted financial summary string
         """
         role = user_context.get("role")
-        person_id = user_context.get("person_id")
-        company_id = user_context.get("company_id")
 
-        # Build filter
-        if role == "person" and person_id:
-            filter_clause = f"AND a.party_id = {person_id}"
-        elif role == "company" and company_id:
-            filter_clause = f"AND a.party_id = {company_id}"
-        else:
+        if role == "admin":
             filter_clause = ""
+        else:
+            scope_id = (
+                user_context.get("person_id")
+                or user_context.get("company_id")
+            )
+            if not scope_id:
+                raise ValueError(
+                    "User scope could not be determined for the financial summary"
+                )
+
+            filter_clause = f"AND a.party_id = {scope_id}"
 
         try:
             # Get total income (from journal lines)
