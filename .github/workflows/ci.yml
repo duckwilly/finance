@@ -24,12 +24,6 @@ jobs:
         sudo apt-get install -y mysql-client
 
     - name: Prepare environment, start server, and run tests
-      env:
-        DB_HOST: 127.0.0.1
-        DB_PORT: 3306
-        DB_USER: finance
-        DB_PASSWORD: finance
-        DB_NAME: finance_test
       run: |
         set -euo pipefail
 
