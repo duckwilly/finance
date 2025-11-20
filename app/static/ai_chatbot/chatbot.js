@@ -44,6 +44,8 @@ function initializeChatbot() {
         questionInput.value = '';
         questionInput.focus();
     });
+
+    bindChatSuggestions();
 }
 
 // Global handler for HTMX responses
@@ -335,6 +337,19 @@ function escapeHtml(text) {
 function scrollToBottom() {
     const chatMessages = document.getElementById('chat-messages');
     chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function bindChatSuggestions() {
+    const questionInput = document.getElementById('question-input');
+    if (!questionInput) return;
+
+    document.querySelectorAll('[data-chat-suggestion]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const suggestion = button.dataset.chatSuggestion || '';
+            questionInput.value = suggestion;
+            questionInput.focus();
+        });
+    });
 }
 
 // Export for external use
