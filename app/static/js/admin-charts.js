@@ -3,7 +3,7 @@
     return;
   }
 
-  const palette = ['#6d5dfc', '#8b7ffc', '#ab9dfc', '#c4b8ff', '#ded2ff'];
+  const palette = ['#6d5dfc', '#8b7ffc', '#ab9dfc', '#c4b8ff', '#ded2ff', '#f4f1ff'];
 
   const getThemeColors = () => {
     const root = document.documentElement;

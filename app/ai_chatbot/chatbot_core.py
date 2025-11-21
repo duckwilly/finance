@@ -4,6 +4,7 @@ Main entry point for chatbot functionality
 """
 import json
 import logging
+import re
 from typing import Dict, Any, Optional, List, Literal
 from sqlalchemy.orm import Session
 
@@ -49,7 +50,7 @@ class FinancialChatbot:
 
         Args:
             question: User's natural language question
-            provider_name: LLM provider (e.g., 'ollama', 'claude', 'chatgpt')
+            provider_name: LLM provider (e.g., 'claude-haiku-4-5-20251001')
             user_context: Dict with 'role', 'person_id', 'company_id', 'username'
             db_session: SQLAlchemy database session
             conversation_history: Previous messages for context
@@ -68,21 +69,12 @@ class FinancialChatbot:
             }
         """
         try:
-            # Check if model is too small for SQL generation
-            small_models = ["llama3.2:1b", "llama3.2"]
-            is_small_model = any(small in provider_name.lower() for small in small_models)
-
-            # Force conversational mode for small models
-            if is_small_model and not response_mode:
-                logger.info(f"Forcing conversational mode for small model: {provider_name}")
-                response_mode = "conversational"
-
             # Step 1: Determine response mode if not specified
             if not response_mode:
-                response_mode = await self._detect_response_mode(question, provider_name)
+                response_mode = await self._detect_response_mode(question)
 
             # Step 2: Handle based on mode
-            if response_mode == "visualization" and not is_small_model:
+            if response_mode == "visualization":
                 return await self._handle_visualization_mode(
                     question,
                     provider_name,
@@ -92,16 +84,6 @@ class FinancialChatbot:
                     financial_summary,
                     page_context,
                 )
-            elif response_mode == "visualization" and is_small_model:
-                # Small model requested visualization - inform user
-                return {
-                    "response": "Note: The selected model (llama3.2:1b) is optimized for conversation only and cannot generate charts or query data. Please select a larger model (Llama 3 or DeepSeek R1) for data visualization and analysis.",
-                    "chart_config": None,
-                    "chart_title": None,
-                    "table_data": None,
-                    "sql_query": None,
-                    "mode": "conversational"
-                }
             else:
                 return await self._handle_conversational_mode(
                     question, provider_name, user_context,
@@ -187,22 +169,13 @@ class FinancialChatbot:
     ) -> Dict[str, Any]:
         """Handle conversational mode (no SQL, just chat)"""
 
-        # Check if small model (simpler system prompt for better performance)
-        small_models = ["llama3.2:1b", "llama3.2"]
-        is_small_model = any(small in provider_name.lower() for small in small_models)
+        # Full system prompt for supported models
+        try:
+            financial_context = f"Financial Context: {financial_summary}" if financial_summary else ""
+        except Exception:
+            financial_context = ""
 
-        if is_small_model:
-            # Very simple system prompt for small models (no financial context to avoid complexity)
-            system_prompt = "You are a helpful financial assistant. Provide clear, concise advice in plain text (no markdown formatting)."
-        else:
-            # Full system prompt for larger models
-            # Skip financial summary if it caused errors
-            try:
-                financial_context = f"Financial Context: {financial_summary}" if financial_summary else ""
-            except:
-                financial_context = ""
-
-            system_prompt = f"""You are a helpful financial assistant providing advice and insights.
+        system_prompt = f"""You are a helpful financial assistant providing advice and insights.
 
 User: {user_context.get('username', 'User')}
 Role: {user_context.get('role', 'user')}
@@ -241,15 +214,13 @@ Provide helpful, concise advice in a friendly tone. Focus on actionable insights
 
     async def _detect_response_mode(
         self,
-        question: str,
-        provider_name: str
+        question: str
     ) -> Literal["visualization", "conversational"]:
         """
         Detect whether question needs visualization or conversational response
 
         Args:
             question: User's question
-            provider_name: LLM provider
 
         Returns:
             'visualization' or 'conversational'
@@ -414,9 +385,8 @@ Top Expense Categories:
         )
 
         content = response.get("content", "{}")
-        try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError:
+        parsed = self._parse_json_response(content)
+        if parsed is None:
             logger.warning("Visualization plan was not valid JSON; returning fallback plan")
             parsed = {}
 
@@ -433,6 +403,71 @@ Top Expense Categories:
             "reply": parsed.get("reply", "Here's what I found."),
             "visualizations": filtered_visualizations,
         }
+
+    def _parse_json_response(self, content: Optional[str]) -> Optional[Dict[str, Any]]:
+        """
+        Attempt to parse JSON content with common LLM formatting quirks handled.
+
+        This trims code fences like ```json blocks and tries to extract the first
+        balanced JSON object when extra prose slips into the response.
+        """
+        if not content:
+            return None
+
+        candidates: List[str] = []
+        stripped = content.strip()
+        fenced_match = re.search(r"```(?:json)?\s*(.*?)```", stripped, re.DOTALL | re.IGNORECASE)
+        if fenced_match:
+            candidates.append(fenced_match.group(1).strip())
+        candidates.append(stripped)
+
+        extracted_object = self._extract_first_json_object(stripped)
+        if extracted_object:
+            candidates.append(extracted_object)
+
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+
+        return None
+
+    @staticmethod
+    def _extract_first_json_object(text: str) -> Optional[str]:
+        """Extract the first balanced JSON object from the text."""
+        start = text.find("{")
+        if start == -1:
+            return None
+
+        depth = 0
+        in_string = False
+        escape = False
+        for index in range(start, len(text)):
+            char = text[index]
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == '"':
+                    in_string = False
+                continue
+
+            if char == '"':
+                in_string = True
+                continue
+
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start:index + 1]
+
+        return None
 
     def _materialize_visualizations(
         self,

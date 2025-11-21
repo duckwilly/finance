@@ -208,8 +208,8 @@ chatbot_config.enable_quick_templates = True
 chatbot_config.max_conversation_history = 6
 
 # Optional: Customize LLM configuration
-llm_config.ollama_default_model = "llama3:latest"
-llm_config.ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+llm_config.claude_model = "claude-haiku-4-5-20251001"
+llm_config.openai_model = "gpt-4o-mini"
 
 
 # ============================================================================
@@ -270,7 +270,7 @@ async def get_quick_insights(
     # Process a predefined question
     result = await chatbot.process_query(
         question="Show me my top 5 expense categories",
-        provider_name="ollama:llama3:latest",
+        provider_name="claude-haiku-4-5-20251001",
         user_context=user,
         db_session=db,
         response_mode="visualization"
@@ -322,10 +322,10 @@ INTEGRATION CHECKLIST:
    - Ensure tables exist
    - Create indexes for performance
 
-3. Setup Ollama (for local models):
-   - Install Ollama from https://ollama.ai
-   - Pull models: ollama pull llama3:latest
-   - Verify: curl http://localhost:11434/api/tags
+3. Configure LLM providers:
+   - Get a Claude API key from Anthropic (Haiku 4.5)
+   - Get an OpenAI API key with access to GPT 4o Mini (or another supported Chat Completions model)
+   - Confirm billing/quotas for both providers
 
 4. Create directory structure:
    your_project/
@@ -342,9 +342,8 @@ INTEGRATION CHECKLIST:
 
 5. Configure environment variables (.env):
    DATABASE_URL=mysql+pymysql://user:pass@localhost/dbname
-   OLLAMA_BASE_URL=http://localhost:11434
-   CLAUDE_API_KEY=sk-... (optional)
-   OPENAI_API_KEY=sk-... (optional)
+   CLAUDE_API_KEY=sk-...
+   OPENAI_API_KEY=sk-...
 
 6. Implement get_current_user():
    - Replace example with your auth logic
@@ -430,7 +429,7 @@ async def chatbot_webhook(
     chatbot = FinancialChatbot()
     result = await chatbot.process_query(
         question=question,
-        provider_name="ollama:llama3:latest",
+        provider_name="claude-haiku-4-5-20251001",
         user_context=user_context,
         db_session=db
     )

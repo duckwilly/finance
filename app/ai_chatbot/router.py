@@ -31,7 +31,7 @@ def configure_templates(templates_instance: Jinja2Templates):
 class ChatbotQueryRequest(BaseModel):
     """Request model for chatbot query"""
     question: str
-    model: str = "ollama:llama3:latest"
+    model: str = "claude-haiku-4-5-20251001"
     conversation_history: Optional[List[dict]] = None
     response_mode: Optional[Literal["visualization", "conversational"]] = None
     page_context: Optional[str] = None
@@ -122,7 +122,7 @@ async def chatbot_query(
 
     Request body:
     - question: Natural language question
-    - model: LLM provider (e.g., 'ollama:llama3:latest', 'claude', 'chatgpt')
+    - model: LLM provider (e.g., 'claude-haiku-4-5-20251001')
     - conversation_history: Optional list of previous messages
     - response_mode: Optional 'visualization' or 'conversational'
 
@@ -194,7 +194,7 @@ async def chatbot_query_htmx(
     try:
         form = await request.form()
         question = form.get("question", "")
-        model = form.get("model", "ollama:llama3:latest")
+        model = form.get("model", "claude-haiku-4-5-20251001")
         response_mode = form.get("response_mode")  # Get user's choice
 
         if not question:

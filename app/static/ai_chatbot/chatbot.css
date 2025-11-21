@@ -472,7 +472,7 @@ body {
 .chat-question-input,
 .chat-input-block__textarea {
   width: 100%;
-  min-height: 48px;
+  min-height: 64px;
   padding: 0.85rem 1.15rem;
   border: 1px solid var(--border-color);
   border-radius: 0 !important;
@@ -703,4 +703,3 @@ body {
         grid-template-columns: 1fr;
     }
 }
-

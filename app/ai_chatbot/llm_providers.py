@@ -1,11 +1,10 @@
 """
 LLM Provider Abstraction Layer
-Supports Ollama (local), Claude, and ChatGPT
+Supports Anthropic Claude and OpenAI GPT models
 """
 import httpx
-import json
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 from abc import ABC, abstractmethod
 
 from .config import llm_config
@@ -24,94 +23,16 @@ class LLMProvider(ABC):
         conversation_history: Optional[list] = None,
         json_mode: bool = True
     ) -> Dict[str, Any]:
-        """
-        Query the LLM with a prompt
-
-        Args:
-            system_prompt: System instructions for the LLM
-            user_prompt: User's question/request
-            conversation_history: Previous messages for context
-            json_mode: Whether to enforce JSON response format
-
-        Returns:
-            Dict with 'content' key containing response, and optional 'usage' stats
-        """
-        pass
-
-
-class OllamaProvider(LLMProvider):
-    """Ollama local LLM provider"""
-
-    def __init__(self, model: str = None):
-        self.base_url = llm_config.ollama_base_url
-        self.model = model or llm_config.ollama_default_model
-        self.timeout = llm_config.ollama_timeout
-
-    async def query(
-        self,
-        system_prompt: str,
-        user_prompt: str,
-        conversation_history: Optional[list] = None,
-        json_mode: bool = True
-    ) -> Dict[str, Any]:
-        """Query Ollama API"""
-
-        messages = []
-
-        # Add system prompt
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-
-        # Add conversation history
-        if conversation_history:
-            messages.extend(conversation_history)
-
-        # Add current user prompt
-        messages.append({"role": "user", "content": user_prompt})
-
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False
-        }
-
-        # Enforce JSON format if requested
-        if json_mode:
-            payload["format"] = "json"
-
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    f"{self.base_url}/api/chat",
-                    json=payload
-                )
-                response.raise_for_status()
-                data = response.json()
-
-                content = data.get("message", {}).get("content", "")
-
-                return {
-                    "content": content,
-                    "model": self.model,
-                    "provider": "ollama"
-                }
-
-        except httpx.TimeoutException:
-            logger.error(f"Ollama request timeout after {self.timeout}s")
-            raise Exception("LLM request timed out. Please try again.")
-        except httpx.HTTPError as e:
-            logger.error(f"Ollama HTTP error: {str(e)}")
-            if "out of memory" in str(e).lower():
-                raise Exception("GPU out of memory. Try using llama3.2:1b model or restart Ollama.")
-            raise Exception(f"Failed to connect to Ollama: {str(e)}")
+        """Query the LLM with a prompt"""
+        raise NotImplementedError
 
 
 class ClaudeProvider(LLMProvider):
     """Anthropic Claude API provider"""
 
-    def __init__(self):
+    def __init__(self, model: Optional[str] = None):
         self.api_key = llm_config.claude_api_key
-        self.model = llm_config.claude_model
+        self.model = model or llm_config.claude_model
         self.max_tokens = llm_config.claude_max_tokens
 
         if not self.api_key:
@@ -132,7 +53,6 @@ class ClaudeProvider(LLMProvider):
         if conversation_history:
             messages.extend(conversation_history)
 
-        # Add current user prompt
         user_content = user_prompt
         if json_mode:
             user_content += "\n\nIMPORTANT: Respond with valid JSON only."
@@ -143,7 +63,7 @@ class ClaudeProvider(LLMProvider):
             "model": self.model,
             "max_tokens": self.max_tokens,
             "system": system_prompt,
-            "messages": messages
+            "messages": messages,
         }
 
         try:
@@ -153,9 +73,9 @@ class ClaudeProvider(LLMProvider):
                     headers={
                         "x-api-key": self.api_key,
                         "anthropic-version": "2023-06-01",
-                        "content-type": "application/json"
+                        "content-type": "application/json",
                     },
-                    json=payload
+                    json=payload,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -166,7 +86,7 @@ class ClaudeProvider(LLMProvider):
                     "content": content,
                     "model": self.model,
                     "provider": "claude",
-                    "usage": data.get("usage", {})
+                    "usage": data.get("usage", {}),
                 }
 
         except httpx.HTTPError as e:
@@ -175,15 +95,29 @@ class ClaudeProvider(LLMProvider):
 
 
 class ChatGPTProvider(LLMProvider):
-    """OpenAI ChatGPT API provider"""
+    """OpenAI GPT API provider"""
 
-    def __init__(self):
+    def __init__(self, model: Optional[str] = None):
         self.api_key = llm_config.openai_api_key
-        self.model = llm_config.openai_model
+        self.model = model or llm_config.openai_model
         self.max_tokens = llm_config.openai_max_tokens
 
         if not self.api_key:
             raise ValueError("OpenAI API key not configured. Set OPENAI_API_KEY environment variable.")
+
+    def _use_responses_api(self) -> bool:
+        """Decide whether to call the newer Responses API."""
+        if not self.model:
+            return False
+        lowered = self.model.lower()
+        return any(token in lowered for token in ("gpt-5", "gpt-4.1"))
+
+    def _supports_response_format(self) -> bool:
+        """Only some Chat Completions models honor response_format."""
+        if not self.model:
+            return True
+        lowered = self.model.lower()
+        return not any(token in lowered for token in ("gpt-5", "gpt-4.1"))
 
     async def query(
         self,
@@ -192,64 +126,117 @@ class ChatGPTProvider(LLMProvider):
         conversation_history: Optional[list] = None,
         json_mode: bool = True
     ) -> Dict[str, Any]:
-        """Query OpenAI ChatGPT API"""
+        """Query OpenAI API using the appropriate endpoint"""
 
-        messages = []
+        def _build_history(as_blocks: bool = False):
+            history = []
+            if system_prompt:
+                history.append({"role": "system", "content": system_prompt})
+            if conversation_history:
+                history.extend(conversation_history)
 
-        # Add system prompt
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
+            user_content = user_prompt
+            if json_mode:
+                user_content += "\n\nIMPORTANT: Respond with valid JSON only."
+            history.append({"role": "user", "content": user_content})
 
-        # Add conversation history
-        if conversation_history:
-            messages.extend(conversation_history)
+            if not as_blocks:
+                return history
 
-        # Add current user prompt
-        user_content = user_prompt
-        if json_mode:
-            user_content += "\n\nIMPORTANT: Respond with valid JSON only."
+            block_messages = []
+            for msg in history:
+                block_messages.append({
+                    "role": msg.get("role"),
+                    "content": [{"type": "text", "text": msg.get("content", "")}],
+                })
+            return block_messages
 
-        messages.append({"role": "user", "content": user_content})
+        use_responses_api = self._use_responses_api()
+        include_response_format = json_mode and not use_responses_api and self._supports_response_format()
 
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": self.max_tokens
+        if use_responses_api:
+            payload = {
+                "model": self.model,
+                "input": _build_history(as_blocks=True),
+                "max_output_tokens": self.max_tokens,
+            }
+            endpoint = "https://api.openai.com/v1/responses"
+        else:
+            payload = {
+                "model": self.model,
+                "messages": _build_history(),
+                "max_tokens": self.max_tokens,
+            }
+            if include_response_format:
+                payload["response_format"] = {"type": "json_object"}
+            endpoint = "https://api.openai.com/v1/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
         }
-
-        # Add JSON mode if supported
-        if json_mode:
-            payload["response_format"] = {"type": "json_object"}
 
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json=payload
-                )
+                response = await client.post(endpoint, headers=headers, json=payload)
+                if response.status_code == 400 and include_response_format:
+                    # Retry once without response_format for models that silently dropped support
+                    payload.pop("response_format", None)
+                    include_response_format = False
+                    response = await client.post(endpoint, headers=headers, json=payload)
+
                 response.raise_for_status()
                 data = response.json()
 
-                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                if use_responses_api:
+                    content = ChatGPTProvider._extract_responses_text(data)
+                else:
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
                 return {
                     "content": content,
                     "model": self.model,
                     "provider": "chatgpt",
-                    "usage": data.get("usage", {})
+                    "usage": data.get("usage", {}),
                 }
 
         except httpx.HTTPError as e:
             logger.error(f"OpenAI API error: {str(e)}")
             raise Exception(f"OpenAI API request failed: {str(e)}")
 
+    @staticmethod
+    def _extract_responses_text(payload: Dict[str, Any]) -> str:
+        """Flatten the `output` array from the Responses API."""
+        outputs = payload.get("output", [])
+        if not outputs:
+            return ""
+
+        texts: list[str] = []
+        for item in outputs:
+            if item.get("type") != "message":
+                continue
+            for content in item.get("content", []):
+                if content.get("type") == "text":
+                    texts.append(content.get("text", ""))
+        return "\n".join(texts).strip()
+
 
 class LLMProviderFactory:
     """Factory to create appropriate LLM provider"""
+
+    FRIENDLY_ALIASES: Dict[str, tuple[str, Callable[[], Optional[str]]]] = {
+        "claude-haiku-4.5": ("claude", lambda: llm_config.claude_model),
+        "claude-sonnet-4.5-mini": ("claude", lambda: llm_config.claude_model),
+        "gpt-4o-mini": ("chatgpt", lambda: llm_config.openai_model),
+        "gpt-4o": ("chatgpt", lambda: llm_config.openai_model),
+    }
+
+    LEGACY_NAMES = {
+        "claude": "claude-haiku-4.5",
+        "chatgpt": "gpt-4o-mini",
+        "gpt-5-mini": "gpt-4o-mini",
+        "gpt-5.1-mini": "gpt-4o-mini",
+    }
 
     @staticmethod
     def create(provider_name: str) -> LLMProvider:
@@ -257,22 +244,38 @@ class LLMProviderFactory:
         Create LLM provider instance
 
         Args:
-            provider_name: One of 'ollama', 'claude', 'chatgpt', or 'ollama:model_name'
+            provider_name: Supported model identifier or friendly alias
 
         Returns:
             Configured LLM provider instance
         """
-        if provider_name.startswith("ollama"):
-            # Extract model name if specified (e.g., "ollama:llama3.2:1b")
-            parts = provider_name.split(":", 1)
-            model = parts[1] if len(parts) > 1 else None
-            return OllamaProvider(model=model)
+        normalized = (provider_name or "").strip().lower()
 
-        elif provider_name == "claude":
+        alias_entry = LLMProviderFactory.FRIENDLY_ALIASES.get(normalized)
+        if alias_entry:
+            provider_key, resolver = alias_entry
+            resolved_model = resolver()
+            return LLMProviderFactory._build_provider(provider_key, resolved_model)
+
+        if normalized in LLMProviderFactory.LEGACY_NAMES:
+            normalized = LLMProviderFactory.LEGACY_NAMES[normalized]
+
+        if normalized in {"", "claude-haiku-4.5"}:
             return ClaudeProvider()
-
-        elif provider_name == "chatgpt":
+        if normalized in {"chatgpt", "gpt-4o-mini"}:
             return ChatGPTProvider()
 
-        else:
-            raise ValueError(f"Unknown LLM provider: {provider_name}")
+        if normalized.startswith("claude"):
+            return ClaudeProvider(model=provider_name)
+        if normalized.startswith("gpt"):
+            return ChatGPTProvider(model=provider_name)
+
+        raise ValueError(f"Unknown LLM provider: {provider_name}")
+
+    @staticmethod
+    def _build_provider(provider_key: str, model_override: Optional[str]) -> LLMProvider:
+        if provider_key == "claude":
+            return ClaudeProvider(model=model_override)
+        if provider_key == "chatgpt":
+            return ChatGPTProvider(model=model_override)
+        raise ValueError(f"Unsupported provider key: {provider_key}")

@@ -123,7 +123,7 @@ Response format:
 
         Args:
             question: User's natural language question
-            provider_name: LLM provider to use (e.g., 'ollama', 'claude')
+            provider_name: LLM provider to use (e.g., 'claude-haiku-4-5-20251001')
             user_context: User's role, person_id, company_id
             financial_summary: Optional RAG context about user's finances
             conversation_history: Previous conversation messages
