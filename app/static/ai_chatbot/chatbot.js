@@ -271,6 +271,12 @@ function formatCurrency(value) {
 
 function buildTableElements(data, { withCurrency = false } = {}) {
     const columns = Object.keys(data[0]);
+    const currencyColumns = new Set(
+        columns.filter((col) => {
+            const lowered = col.toLowerCase();
+            return /(total|amount|value|income|expense|spend|balance|market|unrealized)/.test(lowered);
+        })
+    );
 
     const head = document.createElement('thead');
     const headerRow = document.createElement('tr');
@@ -288,7 +294,7 @@ function buildTableElements(data, { withCurrency = false } = {}) {
             const td = document.createElement('td');
             const value = row[col];
 
-            if (withCurrency && typeof value === 'number' && isFinite(value)) {
+            if (withCurrency && currencyColumns.has(col) && typeof value === 'number' && isFinite(value)) {
                 td.className = 'currency';
                 td.textContent = formatCurrency(value);
             } else {
