@@ -43,8 +43,15 @@
                     <li><strong>Claude Haiku 4.5 or GPT 4o Mini:</strong> Analyze data, generate charts and tables, and provide financial commentary.</li>
                     <li><strong>Conversation mode:</strong> Ask for context, definitions, and policies without requesting new visualizations.</li>
                 </ul>
-                <p class="example-prompt"><strong>For data analysis:</strong> Select Claude Haiku or GPT 4o Mini, then try: "Show me my expenses by category" or "How is my spending this month?"</p>
-                <p class="example-prompt"><strong>For quick advice:</strong> Ask: "Should I save more?" or "What's a good budget strategy?"</p>
+                <div class="example-prompt">
+                    <p><strong>Try these one-click prompts:</strong></p>
+                    <div class="example-prompt__grid">
+                        <button type="button" class="example-prompt__chip" data-chat-suggestion="leaderboard metric=category_expenses:travel party_type=company days=90 limit=6">Top company travel spenders (90 days)</button>
+                        <button type="button" class="example-prompt__chip" data-chat-suggestion="party_insights party_id=2 party_type=individual metric=income granularity=monthly days=180">Monthly income trend for user 2</button>
+                        <button type="button" class="example-prompt__chip" data-chat-suggestion="party_insights party_name=aurora metric=net_cash_flow party_type=company days=120">Company cash flow snapshot (last 120 days)</button>
+                        <button type="button" class="example-prompt__chip" data-chat-suggestion="leaderboard metric=net_stock_gains direction=bottom party_type=individual limit=8">Who is taking the biggest stock hits?</button>
+                    </div>
+                </div>
             </div>
         </div>
 

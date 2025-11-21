@@ -269,8 +269,21 @@ function formatCurrency(value) {
     });
 }
 
+function resolvePartyUrl(row) {
+    const explicitUrl = row.party_url;
+    if (explicitUrl) return explicitUrl;
+
+    const partyId = row.party_id;
+    if (!partyId) return null;
+
+    const typeText = (row.party_type || '').toString().toUpperCase();
+    if (typeText.includes('COMPANY')) return `/corporate/${partyId}`;
+    return `/individuals/${partyId}`;
+}
+
 function buildTableElements(data, { withCurrency = false } = {}) {
-    const columns = Object.keys(data[0]);
+    const excludedColumns = new Set(['party_url']);
+    const columns = Object.keys(data[0]).filter((col) => !excludedColumns.has(col));
     const currencyColumns = new Set(
         columns.filter((col) => {
             const lowered = col.toLowerCase();
@@ -294,7 +307,15 @@ function buildTableElements(data, { withCurrency = false } = {}) {
             const td = document.createElement('td');
             const value = row[col];
 
-            if (withCurrency && currencyColumns.has(col) && typeof value === 'number' && isFinite(value)) {
+            const partyUrl = col === 'party_name' ? resolvePartyUrl(row) : null;
+
+            if (partyUrl && value) {
+                const link = document.createElement('a');
+                link.href = partyUrl;
+                link.textContent = value;
+                link.className = 'table-link';
+                td.appendChild(link);
+            } else if (withCurrency && currencyColumns.has(col) && typeof value === 'number' && isFinite(value)) {
                 td.className = 'currency';
                 td.textContent = formatCurrency(value);
             } else {
@@ -428,6 +449,7 @@ function bindChatSuggestions() {
             const suggestion = button.dataset.chatSuggestion || '';
             questionInput.value = suggestion;
             questionInput.focus();
+            resizeTextarea(questionInput);
         });
     });
 }

@@ -193,8 +193,41 @@ body {
     padding: 15px;
     background: var(--background);
     border-radius: 8px;
-    font-style: italic;
     color: var(--text-secondary);
+}
+
+.example-prompt__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.example-prompt__chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: rgba(0, 0, 0, 0.02);
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: transform 0.08s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+    text-align: center;
+}
+
+.example-prompt__chip:hover {
+    transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04);
+    border-color: var(--primary-light);
+}
+
+:root[data-theme="dark"] .example-prompt__chip {
+    background: rgba(255, 255, 255, 0.04);
 }
 
 .message {

@@ -15,7 +15,9 @@ from .tools import (
     UserScope,
     expenses_by_category,
     income_by_category,
+    leaderboard,
     monthly_cash_flow_comparison,
+    party_insights,
     spending_trend,
     top_spenders,
 )
@@ -66,11 +68,51 @@ class ToolRegistry:
                 handler=spending_trend,
                 default_args={"days": 180},
             ),
+            "leaderboard": ToolSpec(
+                name="leaderboard",
+                description=(
+                    "Admin-only leaderboard by metric. "
+                    "Args: metric=expenses|income|net_stock_gains|category_expenses:<name>, "
+                    "direction=top|bottom, party_type=company|individual|all, days, limit."
+                ),
+                handler=leaderboard,
+                default_args={
+                    "metric": "expenses",
+                    "direction": "top",
+                    "party_type": "all",
+                    "days": 30,
+                    "limit": 5,
+                },
+            ),
+            "party_insights": ToolSpec(
+                name="party_insights",
+                description=(
+                    "Admin-only snapshot for a specific party (resolve by id or name). "
+                    "Args: party_id|party_name, metric=summary|income|expenses|net_cash_flow|category_expenses:<name>, "
+                    "granularity=total|monthly, days, party_type=individual|company (defaults to individual)."
+                ),
+                handler=party_insights,
+                default_args={
+                    "metric": "summary",
+                    "granularity": "total",
+                    "days": 365,
+                    "party_type": "individual",
+                },
+            ),
             "top_spenders": ToolSpec(
                 name="top_spenders",
-                description="Admin-only leaderboard for parties with the highest expenses",
+                description=(
+                    "Alias of leaderboard (defaults to top expenses across all parties). "
+                    "Supports the same args as leaderboard."
+                ),
                 handler=top_spenders,
-                default_args={"days": 30, "limit": 5},
+                default_args={
+                    "metric": "expenses",
+                    "direction": "top",
+                    "party_type": "all",
+                    "days": 30,
+                    "limit": 5,
+                },
             ),
         }
 
@@ -92,6 +134,18 @@ class ToolRegistry:
                 else ""
             )
             lines.append(f"- {spec.name}: {spec.description}{arg_hint}")
+        lines.append(
+            "Leaderboard metrics: expenses, income, net_stock_gains, category_expenses:<category>."
+        )
+        lines.append(
+            "party_insights resolves a party by id or name and supports metrics summary|income|expenses|net_cash_flow|category_expenses:<category> with granularity=total|monthly."
+        )
+        lines.append(
+            "Examples: leaderboard metric=expenses direction=top party_type=company limit=5; "
+            "leaderboard metric=net_stock_gains direction=bottom party_type=individual limit=10; "
+            "leaderboard metric=category_expenses:travel direction=top days=90; "
+            "party_insights party_name=alex metric=income granularity=monthly."
+        )
         return "\n".join(lines)
 
     def build_calls_from_keywords(
@@ -138,7 +192,10 @@ class ToolRegistry:
                 logger.error("Tool %s failed: %s", name, exc, exc_info=True)
                 continue
 
-            results.append(result)
+            if isinstance(result, (list, tuple)):
+                results.extend(r for r in result if isinstance(r, ToolResult))
+            else:
+                results.append(result)
 
         return results
 
@@ -147,7 +204,9 @@ class ToolRegistry:
         """Best-effort coercion of simple argument types from model output."""
         coerced: Dict[str, Any] = {}
         for key, value in raw_args.items():
-            if isinstance(value, str) and value.strip().isdigit():
+            if key in {"metric", "direction", "party_type"}:
+                coerced[key] = value
+            elif isinstance(value, str) and value.strip().isdigit():
                 coerced[key] = int(value.strip())
             else:
                 coerced[key] = value
@@ -748,6 +807,7 @@ Top Expense Categories:
     def _render_tool_results(self, results: Sequence[ToolResult]) -> List[Dict[str, Any]]:
         """Convert tool outputs into the visualization payload format."""
         rendered: list[Dict[str, Any]] = []
+        deferred: list[Dict[str, Any]] = []
 
         for result in results:
             descriptor: Dict[str, Any] = {}
@@ -772,7 +832,18 @@ Top Expense Categories:
             )
             if payload:
                 payload["keyword"] = result.keyword
-                rendered.append(payload)
+                if result.keyword.startswith("company_employees_"):
+                    deferred.append(payload)
+                else:
+                    rendered.append(payload)
+
+        # Append any deferred employee tables at the end (once per keyword)
+        seen_keywords = set()
+        for payload in deferred:
+            if payload["keyword"] in seen_keywords:
+                continue
+            seen_keywords.add(payload["keyword"])
+            rendered.append(payload)
 
         return rendered
 

@@ -50,6 +50,24 @@ metrics from the `AdminService`. A pastel SaaS-inspired theme lives in
 handful of CSS custom properties. FastAPI serves these assets via the `/static`
 mount configured in `app/main.py`.
 
+### AI Chatbot tools
+
+All tools auto-scope to the current user/company; only admins can override `party_id` or use admin-only tools.
+
+- `expenses_by_category` — Args: `days=30`, `limit=8`, optional `party_id` (admin). Returns bar chart rows keyed by `category` and `total`.
+- `income_by_category` — Args: `days=30`, `limit=8`, optional `party_id` (admin). Mirrors the expense tool for income.
+- `monthly_comparison` — Args: `months=6`, optional `party_id` (admin). Income vs expense per month with `x_axis=month` and `y_axis=["income_total","expenses"]`.
+- `monthly_expense_trend` — Args: `days=180`, optional `party_id` (admin). Expense trend line chart using monthly buckets.
+- `leaderboard` (admin) — Args: `metric=expenses|income|net_stock_gains|category_expenses:<name>`, `direction=top|bottom`, `party_type=company|individual|all`, `days=30`, `limit=5`. Builds bar chart plus party links.
+- `top_spenders` (admin) — Alias of `leaderboard` defaulting to top expenses; supports the same args.
+- `party_insights` (admin) — Targets one party by `party_id` or `party_name` with `party_type=individual|company` hint. Args: `metric=summary|income|expenses|net_cash_flow|category_expenses:<name>`, `granularity=total|monthly`, `days=365`. Adds deep links to `/individuals/{id}` or `/corporate/{id}`.
+
+Example prompts:
+- `leaderboard metric=category_expenses:travel party_type=company days=90 limit=6`
+- `leaderboard metric=net_stock_gains direction=bottom party_type=individual limit=8`
+- `party_insights party_id=2 party_type=individual metric=income granularity=monthly days=180`
+- `party_insights party_name=aurora metric=net_cash_flow party_type=company days=120`
+
 ## Getting Started
 
 ### Quickstart (recommended)
