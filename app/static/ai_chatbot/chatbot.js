@@ -7,6 +7,30 @@
 let conversationHistory = [];
 let currentChart = null;
 
+const getQuestionInput = () => document.getElementById('question-input');
+
+const AUTOSIZE_DEFAULT_MIN_HEIGHT = 64;
+const AUTOSIZE_DEFAULT_MAX_HEIGHT = 240;
+
+const resizeTextarea = (element) => {
+    if (!element) return;
+    const minHeight = parseInt(element.dataset.minHeight || AUTOSIZE_DEFAULT_MIN_HEIGHT, 10);
+    const maxHeight = parseInt(element.dataset.maxHeight || AUTOSIZE_DEFAULT_MAX_HEIGHT, 10);
+    element.style.height = 'auto';
+    const desired = Math.min(Math.max(element.scrollHeight, minHeight), maxHeight);
+    element.style.height = `${desired}px`;
+    element.style.overflowY = element.scrollHeight > desired ? 'auto' : 'hidden';
+};
+
+const bindTextareaAutosize = (element) => {
+    if (!element || element.tagName !== 'TEXTAREA' || element.dataset.autosizeBound === 'true') {
+        return;
+    }
+    element.dataset.autosizeBound = 'true';
+    resizeTextarea(element);
+    element.addEventListener('input', () => resizeTextarea(element));
+};
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     initializeChatbot();
@@ -17,19 +41,25 @@ function initializeChatbot() {
     const modelSelect = document.getElementById('model-select');
     const modelInput = document.getElementById('model-input');
 
-    modelSelect.addEventListener('change', function() {
-        modelInput.value = modelSelect.value;
-    });
-
-    // Set initial value
-    modelInput.value = modelSelect.value;
+    if (modelSelect && modelInput) {
+        const syncModel = () => {
+            modelInput.value = modelSelect.value;
+        };
+        modelSelect.addEventListener('change', syncModel);
+        syncModel();
+    }
 
     // Handle form submission
-    const chatForm = document.getElementById('chat-form');
-    chatForm.addEventListener('submit', function(e) {
-        // Don't prevent default - HTMX handles it
-        // Just add user message to UI
-        const questionInput = document.getElementById('question-input');
+    const chatForm = document.querySelector('[data-chatbot-form]');
+    const questionInput = getQuestionInput();
+    if (!chatForm || !questionInput) {
+        bindChatSuggestions();
+        return;
+    }
+
+    bindTextareaAutosize(questionInput);
+
+    chatForm.addEventListener('submit', function() {
         const question = questionInput.value.trim();
 
         if (question) {
@@ -40,10 +70,18 @@ function initializeChatbot() {
 
     // HTMX afterRequest event to clear input
     document.body.addEventListener('htmx:afterRequest', function(event) {
-        const questionInput = document.getElementById('question-input');
+        const sourceEl = event.detail?.requestConfig?.elt;
+        if (!sourceEl || !sourceEl.hasAttribute('data-chatbot-form')) {
+            return;
+        }
+        const questionInput = getQuestionInput();
+        if (!questionInput) return;
         questionInput.value = '';
+        resizeTextarea(questionInput);
         questionInput.focus();
     });
+
+    bindChatSuggestions();
 }
 
 // Global handler for HTMX responses
@@ -54,10 +92,14 @@ window.handleChatbotResponse = function(responseData) {
     addAssistantMessage(response);
 
     // Update conversation history
-    conversationHistory.push({
-        role: 'user',
-        content: document.getElementById('question-input').getAttribute('data-last-question') || ''
-    });
+    const questionInput = getQuestionInput();
+    const lastQuestion = questionInput?.getAttribute('data-last-question') || '';
+    if (lastQuestion) {
+        conversationHistory.push({
+            role: 'user',
+            content: lastQuestion
+        });
+    }
     conversationHistory.push({
         role: 'assistant',
         content: response
@@ -72,8 +114,12 @@ window.handleChatbotResponse = function(responseData) {
 
     if (mode === 'visualization' && visualizationList.length > 0) {
         renderVisualizationStack(visualizationList);
-    } else if (mode === 'visualization' && chart_config) {
-        renderChart(chart_config, chart_title);
+    } else if (mode === 'visualization' && (chart_config || chart_title)) {
+        if (chart_config) {
+            renderChart(chart_config, chart_title);
+        } else {
+            renderChartError('Unable to render chart');
+        }
 
         if (table_data && table_data.length > 0) {
             renderTable(table_data);
@@ -94,6 +140,7 @@ window.handleChatbotError = function(error) {
 
 function addUserMessage(message) {
     const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return;
 
     // Remove welcome message if it exists
     const welcomeMessage = chatMessages.querySelector('.welcome-message');
@@ -102,7 +149,10 @@ function addUserMessage(message) {
     }
 
     // Store question for history
-    document.getElementById('question-input').setAttribute('data-last-question', message);
+    const questionInput = getQuestionInput();
+    if (questionInput) {
+        questionInput.setAttribute('data-last-question', message);
+    }
 
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message user';
@@ -116,6 +166,7 @@ function addUserMessage(message) {
 
 function addAssistantMessage(message) {
     const chatMessages = document.getElementById('chat-messages');
+    if (!chatMessages) return;
 
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message assistant';
@@ -145,6 +196,19 @@ function addErrorMessage(error) {
     errorDiv.textContent = `Error: ${error}`;
 
     chatMessages.appendChild(errorDiv);
+}
+
+function renderChartError(message) {
+    const stack = document.getElementById('chat-visualizations');
+    if (stack) {
+        stack.innerHTML = '';
+        const card = document.createElement('div');
+        card.className = 'chat-visualization__error';
+        card.textContent = message;
+        stack.appendChild(card);
+    } else {
+        addErrorMessage(message);
+    }
 }
 
 function renderChart(chartConfig, title, targetId = 'chart-container') {
@@ -243,7 +307,10 @@ function renderVisualizationStack(visualizations) {
     const stack = document.getElementById('chat-visualizations');
     if ((!stack || !visualizations.length)) {
         const primary = visualizations[0];
-        if (primary?.chart_config) {
+        if (!primary) return;
+        if (primary.chart_error) {
+            renderChartError(primary.chart_error);
+        } else if (primary.chart_config) {
             renderChart(primary.chart_config, primary.chart_title || primary.title);
         }
         if (primary?.table_data?.length) {
@@ -263,6 +330,13 @@ function renderVisualizationStack(visualizations) {
             titleEl.className = 'chat-visualization__title';
             titleEl.textContent = viz.chart_title || viz.title;
             card.appendChild(titleEl);
+        }
+
+        if (viz.chart_error) {
+            const errorEl = document.createElement('div');
+            errorEl.className = 'chat-visualization__error';
+            errorEl.textContent = viz.chart_error;
+            card.appendChild(errorEl);
         }
 
         if (viz.chart_config) {
@@ -334,7 +408,22 @@ function escapeHtml(text) {
 
 function scrollToBottom() {
     const chatMessages = document.getElementById('chat-messages');
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    if (chatMessages) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+}
+
+function bindChatSuggestions() {
+    const questionInput = getQuestionInput();
+    if (!questionInput) return;
+
+    document.querySelectorAll('[data-chat-suggestion]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const suggestion = button.dataset.chatSuggestion || '';
+            questionInput.value = suggestion;
+            questionInput.focus();
+        });
+    });
 }
 
 // Export for external use
@@ -344,9 +433,12 @@ window.chatbot = {
         conversationHistory = [];
     },
     resetUI: () => {
-        document.getElementById('chat-messages').innerHTML = '';
-        document.getElementById('chart-container').style.display = 'none';
-        document.getElementById('table-container').style.display = 'none';
+        const messages = document.getElementById('chat-messages');
+        if (messages) messages.innerHTML = '';
+        const chartContainer = document.getElementById('chart-container');
+        if (chartContainer) chartContainer.style.display = 'none';
+        const tableContainer = document.getElementById('table-container');
+        if (tableContainer) tableContainer.style.display = 'none';
         const stack = document.getElementById('chat-visualizations');
         if (stack) stack.innerHTML = '';
         if (currentChart) {

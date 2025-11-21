@@ -23,11 +23,8 @@
                 <div class="model-selector">
                     <label for="model-select">AI Model:</label>
                     <select id="model-select" name="model">
-                        <option value="ollama:llama3.2:1b" selected>Llama 3.2 1B - Chat only (no charts/data)</option>
-                        <option value="ollama:llama3:latest">Llama 3 8B - Full features (charts + data)</option>
-                        <option value="ollama:deepseek-r1:8b">DeepSeek R1 8B - Full features</option>
-                        <option value="claude">Claude Sonnet 4 - Full features (API key required)</option>
-                        <option value="chatgpt">GPT-4o - Full features (API key required)</option>
+                        <option value="claude-haiku-4-5-20251001" selected>Claude Haiku 4.5 (charts + data)</option>
+                        <option value="gpt-4o-mini">GPT 4o Mini</option>
                     </select>
                 </div>
                 <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
@@ -43,10 +40,10 @@
                 <h2>Welcome! 👋</h2>
                 <p>I'm your AI financial assistant. I can help you:</p>
                 <ul>
-                    <li><strong>Full models (Llama 3, DeepSeek, Claude, GPT-4):</strong> Analyze data, generate charts, visualizations, and provide financial advice</li>
-                    <li><strong>Chat-only model (Llama 3.2 1B):</strong> Quick answers and financial advice (no charts/data analysis)</li>
+                    <li><strong>Claude Haiku 4.5 or GPT 4o Mini:</strong> Analyze data, generate charts and tables, and provide financial commentary.</li>
+                    <li><strong>Conversation mode:</strong> Ask for context, definitions, and policies without requesting new visualizations.</li>
                 </ul>
-                <p class="example-prompt"><strong>For data analysis:</strong> Select Llama 3 or larger, then try: "Show me my expenses by category" or "How is my spending this month?"</p>
+                <p class="example-prompt"><strong>For data analysis:</strong> Select Claude Haiku or GPT 4o Mini, then try: "Show me my expenses by category" or "How is my spending this month?"</p>
                 <p class="example-prompt"><strong>For quick advice:</strong> Ask: "Should I save more?" or "What's a good budget strategy?"</p>
             </div>
         </div>
@@ -71,22 +68,26 @@
         <!-- Input Form -->
         <div class="chat-input-container">
             <form id="chat-form"
+                  data-chatbot-form
                   hx-post="/chatbot/query/htmx"
                   hx-target="#chat-messages"
                   hx-swap="beforeend"
                   hx-indicator="#loading-indicator">
 
-                <input type="hidden" name="model" id="model-input">
+                <input type="hidden" name="model" id="model-input" value="claude-haiku-4-5-20251001">
 
                 <div class="input-wrapper">
-                    <input
-                        type="text"
+                    <textarea
                         name="question"
                         id="question-input"
+                        class="chat-question-input"
                         placeholder="Ask me anything about your finances..."
                         autocomplete="off"
+                        rows="2"
+                        data-min-height="72"
+                        data-max-height="220"
                         required
-                    >
+                    ></textarea>
                     <button type="submit" id="send-button">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <line x1="22" y1="2" x2="11" y2="13"></line>

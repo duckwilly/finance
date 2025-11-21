@@ -25,11 +25,9 @@
             <span class="status-indicator online"></span>
         </div>
         <div class="header-controls">
-            <select id="widget-model-select" class="widget-model-select">
-                <option value="ollama:llama3:latest">Llama 3</option>
-                <option value="ollama:llama3.2:1b">Llama 3.2</option>
-                <option value="claude">Claude</option>
-                <option value="chatgpt">GPT-4o</option>
+            <select id="widget-model-select" name="model" class="widget-model-select">
+                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                <option value="gpt-4o-mini">GPT 4o Mini</option>
             </select>
             <button id="widget-minimize" class="widget-btn-minimize">−</button>
         </div>
@@ -55,12 +53,11 @@
     <!-- Widget Input -->
     <div class="chat-widget-input">
         <form id="widget-chat-form"
+              data-chatbot-form
               hx-post="/chatbot/query/htmx"
               hx-target="#widget-response-target"
               hx-swap="afterbegin"
               hx-indicator="#widget-loading">
-
-            <input type="hidden" name="model" id="widget-model-input">
 
             <div class="widget-input-wrapper">
                 <input
@@ -365,8 +362,6 @@
     const bubble = document.getElementById('chat-bubble');
     const widget = document.getElementById('chat-widget');
     const minimize = document.getElementById('widget-minimize');
-    const modelSelect = document.getElementById('widget-model-select');
-    const modelInput = document.getElementById('widget-model-input');
     const form = document.getElementById('widget-chat-form');
     const input = document.getElementById('widget-question-input');
     const messages = document.getElementById('widget-messages');
@@ -387,12 +382,6 @@
     minimize.addEventListener('click', function() {
         widget.style.display = 'none';
     });
-
-    // Sync model selector
-    modelSelect.addEventListener('change', function() {
-        modelInput.value = modelSelect.value;
-    });
-    modelInput.value = modelSelect.value;
 
     // Handle form submission
     form.addEventListener('submit', function(e) {

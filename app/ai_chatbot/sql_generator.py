@@ -4,7 +4,6 @@ Converts natural language to SQL using LLMs with security validation
 """
 import re
 import json
-import logging
 from decimal import Decimal
 from typing import Any, Dict, Optional
 from sqlalchemy import text
@@ -13,7 +12,9 @@ from sqlalchemy.orm import Session
 from .llm_providers import LLMProviderFactory
 from .config import chatbot_config
 
-logger = logging.getLogger(__name__)
+from app.core.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class SQLGenerator:
@@ -123,7 +124,7 @@ Response format:
 
         Args:
             question: User's natural language question
-            provider_name: LLM provider to use (e.g., 'ollama', 'claude')
+            provider_name: LLM provider to use (e.g., 'claude-haiku-4-5-20251001')
             user_context: User's role, person_id, company_id
             financial_summary: Optional RAG context about user's finances
             conversation_history: Previous conversation messages
@@ -142,6 +143,10 @@ Response format:
         if financial_summary:
             user_prompt = f"User's Financial Context:\n{financial_summary}\n\n{user_prompt}"
 
+        logger.info("LLM exchange stage=sql_generation provider=%s", provider_name)
+        logger.debug("System prompt [sql_generation]: %s", system_prompt)
+        logger.debug("User prompt [sql_generation]: %s", user_prompt)
+
         # Query LLM
         try:
             response = await provider.query(
@@ -153,6 +158,7 @@ Response format:
 
             # Parse JSON response
             content = response["content"]
+            logger.debug("Response [sql_generation]: %s", content)
             try:
                 result = json.loads(content)
             except json.JSONDecodeError:

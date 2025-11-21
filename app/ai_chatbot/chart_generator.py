@@ -2,9 +2,15 @@
 Chart.js Configuration Generator
 Creates chart configurations from SQL query results
 """
+from __future__ import annotations
+
 import json
-from typing import Dict, Any, List, Optional, Literal
+from typing import Any, Dict, List, Literal, Optional, Sequence
 from .config import chatbot_config
+
+
+class ChartValidationError(ValueError):
+    """Raised when a chart descriptor is missing required axes or has bad fields."""
 
 
 class ChartGenerator:
@@ -25,10 +31,11 @@ class ChartGenerator:
         chart_type: Optional[Literal["bar", "line", "pie", "doughnut"]] = None,
         x_field: Optional[str] = None,
         y_field: Optional[str] = None,
-        title: Optional[str] = None
+        title: Optional[str] = None,
+        unit: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Generate Chart.js configuration from query results
+        Generate Chart.js configuration from query results (legacy auto-detect path).
 
         Args:
             data: List of result rows (dicts)
@@ -36,9 +43,7 @@ class ChartGenerator:
             x_field: Field for x-axis labels (auto-detected if None)
             y_field: Field for y-axis values (auto-detected if None)
             title: Chart title
-
-        Returns:
-            Chart.js configuration dict
+            unit: Optional unit hint (e.g., 'currency') to force currency formatting
         """
         if not data:
             return self._empty_chart_config()
@@ -56,7 +61,7 @@ class ChartGenerator:
         values = [float(row.get(y_field, 0)) for row in data]
 
         # Determine if values are currency
-        is_currency = self._is_currency_field(y_field)
+        is_currency = unit == "currency" or self._is_currency_field(y_field)
 
         # Build datasets
         if chart_type in ["pie", "doughnut"]:
@@ -94,7 +99,8 @@ class ChartGenerator:
         x_field: str,
         y_fields: List[str],
         chart_type: Literal["bar", "line"] = "bar",
-        title: Optional[str] = None
+        title: Optional[str] = None,
+        unit: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate multi-series chart (e.g., income vs expenses by month)
@@ -128,7 +134,7 @@ class ChartGenerator:
                 "tension": 0.4 if chart_type == "line" else 0
             })
 
-        is_currency = any(self._is_currency_field(f) for f in y_fields)
+        is_currency = unit == "currency" or any(self._is_currency_field(f) for f in y_fields)
 
         config = {
             "type": chart_type,
@@ -140,6 +146,149 @@ class ChartGenerator:
         }
 
         return config
+
+    def generate_chart_config_enforced(
+        self,
+        data: List[Dict[str, Any]],
+        descriptor: Dict[str, Any],
+        fallback_chart_type: Optional[str] = None,
+        title: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generate a chart honoring explicit descriptor fields with validation.
+
+        Raises ChartValidationError when required axes are missing or mismatched.
+        Falls back to legacy generation when no descriptor fields are provided.
+        """
+        if not data:
+            return self._empty_chart_config()
+
+        chart_type = descriptor.get("chart_type") or fallback_chart_type or "bar"
+        x_axis = descriptor.get("x_axis")
+        y_axis = descriptor.get("y_axis")
+        stack_by = descriptor.get("stack_by")
+        unit = descriptor.get("unit")
+        sort_direction = (descriptor.get("sort") or "").lower()
+
+        has_descriptor_fields = any([chart_type, x_axis, y_axis, stack_by, unit, sort_direction])
+        if not has_descriptor_fields:
+            return self.generate_chart_config(
+                data,
+                chart_type=chart_type,  # may be None -> auto detect
+                title=title,
+            )
+
+        if chart_type not in {"bar", "line", "pie", "doughnut"}:
+            raise ChartValidationError("chart_type must be one of bar|line|pie|doughnut")
+
+        if not x_axis and chart_type in {"bar", "line"}:
+            raise ChartValidationError("x_axis is required for bar and line charts")
+        if not x_axis and chart_type in {"pie", "doughnut"}:
+            raise ChartValidationError("x_axis is required for pie and doughnut charts")
+        if not y_axis:
+            raise ChartValidationError("y_axis is required to plot values")
+        if chart_type in {"pie", "doughnut"} and stack_by:
+            raise ChartValidationError("stack_by is not supported for pie/doughnut charts")
+
+        y_fields: Sequence[str] = y_axis if isinstance(y_axis, (list, tuple)) else [y_axis]
+        if chart_type in {"pie", "doughnut"} and len(y_fields) != 1:
+            raise ChartValidationError("pie/doughnut charts require a single y_axis value")
+
+        # Validate requested fields exist in data
+        sample = data[0]
+        missing_fields = [
+            field for field in [x_axis, stack_by, *y_fields] if field and field not in sample
+        ]
+        if missing_fields:
+            raise ChartValidationError(f"Fields not found in result set: {', '.join(missing_fields)}")
+
+        rows = list(data)
+        if sort_direction in {"asc", "desc"} and len(y_fields) == 1 and not stack_by:
+            key_field = y_fields[0]
+            reverse = sort_direction == "desc"
+            rows = sorted(rows, key=lambda r: float(r.get(key_field, 0) or 0), reverse=reverse)
+
+        if stack_by:
+            return self._generate_stacked_chart(rows, x_axis, y_fields[0], stack_by, chart_type, title, unit)
+
+        if len(y_fields) > 1:
+            if chart_type not in {"bar", "line"}:
+                raise ChartValidationError("Multiple y_axis values are only supported for bar/line charts")
+            return self.generate_multi_series_chart(
+                rows,
+                x_field=x_axis,
+                y_fields=list(y_fields),
+                chart_type=chart_type or "bar",
+                title=title,
+                unit=unit,
+            )
+
+        return self.generate_chart_config(
+            rows,
+            chart_type=chart_type,
+            x_field=x_axis,
+            y_field=y_fields[0],
+            title=title,
+            unit=unit,
+        )
+
+    def _generate_stacked_chart(
+        self,
+        data: List[Dict[str, Any]],
+        x_field: str,
+        y_field: str,
+        stack_by: str,
+        chart_type: Literal["bar", "line"],
+        title: Optional[str],
+        unit: Optional[str],
+    ) -> Dict[str, Any]:
+        if chart_type not in {"bar", "line"}:
+            raise ChartValidationError("stack_by is only supported for bar/line charts")
+
+        labels: list[str] = []
+        series_map: dict[str, list[float]] = {}
+
+        # Preserve the original order of labels as they appear
+        for row in data:
+            label_val = str(row.get(x_field, ""))
+            if label_val not in labels:
+                labels.append(label_val)
+
+        stack_values: dict[str, dict[str, float]] = {}
+        for row in data:
+            label_val = str(row.get(x_field, ""))
+            stack_val = str(row.get(stack_by, ""))
+            stack_values.setdefault(stack_val, {})
+            stack_values[stack_val][label_val] = float(row.get(y_field, 0) or 0)
+
+        for stack_val, label_map in stack_values.items():
+            series_map[stack_val] = [label_map.get(label, 0.0) for label in labels]
+
+        datasets = []
+        is_currency = unit == "currency" or self._is_currency_field(y_field)
+
+        for idx, (series_name, values) in enumerate(series_map.items()):
+            color = self.colors[idx % len(self.colors)]
+            datasets.append(
+                {
+                    "label": series_name.replace("_", " ").title(),
+                    "data": values,
+                    "backgroundColor": color,
+                    "borderColor": color,
+                    "borderWidth": 2,
+                    "tension": 0.4 if chart_type == "line" else 0,
+                    "stack": "stacked",
+                }
+            )
+
+        return {
+            "type": chart_type,
+            "data": {
+                "labels": labels,
+                "datasets": datasets,
+            },
+            "options": self._build_options(chart_type, is_currency, title, stacked=True),
+        }
 
     def _detect_fields(self, row: Dict[str, Any]) -> tuple[str, str]:
         """Auto-detect x and y fields from data structure"""
@@ -180,7 +329,8 @@ class ChartGenerator:
         self,
         chart_type: str,
         is_currency: bool,
-        title: Optional[str]
+        title: Optional[str],
+        stacked: bool = False,
     ) -> Dict[str, Any]:
         """Build Chart.js options configuration"""
 
@@ -209,6 +359,9 @@ class ChartGenerator:
                 "beginAtZero": True,
                 "ticks": {}
             }
+            if stacked:
+                y_axis_config["stacked"] = True
+                x_axis_config = {"stacked": True}
 
             # Currency formatting
             if is_currency:
@@ -217,6 +370,8 @@ class ChartGenerator:
             options["scales"] = {
                 "y": y_axis_config
             }
+            if stacked:
+                options["scales"]["x"] = x_axis_config
 
         # Tooltip configuration
         if is_currency:

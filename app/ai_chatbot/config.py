@@ -10,25 +10,18 @@ from pydantic import BaseModel, Field
 class LLMProviderConfig(BaseModel):
     """Configuration for LLM providers"""
 
-    # Ollama Configuration
-    ollama_base_url: str = Field(
-        default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    )
-    ollama_default_model: str = "llama3:latest"
-    ollama_timeout: int = 600  # 10 minutes
-
     # Claude Configuration
     claude_api_key: str = Field(
         default_factory=lambda: os.getenv("CLAUDE_API_KEY", "")
     )
-    claude_model: str = "claude-sonnet-4-20250514"
+    claude_model: str = "claude-haiku-4-5-20251001"
     claude_max_tokens: int = 2000
 
     # OpenAI Configuration
     openai_api_key: str = Field(
         default_factory=lambda: os.getenv("OPENAI_API_KEY", "")
     )
-    openai_model: str = "gpt-4o"
+    openai_model: str = "gpt-4o-mini"
     openai_max_tokens: int = 2000
 
 

@@ -29,21 +29,23 @@
           <span class="theme-toggle__icon">🌙</span>
           <span class="theme-toggle__label">Dark mode</span>
         </button>
+        <button
+          type="button"
+          id="chatbot-toggle"
+          class="chat-drawer-toggle"
+          aria-label="Toggle AI copilot"
+          aria-controls="dashboard-chat"
+          aria-expanded="false"
+        >
+          <span class="chat-drawer-toggle__icon">✨</span>
+          <span class="chat-drawer-toggle__copy">
+            <span class="chat-drawer-toggle__title">AI copilot</span>
+            <span class="chat-drawer-toggle__meta">Insights & charts</span>
+          </span>
+        </button>
         <a class="logout-link" href="{{ request.url_for('logout') }}">Log out</a>
       </div>
     </header>
-
-    <!-- Floating chatbot button toggles in-place chat workspace -->
-    <button
-      type="button"
-      id="chatbot-toggle"
-      class="floating-chatbot-button"
-      aria-label="Open AI Chat"
-      aria-expanded="false"
-      aria-controls="dashboard-chat"
-    >
-      💬
-    </button>
 
     <main class="page__content">
       <section class="card-grid" role="group" aria-label="Dashboard panels">
@@ -53,7 +55,7 @@
           data-panel-button="individuals"
           hx-get="{{ request.url_for('render_panel', panel_name='individuals') }}"
           hx-target="#dashboard-panel"
-          hx-swap="outerHTML"
+          hx-swap="innerHTML"
           aria-pressed="true"
         >
           <span class="card__label">Individuals</span>
@@ -66,7 +68,7 @@
           data-panel-button="companies"
           hx-get="{{ request.url_for('render_panel', panel_name='companies') }}"
           hx-target="#dashboard-panel"
-          hx-swap="outerHTML"
+          hx-swap="innerHTML"
           aria-pressed="false"
         >
           <span class="card__label">Companies</span>
@@ -79,7 +81,7 @@
           data-panel-button="transactions"
           hx-get="{{ request.url_for('render_panel', panel_name='transactions') }}"
           hx-target="#dashboard-panel"
-          hx-swap="outerHTML"
+          hx-swap="innerHTML"
           aria-pressed="false"
         >
           <span class="card__label">Transactions</span>
@@ -92,7 +94,7 @@
           data-panel-button="stocks"
           hx-get="{{ request.url_for('render_panel', panel_name='stocks') }}"
           hx-target="#dashboard-panel"
-          hx-swap="outerHTML"
+          hx-swap="innerHTML"
           aria-pressed="false"
         >
           <span class="card__label">Assets under management</span>
@@ -104,92 +106,182 @@
         </button>
       </section>
 
-      <section class="workspace" aria-label="Dashboard content and AI assistant" data-workspace>
+      <section
+        class="workspace"
+        aria-label="Dashboard content and AI assistant"
+        data-workspace
+        data-panel-target="#dashboard-panel"
+      >
         <div class="workspace__dashboard" id="dashboard-view">
           {% set chart = panel_chart %}
           {% set chart_type = panel_config.chart_type %}
           {% set list_id = panel_config.list_id %}
           {% set panel_key = panel_name | default('individuals') %}
           {% set view = panel_view %}
-          {% include 'admin/partials/panel.html' %}
+          <section class="details" id="dashboard-panel" data-panel="{{ panel_key }}">
+            {% include 'admin/partials/panel.html' %}
+          </section>
         </div>
 
         <aside class="workspace__chat" id="dashboard-chat" aria-label="AI assistant">
           <div class="chat-panel">
             <div class="chat-panel__header">
-              <div>
-                <p class="eyebrow">AI assistant</p>
+              <div class="chat-panel__header-copy">
+                <p class="eyebrow">AI copilot</p>
                 <h2 class="chat-panel__title">Chat-driven insights</h2>
-                <p class="chat-panel__hint">Toggle to split the dashboard and keep your chat in view.</p>
+                <p class="chat-panel__hint">
+                  Ask for spending breakdowns, ad-hoc KPIs or visual slices of the data.
+                </p>
               </div>
+              <button type="button" class="chat-panel__close" id="chat-close" aria-label="Close AI assistant">
+                ✕
+              </button>
             </div>
-            <div class="chat-panel__body" id="chat-panel-body">
-              <div class="chat-messages" id="chat-messages" aria-live="polite">
-                <div class="welcome-message">
-                  <p>💬 Ask for spending breakdowns, income trends, or specific categories.</p>
-                  <p>Charts and tables will replace the dashboard below using HTMX.</p>
-                </div>
-              </div>
 
-              <div class="chat-input-container">
-                <form
-                  id="chat-form"
-                  hx-post="/chatbot/query/htmx"
-                  hx-target="#dashboard-panel"
-                  hx-swap="outerHTML"
-                  hx-indicator="#loading-indicator"
-                >
-                  <input type="hidden" name="response_mode" value="visualization" />
-                  <div class="chat-input-row">
-                    <label class="chat-model-label" for="model-select">Model</label>
-                    <select id="model-select" name="model">
-                      <option value="ollama:llama3:latest">Llama 3 (charts + data)</option>
-                      <option value="ollama:deepseek-r1:8b">DeepSeek R1 8B</option>
-                      <option value="ollama:llama3.2:1b">Llama 3.2 1B (chat only)</option>
-                      <option value="claude">Claude Sonnet</option>
-                      <option value="chatgpt">GPT-4o</option>
-                    </select>
-                    <input type="hidden" name="model" id="model-input" value="ollama:llama3:latest" />
+            <div class="chat-panel__body" id="chat-panel-body">
+              <div class="chat-panel__scroll">
+                <div class="chat-messages" id="chat-messages" aria-live="polite">
+                  <div class="welcome-message">
+                    <p>💬 Ask about your spending, income trends, or any category you want to explore.</p>
+                    <p>Charts and tables will automatically appear on the left panel when needed.</p>
                   </div>
-                  <div class="input-wrapper">
-                    <input
-                      type="text"
-                      name="question"
-                      id="question-input"
-                      placeholder="Ask for dashboards, charts, or tables"
-                      autocomplete="off"
-                      required
-                    />
-                    <button type="submit" class="primary-button">
-                      <span>Send</span>
-                    </button>
-                  </div>
-                  <div class="loading-indicator" id="loading-indicator">
-                    <div class="spinner"></div>
-                    <span>Thinking...</span>
-                  </div>
-                </form>
-              </div>
-              <div id="chatbot-response-target" style="display: none;"></div>
+                </div>
+
+              <ul class="chat-quick-actions" aria-label="Suggested prompts">
+                <li>
+                  <button type="button" data-chat-suggestion="Show a bar chart of expenses by category for the last 30 days with x_axis=category and y_axis=total, sorted descending, using EUR.">
+                    Category spend (30d)
+                  </button>
+                </li>
+                <li>
+                  <button type="button" data-chat-suggestion="Compare monthly income vs expenses over the last 6 months as a grouped bar chart with x_axis=month and y_axis=[income_total,expenses], sorted ascending by month.">
+                    Income vs expenses (6m)
+                  </button>
+                </li>
+                <li>
+                  <button type="button" data-chat-suggestion="Plot an expense trend line for the last 180 days with x_axis=month and y_axis=total, sorted ascending by month.">
+                    Expense trend (180d)
+                  </button>
+                </li>
+                <li>
+                  <button type="button" data-chat-suggestion="List the top 5 spenders in the last 30 days as a bar chart with x_axis=party_name and y_axis=total, sorted descending.">
+                    Top spenders (30d)
+                  </button>
+                </li>
+              </ul>
+
+              <div id="chat-visualizations" class="chat-visualizations"></div>
             </div>
+
+            <div class="chat-input-container">
+              <form
+                id="chat-form"
+                data-chatbot-form
+                hx-post="/chatbot/query/htmx"
+                hx-target="#dashboard-panel"
+                hx-swap="innerHTML"
+                hx-indicator="#loading-indicator"
+              >
+                <input type="hidden" name="response_mode" value="visualization" />
+                <div class="chat-input-row">
+                  <label class="chat-model-label" for="model-select">Model</label>
+                  <select id="model-select" name="model">
+                    <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                    <option value="gpt-4o-mini">GPT 4o Mini</option>
+                  </select>
+                </div>
+                <div class="chat-input-block">
+                  <textarea
+                    name="question"
+                    id="question-input"
+                    class="chat-input-block__textarea"
+                    placeholder="Ask for dashboards, charts, or tables"
+                    autocomplete="off"
+                    rows="2"
+                    data-min-height="72"
+                    data-max-height="220"
+                    required
+                  ></textarea>
+                  <button type="submit" class="chat-input-block__button" id="send-button">
+                    <span>Send</span>
+                  </button>
+                </div>
+                <div class="loading-indicator" id="loading-indicator">
+                  <div class="spinner"></div>
+                  <span>Thinking...</span>
+                </div>
+              </form>
+            </div>
+            <div id="chatbot-response-target" style="display: none;"></div>
           </div>
         </aside>
       </section>
+      <div class="chat-scrim" data-chat-scrim aria-hidden="true"></div>
     </main>
 
     <footer class="page__footer">
-      <p>Wie dit leest is gek</p>
-      <p>Ik ben niet gek >:(</p>
+      <p>Data shown is for informational purposes only and not financial advice. © 2025</p>
     </footer>
 
     <script>
       (function () {
+        const workspace = document.querySelector('[data-workspace]');
+        const panelSelector = workspace?.dataset.panelTarget;
+        const getPanelContainer = () => {
+          if (panelSelector) {
+            return document.querySelector(panelSelector);
+          }
+          return document.getElementById('dashboard-panel');
+        };
+        let panelContainer = getPanelContainer();
+        const chatToggleButton = document.getElementById('chatbot-toggle');
+        const chatCloseButton = document.getElementById('chat-close');
+        const chatScrim = document.querySelector('[data-chat-scrim]');
+        const chatForm = document.querySelector('[data-chatbot-form]');
+        const getQuestionInput = () => document.getElementById('question-input');
+        const MAX_INPUT_HEIGHT = 180;
+
+        const emitChartResize = () =>
+          window.requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+
+        workspace?.addEventListener('transitionend', (event) => {
+          if (
+            event.target === workspace &&
+            (event.propertyName === 'grid-template-columns' || event.propertyName === 'width')
+          ) {
+            emitChartResize();
+          }
+        });
+
+        const state = {
+          activePanel: panelContainer?.dataset.panel || null,
+        };
+
+        const autosizeInput = (input) => {
+          if (!input) return;
+          input.style.height = 'auto';
+          const newHeight = Math.min(input.scrollHeight, MAX_INPUT_HEIGHT);
+          input.style.height = `${newHeight}px`;
+          input.style.overflowY = input.scrollHeight > MAX_INPUT_HEIGHT ? 'auto' : 'hidden';
+        };
+
+        const bindAutosize = () => {
+          const input = getQuestionInput();
+          if (!input || input.dataset.autosizeBound === 'true') return;
+          autosizeInput(input);
+          input.dataset.autosizeBound = 'true';
+          input.addEventListener('input', () => autosizeInput(input));
+        };
+
+        bindAutosize();
+
         const setActive = (panel) => {
           document.querySelectorAll('[data-panel-button]').forEach((button) => {
             const isActive = button.dataset.panelButton === panel;
             button.classList.toggle('is-active', isActive);
             button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
           });
+          state.activePanel = panel;
         };
 
         document.addEventListener('click', (event) => {
@@ -199,35 +291,55 @@
           }
         });
 
-        const workspace = document.querySelector('[data-workspace]');
-        const chatToggleButton = document.getElementById('chatbot-toggle');
-        const chatForm = document.getElementById('chat-form');
-
-        const updateWorkspaceState = (isOpen) => {
-          if (!workspace || !chatToggleButton) return;
-          workspace.classList.toggle('workspace--chat-open', isOpen);
-          chatToggleButton.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-          chatToggleButton.classList.toggle('is-open', isOpen);
+        const applyChatState = (isOpen) => {
+          workspace?.classList.toggle('workspace--chat-open', isOpen);
+          chatToggleButton?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+          chatToggleButton?.classList.toggle('is-open', isOpen);
+          document.body.classList.toggle('chat-open', isOpen);
+          emitChartResize();
         };
 
-        if (chatToggleButton) {
-          chatToggleButton.addEventListener('click', () => {
-            const isOpen = !(workspace?.classList.contains('workspace--chat-open'));
-            updateWorkspaceState(isOpen);
-          });
-        }
+        const isChatOpen = () => workspace?.classList.contains('workspace--chat-open');
+        const closeChat = () => applyChatState(false);
 
-        if (chatForm) {
-          chatForm.addEventListener('submit', () => {
-            updateWorkspaceState(true);
-          });
-        }
+        chatToggleButton?.addEventListener('click', () => {
+          if (isChatOpen()) {
+            closeChat();
+          } else {
+            applyChatState(true);
+          }
+        });
+        chatCloseButton?.addEventListener('click', closeChat);
+        chatScrim?.addEventListener('click', closeChat);
+        chatForm?.addEventListener('submit', () => applyChatState(true));
+
+        window.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' && isChatOpen()) {
+            closeChat();
+          }
+        });
 
         document.body.addEventListener('htmx:afterSwap', (event) => {
-          const { panel } = event.target.dataset || {};
-          if (panel) {
-            setActive(panel);
+          panelContainer = getPanelContainer();
+          const panelContainerEl = panelContainer;
+          const triggeredByChat = chatForm && event.detail?.requestConfig?.elt === chatForm;
+          const injectedPanelName =
+            event.target.dataset?.panel ||
+            panelContainerEl?.querySelector('[data-panel-name]')?.dataset.panelName;
+
+          if (panelContainerEl && injectedPanelName && !triggeredByChat) {
+            panelContainerEl.dataset.panel = injectedPanelName;
+            setActive(injectedPanelName);
           }
+
+          if (triggeredByChat) {
+            bindAutosize();
+          }
+
+          if (isChatOpen()) {
+            applyChatState(true);
+          }
+          emitChartResize();
         });
       })();
     </script>

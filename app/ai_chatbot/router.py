@@ -8,11 +8,11 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional, List, Literal
 from sqlalchemy.orm import Session
-import logging
+from app.core.logger import get_logger
 
 from .chatbot_core import FinancialChatbot
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Create router
 router = APIRouter(prefix="/chatbot", tags=["AI Chatbot"])
@@ -31,7 +31,7 @@ def configure_templates(templates_instance: Jinja2Templates):
 class ChatbotQueryRequest(BaseModel):
     """Request model for chatbot query"""
     question: str
-    model: str = "ollama:llama3:latest"
+    model: str = "claude-haiku-4-5-20251001"
     conversation_history: Optional[List[dict]] = None
     response_mode: Optional[Literal["visualization", "conversational"]] = None
     page_context: Optional[str] = None
@@ -57,7 +57,8 @@ _chatbot_instance = None
 def configure_dependencies(
     get_db: callable,
     get_user: callable,
-    database_schema: Optional[str] = None
+    database_schema: Optional[str] = None,
+    enable_sql_fallback: bool = False,
 ):
     """
     Configure dependencies for the chatbot router
@@ -66,12 +67,16 @@ def configure_dependencies(
         get_db: Dependency function that yields database session
         get_user: Dependency function that returns current user context
         database_schema: Optional custom database schema description
+        enable_sql_fallback: Gate legacy SQL generation when tool coverage is missing
     """
     global _get_db_session, _get_current_user, _chatbot_instance
 
     _get_db_session = get_db
     _get_current_user = get_user
-    _chatbot_instance = FinancialChatbot(database_schema)
+    _chatbot_instance = FinancialChatbot(
+        database_schema=database_schema,
+        enable_sql_fallback=enable_sql_fallback,
+    )
 
 
 def get_db_session():
@@ -122,7 +127,7 @@ async def chatbot_query(
 
     Request body:
     - question: Natural language question
-    - model: LLM provider (e.g., 'ollama:llama3:latest', 'claude', 'chatgpt')
+    - model: LLM provider (e.g., 'claude-haiku-4-5-20251001')
     - conversation_history: Optional list of previous messages
     - response_mode: Optional 'visualization' or 'conversational'
 
@@ -194,7 +199,7 @@ async def chatbot_query_htmx(
     try:
         form = await request.form()
         question = form.get("question", "")
-        model = form.get("model", "ollama:llama3:latest")
+        model = form.get("model", "claude-haiku-4-5-20251001")
         response_mode = form.get("response_mode")  # Get user's choice
 
         if not question:
