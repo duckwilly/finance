@@ -149,23 +149,23 @@
 
               <ul class="chat-quick-actions" aria-label="Suggested prompts">
                 <li>
-                  <button type="button" data-chat-suggestion="Render a horizontal bar chart showing the ten companies with the largest cash burn in the last 90 days. Query cash_flow_fact joined to reporting_period, party, and company_profile, filter to party.party_type = 'COMPANY', sum outflow_amount per company, sort descending, and label bars with company display names and USD totals.">
-                    Company cash burn
+                  <button type="button" data-chat-suggestion="Show a bar chart of expenses by category for the last 30 days with x_axis=category and y_axis=total, sorted descending, using EUR.">
+                    Category spend (30d)
                   </button>
                 </li>
                 <li>
-                  <button type="button" data-chat-suggestion="Create a grouped bar chart comparing payroll expense versus incoming cash for the five companies with the highest payroll totals over the last fiscal quarter. Use payroll_fact joined through employment_contract.employer_party_id to company parties (party.party_type = 'COMPANY') for payroll and use cash_flow_fact joined to section.name = 'income' for cash inflow. Show company names on the x-axis with USD values for both bars.">
-                    Payroll vs income
+                  <button type="button" data-chat-suggestion="Compare monthly income vs expenses over the last 6 months as a grouped bar chart with x_axis=month and y_axis=[income_total,expenses], sorted ascending by month.">
+                    Income vs expenses (6m)
                   </button>
                 </li>
                 <li>
-                  <button type="button" data-chat-suggestion="Build a stacked bar chart that breaks down the last 60 days of expenses by category for the five individuals with the highest overall spend. Use journal_line joined to account, party, category, and section; restrict to account.person_id IS NOT NULL and section.name = 'expense'; group by individual display_name and category, and show EUR totals.">
-                    Individual spend mix
+                  <button type="button" data-chat-suggestion="Plot an expense trend line for the last 180 days with x_axis=month and y_axis=total, sorted ascending by month.">
+                    Expense trend (180d)
                   </button>
                 </li>
                 <li>
-                  <button type="button" data-chat-suggestion="Plot a line chart showing the monthly unrealized profit trend for the eight individuals with the highest total brokerage market value. Use holding_performance_fact joined to party where party.party_type = 'INDIVIDUAL', roll up market_value and unrealized_pl by reporting_period label, order the months chronologically, and display EUR values.">
-                    Individual gainers
+                  <button type="button" data-chat-suggestion="List the top 5 spenders in the last 30 days as a bar chart with x_axis=party_name and y_axis=total, sorted descending.">
+                    Top spenders (30d)
                   </button>
                 </li>
               </ul>

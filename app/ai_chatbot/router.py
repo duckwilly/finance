@@ -8,11 +8,11 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional, List, Literal
 from sqlalchemy.orm import Session
-import logging
+from app.core.logger import get_logger
 
 from .chatbot_core import FinancialChatbot
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Create router
 router = APIRouter(prefix="/chatbot", tags=["AI Chatbot"])
@@ -57,7 +57,8 @@ _chatbot_instance = None
 def configure_dependencies(
     get_db: callable,
     get_user: callable,
-    database_schema: Optional[str] = None
+    database_schema: Optional[str] = None,
+    enable_sql_fallback: bool = False,
 ):
     """
     Configure dependencies for the chatbot router
@@ -66,12 +67,16 @@ def configure_dependencies(
         get_db: Dependency function that yields database session
         get_user: Dependency function that returns current user context
         database_schema: Optional custom database schema description
+        enable_sql_fallback: Gate legacy SQL generation when tool coverage is missing
     """
     global _get_db_session, _get_current_user, _chatbot_instance
 
     _get_db_session = get_db
     _get_current_user = get_user
-    _chatbot_instance = FinancialChatbot(database_schema)
+    _chatbot_instance = FinancialChatbot(
+        database_schema=database_schema,
+        enable_sql_fallback=enable_sql_fallback,
+    )
 
 
 def get_db_session():

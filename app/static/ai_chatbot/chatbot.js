@@ -114,8 +114,12 @@ window.handleChatbotResponse = function(responseData) {
 
     if (mode === 'visualization' && visualizationList.length > 0) {
         renderVisualizationStack(visualizationList);
-    } else if (mode === 'visualization' && chart_config) {
-        renderChart(chart_config, chart_title);
+    } else if (mode === 'visualization' && (chart_config || chart_title)) {
+        if (chart_config) {
+            renderChart(chart_config, chart_title);
+        } else {
+            renderChartError('Unable to render chart');
+        }
 
         if (table_data && table_data.length > 0) {
             renderTable(table_data);
@@ -192,6 +196,19 @@ function addErrorMessage(error) {
     errorDiv.textContent = `Error: ${error}`;
 
     chatMessages.appendChild(errorDiv);
+}
+
+function renderChartError(message) {
+    const stack = document.getElementById('chat-visualizations');
+    if (stack) {
+        stack.innerHTML = '';
+        const card = document.createElement('div');
+        card.className = 'chat-visualization__error';
+        card.textContent = message;
+        stack.appendChild(card);
+    } else {
+        addErrorMessage(message);
+    }
 }
 
 function renderChart(chartConfig, title, targetId = 'chart-container') {
@@ -290,7 +307,10 @@ function renderVisualizationStack(visualizations) {
     const stack = document.getElementById('chat-visualizations');
     if ((!stack || !visualizations.length)) {
         const primary = visualizations[0];
-        if (primary?.chart_config) {
+        if (!primary) return;
+        if (primary.chart_error) {
+            renderChartError(primary.chart_error);
+        } else if (primary.chart_config) {
             renderChart(primary.chart_config, primary.chart_title || primary.title);
         }
         if (primary?.table_data?.length) {
@@ -310,6 +330,13 @@ function renderVisualizationStack(visualizations) {
             titleEl.className = 'chat-visualization__title';
             titleEl.textContent = viz.chart_title || viz.title;
             card.appendChild(titleEl);
+        }
+
+        if (viz.chart_error) {
+            const errorEl = document.createElement('div');
+            errorEl.className = 'chat-visualization__error';
+            errorEl.textContent = viz.chart_error;
+            card.appendChild(errorEl);
         }
 
         if (viz.chart_config) {

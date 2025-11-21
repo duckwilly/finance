@@ -37,6 +37,14 @@ class PromptBuilder:
             f"- {item['keyword']}: {item['description']}" for item in self.allowed_visualizations
         )
 
+        chart_rules = (
+            "Chart type expectations:\n"
+            "- bar/line: require x_axis (label or time) and y_axis (one or more numeric fields); stack_by creates separate series per category.\n"
+            "- pie/doughnut: require x_axis (label) and a single y_axis; stack_by is not allowed.\n"
+            "Valid sort values: asc|desc applied to y_axis totals. Unit may be 'currency' to force currency formatting.\n"
+            "Always include x_axis for every visualization descriptor to avoid rendering failures."
+        )
+
         return (
             f"{self.APP_HEADER}\n"
             f"Current page: {page_context}.\n"
@@ -48,6 +56,7 @@ class PromptBuilder:
             f"{self.database_schema}\n\n"
             "Allowed visualization keywords (choose up to three distinct entries):\n"
             f"{visualization_lines}\n\n"
+            f"{chart_rules}\n\n"
             f"Response contract:\n{response_schema}"
         )
 
@@ -98,14 +107,29 @@ class PromptBuilder:
             "keyword": "monthly_expense_trend",
             "title": "Monthly expenses with rolling average",
             "chart_type": "line",
-            "kind": "chart"
+            "kind": "chart",
+            "x_axis": "month",
+            "y_axis": ["monthly_total", "rolling_3_month_avg"],
+            "stack_by": null,
+            "unit": "currency",
+            "sort": "asc"
         },
         {
             "keyword": "expenses_by_category",
             "title": "Top expense categories",
             "chart_type": "bar",
-            "kind": "table"
+            "kind": "table",
+            "x_axis": "category",
+            "y_axis": "total",
+            "stack_by": null,
+            "unit": "currency",
+            "sort": "desc"
         }
-    ]
+    ],
+    "chart_types": {
+        "bar": "Requires x_axis (categorical) and y_axis (numeric). Supports stack_by and multiple y_axis series.",
+        "line": "Requires x_axis (time or ordinal) and y_axis (numeric). Supports multiple y_axis series.",
+        "pie": "Requires x_axis (label) and a single y_axis (numeric). No stack_by.",
+        "doughnut": "Same as pie."
+    }
 }"""
-
