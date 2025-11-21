@@ -144,7 +144,8 @@ class ToolRegistry:
             "Examples: leaderboard metric=expenses direction=top party_type=company limit=5; "
             "leaderboard metric=net_stock_gains direction=bottom party_type=individual limit=10; "
             "leaderboard metric=category_expenses:travel direction=top days=90; "
-            "party_insights party_name=alex metric=income granularity=monthly."
+            "party_insights party_name=alex metric=income granularity=monthly; "
+            "party_insights party_id=20 party_type=individual metric=summary."
         )
         return "\n".join(lines)
 

@@ -491,31 +491,34 @@ def party_insights(
 
         # Try explicit party id first (authoritative even if type hint disagrees)
         if party_id is not None:
-            # Always try org mapping first so company ids remain stable
-            mapped_org = session.execute(
-                base_query.where(OrgPartyMap.org_id == party_id)
-            ).first()
-            if mapped_org:
-                return (
-                    mapped_org.party_id,
-                    mapped_org.display_name,
-                    mapped_org.party_type,
-                    mapped_org.user_id,
-                    mapped_org.org_id,
-                )
-
-            # Next try legacy user mapping
-            mapped_user = session.execute(
-                base_query.where(UserPartyMap.user_id == party_id)
-            ).first()
-            if mapped_user:
-                return (
-                    mapped_user.party_id,
-                    mapped_user.display_name,
-                    mapped_user.party_type,
-                    mapped_user.user_id,
-                    mapped_user.org_id,
-                )
+            mapping_order = (
+                ["org", "user"] if party_type_filter == PartyType.COMPANY else ["user", "org"]
+            )
+            for mapping in mapping_order:
+                if mapping == "org":
+                    mapped_org = session.execute(
+                        base_query.where(OrgPartyMap.org_id == party_id)
+                    ).first()
+                    if mapped_org:
+                        return (
+                            mapped_org.party_id,
+                            mapped_org.display_name,
+                            mapped_org.party_type,
+                            mapped_org.user_id,
+                            mapped_org.org_id,
+                        )
+                else:
+                    mapped_user = session.execute(
+                        base_query.where(UserPartyMap.user_id == party_id)
+                    ).first()
+                    if mapped_user:
+                        return (
+                            mapped_user.party_id,
+                            mapped_user.display_name,
+                            mapped_user.party_type,
+                            mapped_user.user_id,
+                            mapped_user.org_id,
+                        )
 
             record = session.execute(
                 base_query.where(Party.id == party_id)
