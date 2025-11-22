@@ -24,7 +24,7 @@ We moeten nog even kijken hoe we dit willen verdelen. Check zelf maar welke onde
     - Individual dashboard
     - Insights using AI chatbot
         - Use an example of a company trending down or up with their profits, get AI to generate a chart and table showing the trend
-    (- Show log (A))
+    - Show log (A)
 - AI chatbot features (A)
     - Prompt assembly
     - JSON response
