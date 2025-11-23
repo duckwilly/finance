@@ -10,20 +10,26 @@
     <script src="{{ url_for('static', path='js/presentation.js') }}" defer></script>
   </head>
   <body
-    class="presentation"
+    class="presentation page"
     data-presentation-root
     data-slides='{{ slides_data | tojson }}'
     data-active-slide="{{ active_slide.slug }}"
     data-slide-endpoint-template="{{ request.url_for('render_slide', slug='__SLUG__') }}"
   >
-    <header class="presentation__header">
-      <div>
+    <header class="page__header presentation__header">
+      <div class="page__headline">
         <p class="eyebrow">Finance platform</p>
-        <h1 class="presentation__title">Product presentation</h1>
-        <p class="presentation__subtitle">Click through the storyboard or use your arrow keys for smooth transitions.</p>
+        <h1 class="page__title">Product presentation</h1>
       </div>
-      <div class="presentation__header-actions">
-        <a class="presentation__back" href="{{ request.url_for('read_dashboard') }}">Back to dashboard</a>
+      <div class="page__meta">
+        <div class="badge">Presentation deck</div>
+        <a class="chat-drawer-toggle" href="{{ request.url_for('read_dashboard') }}">
+          <span class="chat-drawer-toggle__icon">🏠</span>
+          <span class="chat-drawer-toggle__copy">
+            <span class="chat-drawer-toggle__title">Return to dashboard</span>
+          </span>
+        </a>
+        <a class="logout-link" href="{{ request.url_for('logout') }}">Log out</a>
       </div>
     </header>
 
@@ -52,16 +58,22 @@
         </div>
         <ol class="presentation__nav-list">
           {% for slide in slides %}
-          <li>
+          {% set order = slide.order or '%02d' % loop.index %}
+          {% set section = order.split('.')[0] %}
+          {% set is_sub = '.' in order %}
+          <li data-section="{{ section }}" data-is-sub="{{ 'true' if is_sub else 'false' }}">
             <button
               type="button"
               class="presentation__nav-link"
               data-slide="{{ slide.slug }}"
+              data-order="{{ order }}"
+              data-root="{{ section }}"
+              data-is-sub="{{ 'true' if is_sub else 'false' }}"
               hx-get="{{ request.url_for('render_slide', slug=slide.slug) }}"
               hx-target="#slide-stage"
               hx-swap="innerHTML transition:true"
             >
-              <span class="presentation__nav-label">{{ slide.order or '%02d' % loop.index }}</span>
+              <span class="presentation__nav-label">{{ order }}</span>
               <span class="presentation__nav-body">
                 <span class="presentation__nav-title-text">{{ slide.title }}</span>
                 <span class="presentation__nav-summary">{{ slide.summary }}</span>

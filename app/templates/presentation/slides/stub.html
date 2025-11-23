@@ -1,0 +1,17 @@
+{% set current_slide = slide if slide is defined else active_slide %}
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">Placeholder</p>
+    <h2 class="slide__title">{{ current_slide.title }}</h2>
+    <p class="slide__lede">{{ current_slide.summary }}</p>
+  </header>
+  <div class="slide__content">
+    <div class="slide__callout">
+      <p class="slide__callout-title">Stub slide</p>
+      <p>
+        Content for {{ current_slide.order or current_slide.slug }} follows the outline in PRESENTATION.md. Replace this copy
+        with the demo narrative, screenshots, or charts you want to showcase.
+      </p>
+    </div>
+  </div>
+</article>

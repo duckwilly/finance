@@ -6,7 +6,10 @@
   let activeSlug = root.dataset.activeSlide;
   const endpointTemplate = root.dataset.slideEndpointTemplate;
   const stage = document.querySelector('#slide-stage');
+  const stageContainer = document.querySelector('.presentation__stage');
   const nav = document.querySelector('[data-slide-nav]');
+  const navList = nav?.querySelector('.presentation__nav-list');
+  const navHeader = nav?.querySelector('.presentation__nav-header');
   const layout = document.querySelector('.presentation__layout');
   const navToggle = document.querySelector('[data-nav-toggle]');
   const progressLabel = document.querySelector('[data-progress-label]');
@@ -15,6 +18,27 @@
 
   const slugIndex = (slug) => slides.findIndex((item) => item.slug === slug);
   const endpointFor = (slug) => endpointTemplate.replace('__SLUG__', slug);
+  const getActiveSlide = () => slides[slugIndex(activeSlug)];
+  const getRoot = (order, fallbackIndex) => {
+    const value = order || String(fallbackIndex);
+    return value.split('.')[0];
+  };
+
+  const syncNavHeight = () => {
+    if (!nav) return;
+    const reference = stageContainer || stage;
+    if (!reference) return;
+    const stageHeight = reference.getBoundingClientRect().height;
+    if (!stageHeight) return;
+    nav.style.maxHeight = `${stageHeight}px`;
+    nav.style.height = `${stageHeight}px`;
+    if (navList && navHeader) {
+      const styles = getComputedStyle(nav);
+      const paddingY = parseFloat(styles.paddingTop || '0') + parseFloat(styles.paddingBottom || '0');
+      const available = stageHeight - navHeader.offsetHeight - paddingY - 8;
+      navList.style.maxHeight = `${Math.max(available, 120)}px`;
+    }
+  };
 
   const updateProgress = () => {
     const index = slugIndex(activeSlug);
@@ -29,14 +53,25 @@
     }
     updateNav();
     updateArrows();
+    syncNavHeight();
   };
 
   const updateNav = () => {
     if (!nav) return;
+    const active = getActiveSlide();
+    const activeIndex = slugIndex(activeSlug);
+    const activeOrder = active?.order || String(activeIndex + 1);
+    const activeRoot = getRoot(activeOrder, activeIndex + 1);
     const navLinks = nav.querySelectorAll('[data-slide]');
     navLinks.forEach((link) => {
       const isActive = link.dataset.slide === activeSlug;
       link.setAttribute('aria-current', isActive ? 'true' : 'false');
+      const isSub = link.dataset.isSub === 'true';
+      const linkRoot = link.dataset.root || '';
+      const shouldShow = !isSub || linkRoot === activeRoot;
+      const item = link.closest('li');
+      if (item) item.hidden = !shouldShow;
+      link.tabIndex = shouldShow ? 0 : -1;
     });
   };
 
@@ -131,9 +166,12 @@
   if (window.htmx && stage) {
     window.htmx.on(stage, 'htmx:afterSwap', () => {
       updateProgress();
+      requestAnimationFrame(syncNavHeight);
     });
   }
 
   updateProgress();
   setNavCollapsed(false);
+  window.addEventListener('resize', syncNavHeight);
+  window.addEventListener('load', syncNavHeight, { once: true });
 })();
