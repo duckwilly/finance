@@ -1,0 +1,25 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">Architecture</p>
+    <h2 class="slide__title">Architecture & tech stack</h2>
+    <p class="slide__lede">Layered FastAPI app with SQLAlchemy persistence and server-rendered UX enhanced by HTMX interactions.</p>
+  </header>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Stack</h3>
+      <ul class="slide__bullets">
+        <li>Backend: FastAPI on Python 3.11 with routers for dashboards and authentication.</li>
+        <li>Persistence: MariaDB via SQLAlchemy 2.x and Alembic-ready migrations.</li>
+        <li>Presentation: Jinja2 templates, static CSS/JS, HTMX for partial swaps and smooth transitions.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="slide__section-title">Patterns</h3>
+      <ul class="slide__bullets">
+        <li>Service layer encapsulates metrics and chart assembly for admin panels.</li>
+        <li>Security middleware keeps admin-only surfaces scoped, while template responses stay cache-friendly.</li>
+        <li>Static assets are mounted at <code>/static</code> so the presentation can live inside the product chrome.</li>
+      </ul>
+    </div>
+  </div>
+</article>

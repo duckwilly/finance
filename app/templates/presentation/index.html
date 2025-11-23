@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Finance presentation</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/base.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', path='css/presentation.css') }}" />
+    <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+    <script src="{{ url_for('static', path='js/presentation.js') }}" defer></script>
+  </head>
+  <body
+    class="presentation"
+    data-presentation-root
+    data-slides='{{ slides_data | tojson }}'
+    data-active-slide="{{ active_slide.slug }}"
+    data-slide-endpoint-template="{{ request.url_for('render_slide', slug='__SLUG__') }}"
+  >
+    <header class="presentation__header">
+      <div>
+        <p class="eyebrow">Finance platform</p>
+        <h1 class="presentation__title">Product presentation</h1>
+        <p class="presentation__subtitle">Click through the storyboard or use your arrow keys for smooth transitions.</p>
+      </div>
+      <div class="presentation__header-actions">
+        <a class="presentation__back" href="{{ request.url_for('read_dashboard') }}">Back to dashboard</a>
+      </div>
+    </header>
+
+    <div class="presentation__layout">
+      <aside class="presentation__nav" data-slide-nav>
+        <div class="presentation__nav-header">
+          <div>
+            <p class="eyebrow">Navigation</p>
+            <h2 class="presentation__nav-title">Topics</h2>
+          </div>
+          <button type="button" class="presentation__nav-toggle" data-nav-toggle aria-expanded="true">
+            Collapse
+          </button>
+        </div>
+        <ol class="presentation__nav-list">
+          {% for slide in slides %}
+          <li>
+            <button
+              type="button"
+              class="presentation__nav-link"
+              data-slide="{{ slide.slug }}"
+              hx-get="{{ request.url_for('render_slide', slug=slide.slug) }}"
+              hx-target="#slide-stage"
+              hx-swap="innerHTML transition:true"
+            >
+              <span class="presentation__nav-label">{{ '%02d' % loop.index }}</span>
+              <span class="presentation__nav-body">
+                <span class="presentation__nav-title-text">{{ slide.title }}</span>
+                <span class="presentation__nav-summary">{{ slide.summary }}</span>
+              </span>
+            </button>
+          </li>
+          {% endfor %}
+        </ol>
+      </aside>
+
+      <section class="presentation__stage" aria-live="polite">
+        <div class="presentation__slide-stage" id="slide-stage" hx-swap="innerHTML transition:true">
+          {% include active_slide.template %}
+        </div>
+
+        <div class="presentation__controls" aria-label="Slide controls">
+          <div class="presentation__progress" data-progress-label>
+            {{ '%02d' % 1 }} / {{ '%02d' % slides|length }} — {{ active_slide.title }}
+          </div>
+          <div class="presentation__control-buttons">
+            <button type="button" class="presentation__arrow" data-prev aria-label="Previous slide">←</button>
+            <button type="button" class="presentation__arrow" data-next aria-label="Next slide">→</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>
