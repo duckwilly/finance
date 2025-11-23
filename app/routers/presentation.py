@@ -187,7 +187,7 @@ SLIDES: tuple[Slide, ...] = (
     Slide(
         slug="show-log",
         title="Log tonen",
-        template="presentation/slides/stub.html",
+        template="presentation/slides/show_log.html",
         summary="Logging views voor demo's en audits.",
         order="4.6",
     ),

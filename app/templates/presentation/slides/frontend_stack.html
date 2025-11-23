@@ -22,7 +22,7 @@
     <div>
       <h3 class="slide__section-title">HTMX voor interactiviteit</h3>
       <p>HTMX voegt moderne interactiviteit toe zonder complexe JavaScript frameworks. Hier is een voorbeeld van hoe dashboard panels worden geladen:</p>
-      <pre class="slide__code"><code>&lt;button
+      <pre class="slide__code"><code class="language-html">&lt;button
   type="button"
   hx-get="/dashboard/panel/individuals"
   hx-target="#dashboard-panel"
@@ -41,13 +41,13 @@
     <div>
       <h3 class="slide__section-title">Chart.js voor visualisaties</h3>
       <p>Chart configuraties worden server-side gegenereerd en via data attributes doorgegeven:</p>
-      <pre class="slide__code"><code>&lt;div data-chart data-chart-type="pie"
+      <pre class="slide__code"><code class="language-html">&lt;div data-chart data-chart-type="pie"
      data-chart-config='{"labels": [...], 
                         "values": [...]}'&gt;
   &lt;canvas&gt;&lt;/canvas&gt;
 &lt;/div&gt;</code></pre>
       <p>JavaScript initialiseert automatisch de charts:</p>
-      <pre class="slide__code"><code>const chart = new Chart(canvas, {
+      <pre class="slide__code"><code class="language-javascript">const chart = new Chart(canvas, {
   type: 'pie',
   data: { labels: config.labels, 
           datasets: [{ data: config.values }] }
@@ -62,7 +62,7 @@
     <div>
       <h3 class="slide__section-title">Vanilla JavaScript</h3>
       <p>Minimale custom JavaScript voor specifieke functionaliteit. Bijvoorbeeld list filtering:</p>
-      <pre class="slide__code"><code>searchInput.addEventListener('input', () => {
+      <pre class="slide__code"><code class="language-javascript">searchInput.addEventListener('input', () => {
   const term = searchInput.value.toLowerCase();
   rows.forEach(row => {
     const matches = row.dataset.searchText
@@ -71,7 +71,7 @@
   });
 });</code></pre>
       <p>Of theme switching met localStorage:</p>
-      <pre class="slide__code"><code>function toggleTheme() {
+      <pre class="slide__code"><code class="language-javascript">function toggleTheme() {
   const isDark = root.dataset.theme === 'dark';
   root.dataset.theme = isDark ? 'light' : 'dark';
   localStorage.setItem('theme', root.dataset.theme);

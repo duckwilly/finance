@@ -10,7 +10,7 @@
     <div>
       <h3 class="slide__section-title">MariaDB op Docker</h3>
       <p>De database draait in een Docker container voor eenvoudige setup:</p>
-      <pre class="slide__code"><code>services:
+      <pre class="slide__code"><code class="language-yaml">services:
   db:
     image: mariadb:11
     container_name: finance-mariadb
@@ -33,7 +33,7 @@
     <div>
       <h3 class="slide__section-title">Database connectie</h3>
       <p>SQLAlchemy maakt verbinding met de database:</p>
-      <pre class="slide__code"><code>def create_engine_from_settings():
+      <pre class="slide__code"><code class="language-python">def create_engine_from_settings():
     settings = get_settings()
     return create_engine(
         f"mysql+pymysql://{settings.database.user}:"
@@ -43,7 +43,7 @@
         f"{settings.database.name}"
     )</code></pre>
       <p>Connection string wordt opgebouwd uit environment variabelen:</p>
-      <pre class="slide__code"><code>DB_HOST=127.0.0.1
+      <pre class="slide__code"><code class="language-bash">DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_NAME=finance
 DB_USER=app
@@ -57,7 +57,7 @@ DB_PASSWORD=apppwd</code></pre>
     <div>
       <h3 class="slide__section-title">Schema en migraties</h3>
       <p>Database schema wordt gedefinieerd in SQL:</p>
-      <pre class="slide__code"><code>-- sql/schema.sql
+      <pre class="slide__code"><code class="language-sql">-- sql/schema.sql
 CREATE TABLE parties (
     id INT PRIMARY KEY AUTO_INCREMENT,
     party_type VARCHAR(20) NOT NULL,
@@ -79,13 +79,13 @@ CREATE TABLE accounts (
     <div>
       <h3 class="slide__section-title">Seed data</h3>
       <p>Synthetische data wordt gegenereerd en geladen:</p>
-      <pre class="slide__code"><code># Genereer seed data
+      <pre class="slide__code"><code class="language-bash"># Genereer seed data
 python scripts/gen_seed_data.py
 
 # Laad data in database
 python scripts/load_csvs.py</code></pre>
       <p>Data wordt opgeslagen in CSV bestanden:</p>
-      <pre class="slide__code"><code>data/seed/
+      <pre class="slide__code"><code class="language-bash">data/seed/
   ├── parties.csv
   ├── accounts.csv
   ├── journal_entries.csv

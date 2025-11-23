@@ -167,7 +167,16 @@
     window.htmx.on(stage, 'htmx:afterSwap', () => {
       updateProgress();
       requestAnimationFrame(syncNavHeight);
+      // Re-highlight code blocks after HTMX swap
+      if (window.Prism) {
+        window.Prism.highlightAll();
+      }
     });
+  }
+
+  // Initial highlight on page load
+  if (window.Prism) {
+    window.Prism.highlightAll();
   }
 
   updateProgress();

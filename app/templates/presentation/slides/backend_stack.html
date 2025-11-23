@@ -22,7 +22,7 @@
     <div>
       <h3 class="slide__section-title">Voorbeeld: Dashboard route</h3>
       <p>Een concrete route die een dashboard toont:</p>
-      <pre class="slide__code"><code>@router.get("/dashboard/")
+      <pre class="slide__code"><code class="language-python">@router.get("/dashboard/")
 async def read_dashboard(
     session: Session = Depends(get_db_session),
     admin_service: AdminService = Depends(get_admin_service)
@@ -41,12 +41,12 @@ async def read_dashboard(
     <div>
       <h3 class="slide__section-title">Database modellen</h3>
       <p>Elke tabel in de database heeft een Python class:</p>
-      <pre class="slide__code"><code>class Party(Base):
+      <pre class="slide__code"><code class="language-python">class Party(Base):
     id: Mapped[int]
     name: Mapped[str]
     party_type: Mapped[str]</code></pre>
       <p>Dit maakt het makkelijk om data op te halen:</p>
-      <pre class="slide__code"><code># Vind alle individuen
+      <pre class="slide__code"><code class="language-python"># Vind alle individuen
 individuals = session.query(Party)
     .filter(Party.party_type == "individual")
     .all()</code></pre>
@@ -55,7 +55,7 @@ individuals = session.query(Party)
     <div>
       <h3 class="slide__section-title">Service layer</h3>
       <p>Berekeningen en business logica zitten in services:</p>
-      <pre class="slide__code"><code>class AdminService:
+      <pre class="slide__code"><code class="language-python">class AdminService:
     def get_metrics(self, session):
         # Tel aantal individuen
         count = session.query(Party).count()
