@@ -14,12 +14,13 @@ from app.core.security import AuthenticatedUser, require_admin_user
 from app.core.templates import templates
 from app.db.session import get_sessionmaker
 from app.models import AppUser, OrgPartyMap, UserPartyMap
-from app.services import IndividualsService
+from app.services import AdminService, IndividualsService
 
 LOGGER = get_logger(__name__)
 router = APIRouter(prefix="/presentation", tags=["presentation"])
 SESSION_FACTORY: sessionmaker = get_sessionmaker()
 INDIVIDUALS_SERVICE = IndividualsService()
+ADMIN_SERVICE = AdminService()
 
 
 @dataclass(frozen=True)
@@ -115,6 +116,13 @@ SLIDES: tuple[Slide, ...] = (
         template="presentation/slides/admin_dashboard.html",
         summary="Navigatie voor zoekbare lijsten van personen, bedrijven en transacties.",
         order="3.1",
+    ),
+    Slide(
+        slug="admin-dashboard-build",
+        title="Admin dashboard: details",
+        template="presentation/slides/admin_dashboard_build.html",
+        summary="De opbouw van het admindashboard",
+        order="3.1.1",
     ),
     Slide(
         slug="company-dashboard",
@@ -214,6 +222,18 @@ def _load_individual_dashboard(user_id: int):
         session.close()
 
 
+def _load_income_chart() -> dict[str, object] | None:
+    session = SESSION_FACTORY()
+    try:
+        charts = ADMIN_SERVICE.get_dashboard_charts(session)
+        return charts.individuals_income.model_dump()
+    except Exception:
+        LOGGER.exception("Failed to load income chart for presentation slide")
+        return None
+    finally:
+        session.close()
+
+
 def _load_demo_targets() -> dict[str, int | None]:
     session = SESSION_FACTORY()
     try:
@@ -240,6 +260,8 @@ def _load_demo_targets() -> dict[str, int | None]:
 def _get_slide_payload(slide: Slide) -> dict[str, object]:
     if slide.slug in {"admin-dashboard", "company-dashboard", "individual-dashboard"}:
         return {"demo_targets": _load_demo_targets()}
+    if slide.slug == "admin-dashboard-build":
+        return {"income_chart": _load_income_chart()}
     if slide.slug == "simulated-data":
         return {"individual_dashboard": _load_individual_dashboard(3)}
     return {}

@@ -1,0 +1,107 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">Admin dashboard</p>
+    <h2 class="slide__title">De opbouw van het admindashboard</h2>
+  </header>
+
+  {% set income_chart = slide_payload.get('income_chart') if slide_payload else None %}
+
+  <div class="slide__content">
+    <h3 class="slide__section-title">ORM-laag richting database</h3>
+    <ul class="slide__bullets">
+      <li><code>app/db/session.py</code> bouwt één <code>sessionmaker</code> op onze MariaDB-engine.</li>
+      <li>Services werken met SQLAlchemy.</li>
+      <li>We gebruiken geen raw SQL: alles is via declarative modellen (<code>Party</code>, <code>EmploymentContract</code>, <code>PayrollFact</code>, ...).</li>
+    </ul>
+    <div class="slide__callout code-shell" aria-label="Session helper">
+      <div class="code-block">
+        <code># app/db/session.py
+engine = create_sync_engine(url)
+SESSION_FACTORY = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    expire_on_commit=False,
+)</code>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide__content">
+    <h3 class="slide__section-title">Van query naar chart: income brackets</h3>
+    {% if income_chart %}
+    <div class="slide__callout" style="max-width: 640px; margin: 0 auto 1.5rem;">
+      <div
+        class="chart-card"
+        data-chart
+        data-chart-type="pie"
+        data-chart-config='{{ income_chart | tojson }}'
+      >
+        <div class="chart-card__header">
+          <h4 class="chart-card__title">{{ income_chart.title }}</h4>
+          {% if income_chart.hint %}
+          <p class="chart-card__hint">{{ income_chart.hint }}</p>
+          {% endif %}
+        </div>
+        <div class="chart-card__canvas">
+          <canvas role="img" aria-label="{{ income_chart.title }}"></canvas>
+        </div>
+      </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+    <script src="{{ url_for('static', path='js/admin-charts.js') }}" defer></script>
+    {% endif %}
+    <ul class="slide__bullets">
+      <li><code>AdminService.get_individual_overview</code> laadt alle individuen, pakt hun laatste payroll-fact en berekent het salaris per jaar.</li>
+      <li>Elke rij wordt in een inkomstenbucket geplaatst (<code>_categorize_income</code>) en tegelijk in een list view gestopt.</li>
+      <li><code>get_dashboard_charts</code> leest dezelfde cache en vormt daar de "Users by income bracket" pie chart van.</li>
+    </ul>
+    <div class="slide__callout code-shell" aria-label="Income buckets via SQLAlchemy">
+      <div class="code-block">
+        <code># app/services/admin_service.py
+income_totals = (
+    select(
+        EmploymentContract.employee_party_id.label("party_id"),
+        func.sum(PayrollFact.gross_amount).label("monthly_income"),
+    )
+    .join(ReportingPeriod, ReportingPeriod.id == PayrollFact.reporting_period_id)
+    .join(EmploymentContract, EmploymentContract.id == PayrollFact.contract_id)
+    .join(latest_pay_periods, and_(...))
+    .group_by(EmploymentContract.employee_party_id)
+)
+
+for record in session.execute(rows_stmt):
+    monthly_income = Decimal(record.monthly_income or 0)
+    annual_income = monthly_income * Decimal(12)
+    income_bucket = self._categorize_income(annual_income)
+    income_counts[income_bucket] += 1
+
+income_values = [float(self._income_distribution[label]) for label, *_ in INCOME_BUCKETS]
+charts.individuals_income = PieChartData(
+    title="Users by income bracket",
+    labels=[label for label, *_ in INCOME_BUCKETS],
+    values=income_values,
+)</code>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide__content">
+    <h3 class="slide__section-title">HTMX swap: kaarten wisselen de viewer</h3>
+    <ul class="slide__bullets">
+      <li>Kaarten zijn knoppen met <code>hx-get</code> naar <code>/dashboard/panel/{panel}</code> en targetten <code>#dashboard-panel</code>.</li>
+      <li>Htmx vervangt alleen het panelgedeelte (<code>hx-swap="innerHTML"</code>).</li>
+    </ul>
+    <div class="slide__callout code-shell" aria-label="HTMX card swap">
+      <div class="code-block">
+        <code>&lt;button
+  class="card card--action"
+  data-panel-button="companies"
+  hx-get="{{ request.url_for('render_panel', panel_name='companies') }}"
+  hx-target="#dashboard-panel"
+  hx-swap="innerHTML"&gt;
+  &lt;span class="card__label"&gt;Companies&lt;/span&gt;
+&lt;/button&gt;</code>
+      </div>
+    </div>
+  </div>
+</article>
