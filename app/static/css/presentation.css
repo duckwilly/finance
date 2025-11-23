@@ -65,6 +65,11 @@
   grid-template-columns: 320px minmax(0, 1fr);
   gap: 1.5rem;
   align-items: start;
+  transition: grid-template-columns 200ms ease;
+}
+
+.presentation__layout.is-nav-collapsed {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .presentation__nav {

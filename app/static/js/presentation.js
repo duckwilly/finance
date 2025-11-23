@@ -7,6 +7,7 @@
   const endpointTemplate = root.dataset.slideEndpointTemplate;
   const stage = document.querySelector('#slide-stage');
   const nav = document.querySelector('[data-slide-nav]');
+  const layout = document.querySelector('.presentation__layout');
   const navToggle = document.querySelector('[data-nav-toggle]');
   const progressLabel = document.querySelector('[data-progress-label]');
   const prevButton = document.querySelector('[data-prev]');
@@ -95,6 +96,9 @@
     const isCollapsed = nav.classList.toggle('is-collapsed');
     navToggle.textContent = isCollapsed ? 'Expand' : 'Collapse';
     navToggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+    if (layout) {
+      layout.classList.toggle('is-nav-collapsed', isCollapsed);
+    }
   };
 
   if (nav) {
