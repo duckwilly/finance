@@ -91,7 +91,7 @@
 
         <div class="presentation__controls" aria-label="Slide controls">
           <div class="presentation__progress" data-progress-label>
-            {{ active_slide.order or '%02d' % 1 }} / {{ '%02d' % slides|length }} — {{ active_slide.title }}
+            {{ '%02d' % (active_slide_index or 1) }} / {{ '%02d' % slides|length }} — {{ active_slide.title }}
           </div>
           <div class="presentation__control-buttons">
             <button type="button" class="presentation__arrow" data-prev aria-label="Previous slide">←</button>

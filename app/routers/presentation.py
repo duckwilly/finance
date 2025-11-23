@@ -99,7 +99,7 @@ SLIDES: tuple[Slide, ...] = (
         slug="features",
         title="Demo",
         template="presentation/slides/features.html",
-        summary="Kort overzicht van de onderdelen die we live laten zien.",
+        summary="Live demo van de dashboards",
         order="4",
     ),
     Slide(
@@ -245,6 +245,13 @@ def _get_slide_payload(slide: Slide) -> dict[str, object]:
     return {}
 
 
+def _get_slide_index(slide: Slide) -> int:
+    for index, current in enumerate(SLIDES, start=1):
+        if current.slug == slide.slug:
+            return index
+    return 1
+
+
 @router.get("/", summary="Interactive presentation", response_class=HTMLResponse)
 async def presentation_home(
     request: Request,
@@ -256,6 +263,7 @@ async def presentation_home(
         "request": request,
         "slides": SLIDES,
         "active_slide": active_slide,
+        "active_slide_index": _get_slide_index(active_slide),
         "slides_data": _serialize_slides(SLIDES),
         "slide_payload": _get_slide_payload(active_slide),
     }

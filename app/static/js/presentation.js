@@ -45,12 +45,11 @@
   const updateProgress = () => {
     const index = slugIndex(activeSlug);
     const total = slides.length;
+    if (index === -1) return;
     const slide = slides[index];
     if (progressLabel && slide) {
-      const activeOrder = slide.order || String(index + 1);
-      const finalOrder = slides[total - 1]?.order || String(total);
-      const displayIndex = activeOrder.includes('.') ? activeOrder : activeOrder.padStart(2, '0');
-      const displayTotal = finalOrder.includes('.') ? finalOrder : String(total).padStart(2, '0');
+      const displayIndex = String(index + 1).padStart(2, '0');
+      const displayTotal = String(total).padStart(2, '0');
       progressLabel.textContent = `${displayIndex} / ${displayTotal} — ${slide.title}`;
     }
     updateNav();
