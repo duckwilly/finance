@@ -19,7 +19,7 @@ LOGGER = get_logger(__name__)
 router = APIRouter(tags=["auth"])
 
 
-def _default_destination(user: AuthenticatedUser) -> str:
+def default_destination(user: AuthenticatedUser) -> str:
     if "ADMIN" in user.roles or user.role == "admin":
         return "/dashboard/"
     if user.subject_id is not None:
@@ -62,7 +62,7 @@ async def login_form(request: Request) -> HTMLResponse:
     user: AuthenticatedUser | None = getattr(request.state, "user", None)
     if user is not None:
         LOGGER.debug("User already authenticated", extra={"username": user.username})
-        return RedirectResponse(_default_destination(user), status_code=303)
+        return RedirectResponse(default_destination(user), status_code=303)
 
     next_path = _safe_next_path(request.query_params.get("next"))
     security = get_security()
@@ -109,7 +109,7 @@ async def login_submit(
         )
 
     token = security.create_access_token(user)
-    redirect_to = _safe_next_path(next_path) or _default_destination(user)
+    redirect_to = _safe_next_path(next_path) or default_destination(user)
     response = RedirectResponse(redirect_to, status_code=303)
     response.set_cookie(
         security.cookie_name,
@@ -131,4 +131,4 @@ async def logout(security: SecurityProvider = Depends(get_security)) -> Response
     return response
 
 
-__all__ = ["router"]
+__all__ = ["router", "default_destination"]

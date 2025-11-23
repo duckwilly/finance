@@ -1,6 +1,7 @@
 """Service implementation for company dashboards."""
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -26,9 +27,11 @@ from app.models.party import CompanyProfile as CompanyProfileModel, Party
 from app.schemas.companies import (
     AccountSummary,
     CategoryBreakdown,
+    CategorySeries,
     CompanyDashboard,
     CompanyProfile,
     PayrollEntry,
+    SeriesPoint,
     SummaryMetrics,
     TransactionSummary,
 )
@@ -334,6 +337,13 @@ class CompaniesService:
             monthly_salary_cost=monthly_salary_cost,
         )
 
+        (
+            period_labels,
+            income_trend,
+            profit_trend,
+            expense_series,
+        ) = self._build_time_series(session, company_party_id)
+
         dashboard = CompanyDashboard(
             profile=CompanyProfile(id=company_id, name=company_name),
             period_label=period_label,
@@ -342,7 +352,122 @@ class CompaniesService:
             income_breakdown=income_breakdown,
             expense_breakdown=expense_breakdown,
             payroll=payroll,
+            period_labels=period_labels,
+            income_trend=income_trend,
+            profit_trend=profit_trend,
+            expense_category_series=expense_series,
         )
 
         LOGGER.debug("Dashboard assembled for company id=%s", company_id)
         return dashboard
+
+    def _collect_income_trend(
+        self,
+        session: Session,
+        party_id: int,
+        period_labels: list[str],
+    ) -> list[SeriesPoint]:
+        """Return income per reporting period for the specified party."""
+
+        rows = session.execute(
+            select(
+                ReportingPeriod.label.label("period_label"),
+                ReportingPeriod.period_start,
+                func.coalesce(CashFlowFact.inflow_amount, 0).label("inflow_amount"),
+            )
+            .join(ReportingPeriod, ReportingPeriod.id == CashFlowFact.reporting_period_id)
+            .join(Section, Section.id == CashFlowFact.section_id)
+            .where(
+                CashFlowFact.party_id == party_id,
+                Section.name == "income",
+            )
+            .order_by(ReportingPeriod.period_start)
+        ).all()
+
+        income_map = {row.period_label: Decimal(row.inflow_amount or 0) for row in rows}
+        return [
+            SeriesPoint(label=label, value=income_map.get(label, Decimal("0")))
+            for label in period_labels
+        ]
+
+    def _collect_profit_trend(
+        self,
+        session: Session,
+        party_id: int,
+        period_labels: list[str],
+    ) -> list[SeriesPoint]:
+        """Return profit (income minus expenses) per reporting period."""
+
+        flow_totals: dict[str, dict[str, Decimal]] = defaultdict(
+            lambda: {"income": Decimal("0"), "expense": Decimal("0")}
+        )
+        rows = session.execute(
+            select(
+                ReportingPeriod.label.label("period_label"),
+                ReportingPeriod.period_start,
+                Section.name.label("section_name"),
+                func.coalesce(CashFlowFact.inflow_amount, 0).label("inflow_amount"),
+                func.coalesce(CashFlowFact.outflow_amount, 0).label("outflow_amount"),
+            )
+            .join(ReportingPeriod, ReportingPeriod.id == CashFlowFact.reporting_period_id)
+            .join(Section, Section.id == CashFlowFact.section_id)
+            .where(
+                CashFlowFact.party_id == party_id,
+                Section.name.in_(("income", "expense")),
+            )
+            .order_by(ReportingPeriod.period_start)
+        ).all()
+
+        for row in rows:
+            if row.section_name == "income":
+                flow_totals[row.period_label]["income"] = Decimal(row.inflow_amount or 0)
+            elif row.section_name == "expense":
+                flow_totals[row.period_label]["expense"] = Decimal(row.outflow_amount or 0)
+
+        profit_trend = []
+        for label in period_labels:
+            flows = flow_totals.get(label, {"income": Decimal("0"), "expense": Decimal("0")})
+            profit_trend.append(SeriesPoint(label=label, value=flows["income"] - flows["expense"]))
+        return profit_trend
+
+    def _build_time_series(
+        self,
+        session: Session,
+        party_id: int,
+    ) -> tuple[list[str], list[SeriesPoint], list[SeriesPoint], list[CategorySeries]]:
+        """Assemble all time-series payloads for the dashboard."""
+
+        if not party_id:
+            fallback_label = "No reporting periods"
+            empty_point = SeriesPoint(label=fallback_label, value=Decimal("0"))
+            return [fallback_label], [empty_point], [empty_point], []
+
+        # Only use reporting periods that contain expense activity for this company to keep charts meaningful.
+        period_rows = session.execute(
+            select(
+                ReportingPeriod.label.label("period_label"),
+                ReportingPeriod.period_start,
+                ReportingPeriod.period_end,
+            )
+            .join(CashFlowFact, CashFlowFact.reporting_period_id == ReportingPeriod.id)
+            .join(Section, Section.id == CashFlowFact.section_id)
+            .where(
+                CashFlowFact.party_id == party_id,
+                Section.name.in_(("income", "expense")),
+            )
+            .group_by(ReportingPeriod.label, ReportingPeriod.period_start, ReportingPeriod.period_end)
+            .order_by(ReportingPeriod.period_start)
+        ).all()
+
+        period_labels = [row.period_label for row in period_rows]
+
+        if not period_labels:
+            fallback_label = "No reporting periods"
+            period_labels = [fallback_label]
+            empty_point = SeriesPoint(label=fallback_label, value=Decimal("0"))
+            return [fallback_label], [empty_point], [empty_point], []
+
+        income_trend = self._collect_income_trend(session, party_id, period_labels)
+        profit_trend = self._collect_profit_trend(session, party_id, period_labels)
+
+        return period_labels, income_trend, profit_trend, []

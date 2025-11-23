@@ -131,8 +131,8 @@ SLIDES: tuple[Slide, ...] = (
     Slide(
         slug="auth",
         title="Authentication and authorization",
-        template="presentation/slides/stub.html",
-        summary="Sign-in flows and role-aware views.",
+        template="presentation/slides/auth.html",
+        summary="Sign-in flows, JWT cookies, and scoped dashboards.",
         order="4.1",
     ),
     Slide(

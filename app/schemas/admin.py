@@ -72,6 +72,22 @@ class LineChartData(BaseModel):
     hint: str | None = None
 
 
+class ChartSeries(BaseModel):
+    """One dataset in a multi-series chart."""
+
+    label: str
+    values: list[float]
+
+
+class MultiSeriesLineChartData(BaseModel):
+    """Representation of a multi-series line chart."""
+
+    title: str
+    labels: list[str]
+    datasets: list[ChartSeries]
+    hint: str | None = None
+
+
 class DashboardCharts(BaseModel):
     """Container for admin dashboard chart payloads."""
 

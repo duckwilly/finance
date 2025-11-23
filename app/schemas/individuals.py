@@ -7,6 +7,17 @@ from decimal import Decimal
 from pydantic import BaseModel, field_serializer
 
 
+class SeriesPoint(BaseModel):
+    """Generic point for chart-ready time series."""
+
+    label: str
+    value: Decimal = Decimal("0")
+
+    @field_serializer("value")
+    def _serialize_value(cls, value: Decimal) -> str:
+        return str(value)
+
+
 class IndividualProfile(BaseModel):
     """Basic information that appears at the top of the dashboard."""
 
@@ -25,6 +36,8 @@ class SummaryMetrics(BaseModel):
     period_income: Decimal = Decimal("0")
     period_expenses: Decimal = Decimal("0")
     net_cash_flow: Decimal = Decimal("0")
+    monthly_income: Decimal | None = None
+    income_percentile: float | None = None
 
     @field_serializer(
         "net_worth",
@@ -33,6 +46,7 @@ class SummaryMetrics(BaseModel):
         "period_income",
         "period_expenses",
         "net_cash_flow",
+        "monthly_income",
     )
     def _serialize_decimal(cls, value: Decimal) -> str:
         return str(value)
@@ -100,6 +114,7 @@ class IndividualDashboard(BaseModel):
     """Payload passed to the individual dashboard template."""
 
     profile: IndividualProfile
+    employer_id: int | None = None
     employer_name: str | None
     summary: SummaryMetrics
     period_label: str
@@ -107,3 +122,6 @@ class IndividualDashboard(BaseModel):
     income_breakdown: list[CategoryBreakdown]
     expense_breakdown: list[CategoryBreakdown]
     holdings: list[HoldingSummary]
+    net_worth_trend: list[SeriesPoint] = []
+    brokerage_value_trend: list[SeriesPoint] = []
+    income_peer_split: dict[str, int] | None = None

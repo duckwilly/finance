@@ -1,10 +1,13 @@
 """Service implementation for individual client dashboards."""
 from __future__ import annotations
 
+import calendar
+import math
+from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.logger import get_logger
@@ -17,8 +20,11 @@ from app.models import (
     Instrument,
     JournalEntry,
     JournalLine,
+    PayrollFact,
+    PriceQuote,
     ReportingPeriod,
     Section,
+    OrgPartyMap,
     UserPartyMap,
 )
 from app.models.party import IndividualProfile as IndividualProfileModel, Party
@@ -28,6 +34,7 @@ from app.schemas.individuals import (
     HoldingSummary,
     IndividualDashboard,
     IndividualProfile,
+    SeriesPoint,
     SummaryMetrics,
     TransactionSummary,
 )
@@ -67,9 +74,12 @@ class IndividualsService:
         employment_row = session.execute(
             select(
                 EmploymentContract.position_title,
+                EmploymentContract.employer_party_id.label("employer_party_id"),
+                OrgPartyMap.org_id.label("company_id"),
                 Party.display_name,
             )
             .join(Party, Party.id == EmploymentContract.employer_party_id)
+            .outerjoin(OrgPartyMap, OrgPartyMap.party_id == EmploymentContract.employer_party_id)
             .where(
                 EmploymentContract.employee_party_id == user_party_id,
                 EmploymentContract.is_primary.is_(True),
@@ -85,6 +95,9 @@ class IndividualsService:
 
         job_title = employment_row.position_title if employment_row else None
         employer_name = employment_row.display_name if employment_row else None
+        employer_id = None
+        if employment_row:
+            employer_id = employment_row.company_id or employment_row.employer_party_id
 
         latest_cash_period = None
         if user_party_id:
@@ -105,6 +118,94 @@ class IndividualsService:
                 .where(Account.party_id == user_party_id)
             ).scalar_one_or_none()
 
+        earliest_entry_date = None
+        if user_party_id:
+            earliest_entry_date = session.execute(
+                select(func.min(JournalEntry.txn_date))
+                .join(JournalLine, JournalLine.entry_id == JournalEntry.id)
+                .join(Account, Account.id == JournalLine.account_id)
+                .where(Account.party_id == user_party_id)
+            ).scalar_one_or_none()
+
+        holding_period_bounds = None
+        if user_party_id:
+            holding_period_bounds = session.execute(
+                select(
+                    func.min(ReportingPeriod.period_start).label("start"),
+                    func.max(ReportingPeriod.period_end).label("end"),
+                )
+                .join(
+                    HoldingPerformanceFact,
+                    HoldingPerformanceFact.reporting_period_id == ReportingPeriod.id,
+                )
+                .where(HoldingPerformanceFact.party_id == user_party_id)
+            ).first()
+
+        def _month_end(value: date) -> date:
+            last_day = calendar.monthrange(value.year, value.month)[1]
+            return date(value.year, value.month, last_day)
+
+        def _month_sequence(start: date, end: date) -> list[date]:
+            start_month_end = _month_end(start)
+            end_month_end = _month_end(end)
+            months: list[date] = []
+            current = start_month_end
+            while current <= end_month_end:
+                months.append(current)
+                if current.month == 12:
+                    current = date(current.year + 1, 1, calendar.monthrange(current.year + 1, 1)[1])
+                else:
+                    current = date(current.year, current.month + 1, calendar.monthrange(current.year, current.month + 1)[1])
+            return months
+
+        def _quantile(values: list[Decimal], percentile: float) -> Decimal:
+            if not values:
+                return Decimal("0")
+            if len(values) == 1:
+                return values[0]
+
+            rank = (len(values) - 1) * (percentile / 100)
+            lower = math.floor(rank)
+            upper = math.ceil(rank)
+
+            if lower == upper:
+                return values[int(rank)]
+
+            lower_value = values[lower]
+            upper_value = values[upper]
+            fraction = Decimal(str(rank - lower))
+            return lower_value + (upper_value - lower_value) * fraction
+
+        simulation_start_candidates = [
+            candidate
+            for candidate in (
+                earliest_entry_date,
+                holding_period_bounds.start if holding_period_bounds else None,
+            )
+            if candidate
+        ]
+        simulation_end_candidates = [
+            candidate
+            for candidate in (
+                latest_entry_date,
+                holding_period_bounds.end if holding_period_bounds else None,
+            )
+            if candidate
+        ]
+
+        simulation_start = (
+            min(simulation_start_candidates)
+            if simulation_start_candidates
+            else date.today() - timedelta(days=self.DEFAULT_PERIOD_DAYS)
+        )
+        simulation_end = max(simulation_end_candidates) if simulation_end_candidates else date.today()
+        if simulation_start > simulation_end:
+            simulation_start = simulation_end
+
+        month_ends = _month_sequence(simulation_start, simulation_end)
+        if not month_ends:
+            month_ends = [_month_end(simulation_end)]
+
         if latest_cash_period:
             start_date = latest_cash_period.period_start
             period_label = latest_cash_period.label
@@ -119,7 +220,6 @@ class IndividualsService:
                 period_label = f"Last {self.DEFAULT_PERIOD_DAYS} days"
 
         accounts: list[AccountSummary] = []
-        total_account_balance = Decimal("0")
         cash_balance = Decimal("0")
 
         if user_party_id:
@@ -148,16 +248,6 @@ class IndividualsService:
                 for row in account_rows
             ]
 
-            total_account_balance = sum((account.balance for account in accounts), Decimal("0"))
-            cash_balance = sum(
-                (
-                    account.balance
-                    for account in accounts
-                    if account.type in (AccountType.CHECKING.value, AccountType.SAVINGS.value)
-                ),
-                Decimal("0"),
-            )
-
         holdings: list[HoldingSummary] = []
         holdings_total = Decimal("0")
         if user_party_id:
@@ -175,6 +265,7 @@ class IndividualsService:
             if holdings_period_id:
                 holding_rows = session.execute(
                     select(
+                        Instrument.id.label("instrument_id"),
                         Instrument.symbol,
                         Instrument.name,
                         HoldingPerformanceFact.quantity,
@@ -204,6 +295,146 @@ class IndividualsService:
                             unrealized_pl=Decimal(row.unrealized_pl or 0),
                         )
                     )
+
+        if accounts:
+            brokerage_accounts = [account for account in accounts if account.type == AccountType.BROKERAGE.value]
+            if brokerage_accounts:
+                per_account_value = holdings_total / len(brokerage_accounts) if holdings_total else Decimal("0")
+                brokerage_remaining = holdings_total
+                brokerage_seen = 0
+                updated_accounts: list[AccountSummary] = []
+
+                for account in accounts:
+                    if account.type != AccountType.BROKERAGE.value:
+                        updated_accounts.append(account)
+                        continue
+
+                    brokerage_seen += 1
+                    if brokerage_seen == len(brokerage_accounts):
+                        balance = brokerage_remaining
+                    else:
+                        balance = per_account_value
+                        brokerage_remaining -= balance
+
+                    updated_accounts.append(account.model_copy(update={"balance": balance}))
+
+                accounts = updated_accounts
+
+        cash_deltas: defaultdict[date, Decimal] = defaultdict(lambda: Decimal("0"))
+        if user_party_id:
+            cash_rows = session.execute(
+                select(JournalEntry.txn_date, JournalLine.amount)
+                .select_from(JournalLine)
+                .join(JournalEntry, JournalEntry.id == JournalLine.entry_id)
+                .join(Account, Account.id == JournalLine.account_id)
+                .where(
+                    Account.party_id == user_party_id,
+                    Account.account_type_code != AccountType.BROKERAGE.value,
+                )
+            ).all()
+
+            for row in cash_rows:
+                if not row.txn_date:
+                    continue
+                cash_deltas[_month_end(row.txn_date)] += Decimal(row.amount or 0)
+
+        holding_snapshots: list[tuple[date, Decimal, Decimal]] = []
+        instrument_qty: dict[int, Decimal] = {}
+        if user_party_id:
+            holding_rows = session.execute(
+                select(
+                    ReportingPeriod.period_end,
+                    func.coalesce(func.sum(HoldingPerformanceFact.market_value), 0).label("market_value"),
+                    func.coalesce(func.sum(HoldingPerformanceFact.unrealized_pl), 0).label("unrealized_pl"),
+                )
+                .join(
+                    ReportingPeriod,
+                    ReportingPeriod.id == HoldingPerformanceFact.reporting_period_id,
+                )
+                .where(HoldingPerformanceFact.party_id == user_party_id)
+                .group_by(ReportingPeriod.period_end)
+                .order_by(ReportingPeriod.period_end)
+            ).all()
+
+            for row in holding_rows:
+                if row.period_end is None:
+                    continue
+                holding_snapshots.append(
+                    (
+                        row.period_end,
+                        Decimal(row.market_value or 0),
+                        Decimal(row.unrealized_pl or 0),
+                    )
+                )
+
+            # Capture current quantities per instrument for historical pricing
+            latest_holdings = session.execute(
+                select(
+                    HoldingPerformanceFact.instrument_id,
+                    func.coalesce(func.sum(HoldingPerformanceFact.quantity), 0).label("quantity"),
+                )
+                .where(HoldingPerformanceFact.party_id == user_party_id)
+                .group_by(HoldingPerformanceFact.instrument_id)
+            ).all()
+            for row in latest_holdings:
+                instrument_qty[row.instrument_id] = Decimal(row.quantity or 0)
+
+        # Build month-end brokerage value using historical prices
+        brokerage_value_by_month: dict[date, Decimal] = {month: Decimal("0") for month in month_ends}
+        if instrument_qty:
+            price_rows = session.execute(
+                select(PriceQuote.instrument_id, PriceQuote.price_date, PriceQuote.quote_value)
+                .where(
+                    PriceQuote.instrument_id.in_(list(instrument_qty.keys())),
+                    PriceQuote.quote_type == "CLOSE",
+                    PriceQuote.price_date <= simulation_end,
+                )
+                .order_by(PriceQuote.instrument_id, PriceQuote.price_date)
+            ).all()
+
+            prices_by_instrument: dict[int, list[tuple[date, Decimal]]] = defaultdict(list)
+            for row in price_rows:
+                if row.price_date:
+                    prices_by_instrument[row.instrument_id].append(
+                        (row.price_date, Decimal(row.quote_value or 0))
+                    )
+
+            for instrument_id, qty in instrument_qty.items():
+                if not qty:
+                    continue
+                series = prices_by_instrument.get(instrument_id, [])
+                pointer = 0
+                last_price = Decimal("0")
+                for month_end in month_ends:
+                    while pointer < len(series) and series[pointer][0] <= month_end:
+                        last_price = series[pointer][1]
+                        pointer += 1
+                    brokerage_value_by_month[month_end] += qty * last_price
+
+        if not any(brokerage_value_by_month.values()) and holding_snapshots:
+            holding_snapshots.sort(key=lambda snap: snap[0])
+            current_value = holding_snapshots[0][1]
+            snap_idx = 1
+            for month_end in month_ends:
+                while snap_idx < len(holding_snapshots) and holding_snapshots[snap_idx][0] <= month_end:
+                    current_value = holding_snapshots[snap_idx][1]
+                    snap_idx += 1
+                brokerage_value_by_month[month_end] = current_value
+
+        net_worth_trend: list[SeriesPoint] = []
+        brokerage_value_trend: list[SeriesPoint] = []
+
+        running_cash = Decimal("0")
+
+        for month_end in month_ends:
+            running_cash += cash_deltas.get(month_end, Decimal("0"))
+            current_holdings_value = brokerage_value_by_month.get(month_end, Decimal("0"))
+
+            label = month_end.strftime("%b %Y")
+            net_worth_trend.append(
+                SeriesPoint(label=label, value=running_cash + current_holdings_value)
+            )
+            brokerage_value_trend.append(SeriesPoint(label=label, value=current_holdings_value))
 
         income_breakdown: list[CategoryBreakdown] = []
         expense_breakdown: list[CategoryBreakdown] = []
@@ -288,13 +519,84 @@ class IndividualsService:
             period_expenses = expense_from_fact
             net_cash_flow = net_from_fact
 
+        income_peer_split: dict[str, int] | None = None
+        monthly_income = None
+        income_percentile = None
+
+        if user_party_id:
+            latest_pay_periods = (
+                select(
+                    EmploymentContract.employee_party_id.label("party_id"),
+                    func.max(ReportingPeriod.period_end).label("max_period_end"),
+                )
+                .select_from(PayrollFact)
+                .join(ReportingPeriod, ReportingPeriod.id == PayrollFact.reporting_period_id)
+                .join(EmploymentContract, EmploymentContract.id == PayrollFact.contract_id)
+                .group_by(EmploymentContract.employee_party_id)
+            ).cte("latest_pay_periods")
+
+            income_rows = session.execute(
+                select(
+                    latest_pay_periods.c.party_id,
+                    func.sum(PayrollFact.gross_amount).label("monthly_income"),
+                )
+                .select_from(PayrollFact)
+                .join(EmploymentContract, EmploymentContract.id == PayrollFact.contract_id)
+                .join(ReportingPeriod, ReportingPeriod.id == PayrollFact.reporting_period_id)
+                .join(
+                    latest_pay_periods,
+                    and_(
+                        latest_pay_periods.c.party_id == EmploymentContract.employee_party_id,
+                        latest_pay_periods.c.max_period_end == ReportingPeriod.period_end,
+                    ),
+                )
+                .group_by(latest_pay_periods.c.party_id)
+            ).all()
+
+            income_by_party = {
+                row.party_id: Decimal(row.monthly_income or 0)
+                for row in income_rows
+                if row.party_id is not None
+            }
+            monthly_income = income_by_party.get(user_party_id)
+
+            income_values = sorted(income_by_party.values())
+            if income_values:
+                if monthly_income is not None:
+                    rank_position = sum(1 for value in income_values if value <= monthly_income)
+                    income_percentile = round((rank_position / len(income_values)) * 100, 1)
+                    higher = sum(1 for value in income_values if value > monthly_income)
+                    lower = sum(1 for value in income_values if value < monthly_income)
+                    peers = sum(1 for value in income_values if value == monthly_income)
+                    income_peer_split = {
+                        "Higher income": higher,
+                        "Same income": peers,
+                        "Lower income": lower,
+                    }
+
+        non_brokerage_balance = sum(
+            (account.balance for account in accounts if account.type != AccountType.BROKERAGE.value),
+            Decimal("0"),
+        )
+        cash_balance = sum(
+            (
+                account.balance
+                for account in accounts
+                if account.type in (AccountType.CHECKING.value, AccountType.SAVINGS.value)
+            ),
+            Decimal("0"),
+        )
+        net_worth = non_brokerage_balance + holdings_total
+
         summary = SummaryMetrics(
-            net_worth=total_account_balance + holdings_total,
+            net_worth=net_worth,
             cash_balance=cash_balance,
             holdings_value=holdings_total,
             period_income=period_income,
             period_expenses=period_expenses,
             net_cash_flow=net_cash_flow,
+            monthly_income=monthly_income,
+            income_percentile=income_percentile,
         )
 
         dashboard = IndividualDashboard(
@@ -304,6 +606,7 @@ class IndividualsService:
                 email=email,
                 job_title=job_title,
             ),
+            employer_id=employer_id,
             employer_name=employer_name,
             summary=summary,
             period_label=period_label,
@@ -311,6 +614,9 @@ class IndividualsService:
             income_breakdown=income_breakdown,
             expense_breakdown=expense_breakdown,
             holdings=holdings,
+            net_worth_trend=net_worth_trend,
+            brokerage_value_trend=brokerage_value_trend,
+            income_peer_split=income_peer_split,
         )
 
         LOGGER.debug("Dashboard assembled for individual id=%s", user_id)

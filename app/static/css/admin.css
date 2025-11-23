@@ -43,6 +43,16 @@ body.page {
   line-height: 1.6;
 }
 
+.page__subtitle-link {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.page__subtitle-link:hover {
+  text-decoration: underline;
+}
+
 .badge,
 .theme-toggle,
 .chat-drawer-toggle,

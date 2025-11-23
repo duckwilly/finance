@@ -333,8 +333,8 @@
           const panelContainerEl = panelContainer;
           const triggeredByChat = chatForm && event.detail?.requestConfig?.elt === chatForm;
           const injectedPanelName =
-            event.target.dataset?.panel ||
-            panelContainerEl?.querySelector('[data-panel-name]')?.dataset.panelName;
+            panelContainerEl?.querySelector('[data-panel-name]')?.dataset.panelName ||
+            event.target.dataset?.panel;
 
           if (panelContainerEl && injectedPanelName && !triggeredByChat) {
             panelContainerEl.dataset.panel = injectedPanelName;

@@ -1,0 +1,31 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">Security</p>
+    <h2 class="slide__title">Authentication and authorization</h2>
+    <p class="slide__lede">
+      Cookie-backed JWTs plus role-aware routing keep admin, company, and individual views scoped without extra page chrome.
+    </p>
+  </header>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Sign-in flow</h3>
+      <ul class="slide__bullets">
+        <li>Demo logins issue a short-lived JWT stored in an HttpOnly cookie; admin credentials unlock all routes.</li>
+        <li>Tokens carry subject, app user id, party id, granted roles, and company ids for downstream checks.</li>
+        <li>FastAPI dependencies like <code>require_admin_user</code>, <code>require_individual_access</code>, and <code>require_company_access</code> gate each router.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="slide__section-title">Access model</h3>
+      <ul class="slide__bullets">
+        <li>Individuals see only their own dashboards; admins bypass scope checks for demos and operations.</li>
+        <li>Company views require either admin role or a company id embedded in the token.</li>
+        <li>Employment links inject those company ids so employees can open their employer dashboards directly.</li>
+      </ul>
+      <div class="slide__callout">
+        <p class="slide__callout-title">Note for the talk</p>
+        <p>Call out how employment-derived company ids let users access their employers' data without separate invites.</p>
+      </div>
+    </div>
+  </div>
+</article>

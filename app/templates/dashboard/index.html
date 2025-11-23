@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ page_title or 'Finance dashboard' }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/base.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', path='ai_chatbot/chatbot.css') }}" />
+    <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+    <script src="{{ url_for('static', path='js/theme-switcher.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/admin-charts.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/list-view.js') }}" defer></script>
+    <script src="{{ url_for('static', path='ai_chatbot/chatbot.js') }}" defer></script>
+  </head>
+  <body class="page">
+    <div id="dashboard-shell" data-dashboard-view="{{ view_key }}">
+      <header class="page__header">
+        <div class="page__headline">
+          <p class="eyebrow">{{ hero_eyebrow }}</p>
+          <h1 class="page__title">{{ hero_title }}</h1>
+          {% if hero_subtitle %}
+          <p class="page__subtitle">
+            {% if hero_subtitle_url %}
+              <a
+                class="page__subtitle-link"
+                href="{{ hero_subtitle_url }}"
+                hx-get="{{ hero_subtitle_url }}"
+                hx-target="#dashboard-shell"
+                hx-select="#dashboard-shell"
+                hx-swap="outerHTML"
+                hx-push-url="true"
+              >
+                {{ hero_subtitle }}
+              </a>
+            {% else %}
+              {{ hero_subtitle }}
+            {% endif %}
+          </p>
+          {% endif %}
+        </div>
+        <div class="page__meta">
+          {% if hero_badge %}
+          <div class="badge">{{ hero_badge }}</div>
+          {% endif %}
+          <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
+            <span class="theme-toggle__icon">🌙</span>
+            <span class="theme-toggle__label">Dark mode</span>
+          </button>
+          {% if view_key == "admin" %}
+          <a
+            class="chat-drawer-toggle"
+            href="{{ request.url_for('presentation_home') }}"
+            aria-label="Open presentation"
+          >
+            <span class="chat-drawer-toggle__icon">🗂️</span>
+            <span class="chat-drawer-toggle__copy">
+              <span class="chat-drawer-toggle__title">Presentation</span>
+            </span>
+          </a>
+          {% endif %}
+          {% if show_admin_return %}
+          <a
+            class="chat-drawer-toggle"
+            href="{{ admin_return_url }}"
+            hx-get="{{ admin_return_url }}"
+            hx-target="#dashboard-shell"
+            hx-select="#dashboard-shell"
+            hx-swap="outerHTML"
+            hx-push-url="true"
+            aria-label="Back to admin dashboard"
+          >
+            <span class="chat-drawer-toggle__icon">🏠</span>
+            <span class="chat-drawer-toggle__copy">
+              <span class="chat-drawer-toggle__title">Admin dashboard</span>
+              <span class="chat-drawer-toggle__meta">Return to overview</span>
+            </span>
+          </a>
+          {% endif %}
+          <button
+            type="button"
+            id="chatbot-toggle"
+            class="chat-drawer-toggle"
+            aria-label="Toggle AI copilot"
+            aria-controls="dashboard-chat"
+            aria-expanded="false"
+          >
+            <span class="chat-drawer-toggle__icon">🪄</span>
+            <span class="chat-drawer-toggle__copy">
+              <span class="chat-drawer-toggle__title">Bot</span>
+            </span>
+          </button>
+          <a class="logout-link" href="{{ request.url_for('logout') }}">Log out</a>
+        </div>
+      </header>
+
+      <main class="page__content">
+        <section class="card-grid" role="group" aria-label="Dashboard panels">
+          {% for card in cards %}
+          <button
+            type="button"
+            class="card card--action{% if card.panel == panel_name %} is-active{% endif %}"
+            data-panel-button="{{ card.panel }}"
+            hx-get="{{ card.panel_url }}"
+            hx-target="#dashboard-panel"
+            hx-swap="innerHTML"
+            aria-pressed="{{ 'true' if card.panel == panel_name else 'false' }}"
+          >
+            <span class="card__label">{{ card.label }}</span>
+            <span class="card__value">
+              {% if card.value_type == 'currency' %}
+                {{ humanize_currency(card.value, short=card.short | default(false), decimals=card.decimals | default(1)) }}
+              {% elif card.value_type == 'number' %}
+                {{ humanize_number(card.value, decimals=card.decimals | default(0)) }}
+              {% else %}
+                {{ card.value }}
+              {% endif %}
+            </span>
+            {% if card.hint %}
+            <span class="card__hint">{{ card.hint }}</span>
+            {% endif %}
+          </button>
+          {% endfor %}
+        </section>
+
+        <section
+          class="workspace"
+          aria-label="Dashboard content and AI assistant"
+          data-workspace
+          data-panel-target="#dashboard-panel"
+        >
+          <div class="workspace__dashboard" id="dashboard-view">
+            {% set chart = panel_chart %}
+            {% set chart_type = panel_config.chart_type %}
+            {% set list_id = panel_config.list_id %}
+            {% set panel_key = panel_name | default(cards[0].panel if cards else 'panel') %}
+            {% set view = panel_view %}
+            <section class="details" id="dashboard-panel" data-panel="{{ panel_key }}">
+              {% include 'dashboard/partials/panel.html' %}
+            </section>
+          </div>
+
+          <aside class="workspace__chat" id="dashboard-chat" aria-label="AI assistant">
+            <div class="chat-panel">
+              <div class="chat-panel__header">
+                <div class="chat-panel__header-copy">
+                  <p class="eyebrow">AI copilot</p>
+                  <h2 class="chat-panel__title">Chat-driven insights</h2>
+                  <p class="chat-panel__hint">
+                    Ask for spending breakdowns, ad-hoc KPIs or visual slices of the data.
+                  </p>
+                </div>
+                <button type="button" class="chat-panel__close" id="chat-close" aria-label="Close AI assistant">
+                  ✕
+                </button>
+              </div>
+
+              <div class="chat-panel__body" id="chat-panel-body">
+                <div class="chat-panel__scroll">
+                  <div class="chat-messages" id="chat-messages" aria-live="polite">
+                    <div class="welcome-message">
+                      <p>💬 Ask about your spending, income trends, or any category you want to explore.</p>
+                      <p>Charts and tables will automatically appear on the left panel when needed.</p>
+                    </div>
+                  </div>
+
+                {% set quick_prompts = [
+                  {
+                    "label": "Category spend (30d)",
+                    "text": "Show a bar chart of expenses by category for the last 30 days with x_axis=category and y_axis=total, sorted descending."
+                  },
+                  {
+                    "label": "Income vs expenses (6m)",
+                    "text": "Compare monthly income vs expenses over the last 6 months as a grouped bar chart with x_axis=month and y_axis=[income_total,expenses], sorted ascending by month."
+                  },
+                  {
+                    "label": "Expense trend (180d)",
+                    "text": "Plot an expense trend line for the last 180 days with x_axis=month and y_axis=total, sorted ascending by month."
+                  },
+                  {
+                    "label": "Top spenders (30d)",
+                    "text": "List the top 5 spenders in the last 30 days as a bar chart with x_axis=party_name and y_axis=total, sorted descending."
+                  },
+                ] %}
+                {% if view_key == "individual" %}
+                  {% set quick_prompts = [
+                    {
+                      "label": "My category spend (30d)",
+                      "text": "Show my expenses by category for the last 30 days as a bar chart with x_axis=category and y_axis=total, sorted descending."
+                    },
+                    {
+                      "label": "My income vs expenses",
+                      "text": "Compare my monthly income vs expenses for the last 6 months as a grouped bar chart with x_axis=month and y_axis=[income_total,expenses], sorted ascending by month."
+                    },
+                    {
+                      "label": "My spend trend",
+                      "text": "Plot my expense trend over the last 180 days as a line chart with x_axis=month and y_axis=total, sorted ascending by month."
+                    },
+                    {
+                      "label": "My holdings snapshot",
+                      "text": "Break down my brokerage holdings by instrument with market_value and unrealized_pl in a table sorted by market_value."
+                    },
+                  ] %}
+                {% elif view_key == "company" %}
+                  {% set quick_prompts = [
+                    {
+                      "label": "Company category spend",
+                      "text": "Show this company's expenses by category for the last 30 days as a bar chart with x_axis=category and y_axis=total, sorted descending."
+                    },
+                    {
+                      "label": "Company income vs expenses",
+                      "text": "Compare this company's monthly income vs expenses for the last 6 months as a grouped bar chart with x_axis=month and y_axis=[income_total,expenses], sorted ascending by month."
+                    },
+                    {
+                      "label": "Cash flow trend",
+                      "text": "Plot this company's net cash flow over the last 6 months as a line chart with x_axis=month and y_axis=net_cash_flow."
+                    },
+                    {
+                      "label": "Expense leaders",
+                      "text": "List this company's top 5 expense categories for the last 90 days with totals in descending order."
+                    },
+                  ] %}
+                {% endif %}
+                <ul class="chat-quick-actions" aria-label="Suggested prompts">
+                  {% for prompt in quick_prompts %}
+                  <li>
+                    <button type="button" data-chat-suggestion="{{ prompt.text }}">
+                      {{ prompt.label }}
+                    </button>
+                  </li>
+                  {% endfor %}
+                </ul>
+
+                <div id="chat-visualizations" class="chat-visualizations"></div>
+              </div>
+
+              <div class="chat-input-container">
+                <form
+                  id="chat-form"
+                  data-chatbot-form
+                  hx-post="/chatbot/query/htmx"
+                  hx-target="#dashboard-panel"
+                  hx-swap="innerHTML"
+                  hx-indicator="#loading-indicator"
+                >
+                  <input type="hidden" name="response_mode" value="visualization" />
+                  <div class="chat-input-row">
+                    <label class="chat-model-label" for="model-select">Model</label>
+                    <select id="model-select" name="model">
+                      <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                      <option value="gpt-4o-mini">GPT 4o Mini</option>
+                    </select>
+                  </div>
+                  <div class="chat-input-block">
+                    <textarea
+                      name="question"
+                      id="question-input"
+                      class="chat-input-block__textarea"
+                      placeholder="Ask for dashboards, charts, or tables"
+                      autocomplete="off"
+                      rows="2"
+                      data-min-height="72"
+                      data-max-height="220"
+                      required
+                    ></textarea>
+                    <button type="submit" class="chat-input-block__button" id="send-button">
+                      <span>Send</span>
+                    </button>
+                  </div>
+                  <div class="loading-indicator" id="loading-indicator">
+                    <div class="spinner"></div>
+                    <span>Thinking...</span>
+                  </div>
+                </form>
+              </div>
+              <div id="chatbot-response-target" style="display: none;"></div>
+            </div>
+          </aside>
+        </section>
+        <div class="chat-scrim" data-chat-scrim aria-hidden="true"></div>
+      </main>
+
+      <footer class="page__footer">
+        <p>Data shown is for informational purposes only and not financial advice. © 2025</p>
+      </footer>
+    </div>
+
+    <script>
+      (function () {
+        const MAX_INPUT_HEIGHT = 180;
+
+        const emitChartResize = () =>
+          window.requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+
+        const getShell = () => document.getElementById('dashboard-shell');
+        const getWorkspace = () => getShell()?.querySelector('[data-workspace]');
+        const getPanelContainer = () => {
+          const shell = getShell();
+          const workspace = getWorkspace();
+          const panelSelector = workspace?.dataset.panelTarget;
+          if (panelSelector) {
+            return shell?.querySelector(panelSelector);
+          }
+          return shell?.querySelector('#dashboard-panel');
+        };
+        const getChatForm = () => getShell()?.querySelector('[data-chatbot-form]');
+        const getQuestionInput = () => document.getElementById('question-input');
+
+        const autosizeInput = (input) => {
+          if (!input) return;
+          input.style.height = 'auto';
+          const newHeight = Math.min(input.scrollHeight, MAX_INPUT_HEIGHT);
+          input.style.height = `${newHeight}px`;
+          input.style.overflowY = input.scrollHeight > MAX_INPUT_HEIGHT ? 'auto' : 'hidden';
+        };
+
+        const bindAutosize = () => {
+          const input = getQuestionInput();
+          if (!input || input.dataset.autosizeBound === 'true') return;
+          autosizeInput(input);
+          input.dataset.autosizeBound = 'true';
+          input.addEventListener('input', () => autosizeInput(input));
+        };
+
+        bindAutosize();
+
+        const setActive = (panel) => {
+          const shell = getShell();
+          if (!shell) return;
+          shell.querySelectorAll('[data-panel-button]').forEach((button) => {
+            const isActive = button.dataset.panelButton === panel;
+            button.classList.toggle('is-active', isActive);
+            button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+          });
+        };
+
+        const applyChatState = (isOpen) => {
+          const workspace = getWorkspace();
+          const chatToggleButton = getShell()?.querySelector('#chatbot-toggle');
+          workspace?.classList.toggle('workspace--chat-open', isOpen);
+          chatToggleButton?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+          chatToggleButton?.classList.toggle('is-open', isOpen);
+          document.body.classList.toggle('chat-open', isOpen);
+          emitChartResize();
+        };
+
+        const isChatOpen = () => getWorkspace()?.classList.contains('workspace--chat-open');
+        const closeChat = () => applyChatState(false);
+
+        document.addEventListener('click', (event) => {
+          const shell = getShell();
+          if (!shell) return;
+
+          const button = event.target.closest('[data-panel-button]');
+          if (button && shell.contains(button)) {
+            setActive(button.dataset.panelButton);
+          }
+
+          const chatToggleButton = event.target.closest('#chatbot-toggle');
+          if (chatToggleButton && shell.contains(chatToggleButton)) {
+            if (isChatOpen()) {
+              closeChat();
+            } else {
+              applyChatState(true);
+            }
+          }
+
+          const chatCloseButton = event.target.closest('#chat-close');
+          if (chatCloseButton && shell.contains(chatCloseButton)) {
+            closeChat();
+          }
+
+          const chatScrim = event.target.closest('[data-chat-scrim]');
+          if (chatScrim) {
+            closeChat();
+          }
+        });
+
+        document.addEventListener('submit', (event) => {
+          const shell = getShell();
+          if (!shell) return;
+          const chatForm = event.target.closest('[data-chatbot-form]');
+          if (chatForm && shell.contains(chatForm)) {
+            applyChatState(true);
+          }
+        });
+
+        document.addEventListener('transitionend', (event) => {
+          const workspace = getWorkspace();
+          if (
+            workspace &&
+            event.target === workspace &&
+            (event.propertyName === 'grid-template-columns' || event.propertyName === 'width')
+          ) {
+            emitChartResize();
+          }
+        });
+
+        window.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' && isChatOpen()) {
+            closeChat();
+          }
+        });
+
+        document.body.addEventListener('htmx:afterSwap', (event) => {
+          const panelContainer = getPanelContainer();
+          const chatForm = getChatForm();
+          const triggeredByChat = chatForm && event.detail?.requestConfig?.elt === chatForm;
+
+          if (panelContainer && event.target === panelContainer) {
+            const injectedPanelName =
+              panelContainer.querySelector('[data-panel-name]')?.dataset.panelName ||
+              event.target.dataset?.panel;
+
+            if (injectedPanelName && !triggeredByChat) {
+              panelContainer.dataset.panel = injectedPanelName;
+              setActive(injectedPanelName);
+            }
+          }
+
+          if (triggeredByChat) {
+            bindAutosize();
+          }
+
+          if (isChatOpen()) {
+            applyChatState(true);
+          }
+          emitChartResize();
+
+          if (
+            event.target.id === 'dashboard-shell' ||
+            (event.target.querySelector && event.target.querySelector('#dashboard-shell'))
+          ) {
+            bindAutosize();
+            const panel = getPanelContainer()?.dataset.panel;
+            if (panel) {
+              setActive(panel);
+            }
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

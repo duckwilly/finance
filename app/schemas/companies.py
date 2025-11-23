@@ -7,6 +7,17 @@ from decimal import Decimal
 from pydantic import BaseModel, field_serializer
 
 
+class SeriesPoint(BaseModel):
+    """Generic point for chart-ready time series."""
+
+    label: str
+    value: Decimal = Decimal("0")
+
+    @field_serializer("value")
+    def _serialize_value(cls, value: Decimal) -> str:
+        return str(value)
+
+
 class CompanyProfile(BaseModel):
     """Basic company information displayed on the dashboard."""
 
@@ -91,6 +102,17 @@ class PayrollEntry(BaseModel):
         return str(value)
 
 
+class CategorySeries(BaseModel):
+    """Values for a category across reporting periods."""
+
+    name: str
+    values: list[Decimal]
+
+    @field_serializer("values")
+    def _serialize_values(cls, values: list[Decimal]) -> list[str]:
+        return [str(value) for value in values]
+
+
 class CompanyDashboard(BaseModel):
     """Payload passed to the company dashboard template."""
 
@@ -101,3 +123,7 @@ class CompanyDashboard(BaseModel):
     income_breakdown: list[CategoryBreakdown]
     expense_breakdown: list[CategoryBreakdown]
     payroll: list[PayrollEntry]
+    period_labels: list[str] = []
+    income_trend: list[SeriesPoint] = []
+    profit_trend: list[SeriesPoint] = []
+    expense_category_series: list[CategorySeries] = []
