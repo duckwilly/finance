@@ -46,7 +46,8 @@ body.page {
 .badge,
 .theme-toggle,
 .chat-drawer-toggle,
-.logout-link {
+.logout-link,
+.presentation-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
