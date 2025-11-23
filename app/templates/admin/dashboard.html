@@ -40,9 +40,18 @@
           <span class="chat-drawer-toggle__icon">✨</span>
           <span class="chat-drawer-toggle__copy">
             <span class="chat-drawer-toggle__title">AI copilot</span>
-            <span class="chat-drawer-toggle__meta">Insights & charts</span>
           </span>
         </button>
+        <a
+          class="chat-drawer-toggle"
+          href="{{ request.url_for('presentation_home') }}"
+          aria-label="Open presentation"
+        >
+          <span class="chat-drawer-toggle__icon">🗂️</span>
+          <span class="chat-drawer-toggle__copy"> 
+            <span class="chat-drawer-toggle__title">Presentation</span>
+          </span>
+        </a>
         <a class="logout-link" href="{{ request.url_for('logout') }}">Log out</a>
       </div>
     </header>

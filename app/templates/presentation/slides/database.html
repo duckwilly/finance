@@ -1,0 +1,25 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">Database</p>
+    <h2 class="slide__title">Database design</h2>
+    <p class="slide__lede">Schema built for financial data: parties, accounts, double-entry journals, and stock holdings with historical prices.</p>
+  </header>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Principles</h3>
+      <ul class="slide__bullets">
+        <li>Separation of parties (companies vs individuals) with searchable admin listings.</li>
+        <li>Ledger-first view of transactions so totals balance and drill-downs stay consistent.</li>
+        <li>Stock prices and FX rates fetched historically to keep performance demos grounded in real signals.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="slide__section-title">Talking points</h3>
+      <ul class="slide__bullets">
+        <li>Schema SQL lives in <code>sql/schema.sql</code> and backs the seed CSVs for predictable demo data.</li>
+        <li>Session helpers in <code>app/db</code> keep connections scoped per request.</li>
+        <li>Admin dashboards precompute metrics on startup so the first slide feels instant.</li>
+      </ul>
+    </div>
+  </div>
+</article>

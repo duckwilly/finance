@@ -9,7 +9,13 @@ from fastapi.templating import Jinja2Templates
 from app.core import get_logger
 from app.core.security import get_security_provider
 from app.middleware.auth import AuthMiddleware
-from app.routers import auth_router, corporate_router, dashboard_router, individuals_router
+from app.routers import (
+    auth_router,
+    corporate_router,
+    dashboard_router,
+    individuals_router,
+    presentation_router,
+)
 from app.db.session import get_sessionmaker
 from app.services import AdminService
 
@@ -43,6 +49,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router)
     app.include_router(individuals_router)
     app.include_router(corporate_router)
+    app.include_router(presentation_router)
 
     # Configure AI Chatbot
     templates = Jinja2Templates(directory="app/templates")
