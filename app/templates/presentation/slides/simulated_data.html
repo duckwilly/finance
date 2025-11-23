@@ -1,20 +1,20 @@
 {% set dashboard = slide_payload.individual_dashboard %}
 <article class="slide" data-slide-fragment>
   <header class="slide__header">
-    <p class="eyebrow">Data sample</p>
-    <h2 class="slide__title">Simulated bank data (user 3)</h2>
+    <p class="eyebrow">Data voorbeeld</p>
+    <h2 class="slide__title">Gesimuleerde bankdata (gebruiker 3)</h2>
     <p class="slide__lede">
-      A real record from the seed set to show how individuals look in the database, how accounts aggregate, and what lands on the dashboard.
+      Een echt record uit de seed dataset om te tonen hoe individuen eruitzien in de database, hoe accounts worden geaggregeerd, en wat er op het dashboard verschijnt.
     </p>
   </header>
   <div class="slide__content slide__grid">
     <div class="slide__callout">
-      <p class="slide__callout-title">What we store</p>
+      <p class="slide__callout-title">Wat we opslaan</p>
       <p>
-        Parties join to accounts, journal lines, and holdings. Income and expenses roll up per reporting period, and profiles keep contact details and job context.
+        Partijen zijn gekoppeld aan accounts, journaalregels en holdings. Inkomsten en uitgaven worden per rapportageperiode samengevoegd, en profielen bevatten contactgegevens en werkcontext.
       </p>
       <p>
-        The cards on the right pull live ORM data for individual user 3 so you can click through to the full dashboard view.
+        De kaarten rechts halen live ORM data op voor individuele gebruiker 3, zodat je kunt doorklikken naar de volledige dashboard view.
       </p>
     </div>
 
@@ -84,7 +84,7 @@
         </div>
       </div>
       {% else %}
-      <p class="demo-panel__empty">Unable to load user 3 right now. Check database connectivity and seed data.</p>
+      <p class="demo-panel__empty">Kan gebruiker 3 nu niet laden. Controleer database connectiviteit en seed data.</p>
       {% endif %}
     </div>
   </div>

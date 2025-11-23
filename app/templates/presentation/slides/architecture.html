@@ -1,24 +1,58 @@
 <article class="slide" data-slide-fragment>
   <header class="slide__header">
-    <p class="eyebrow">Architecture</p>
-    <h2 class="slide__title">Architecture & tech stack</h2>
-    <p class="slide__lede">Layered FastAPI app with SQLAlchemy persistence and server-rendered UX enhanced by HTMX interactions.</p>
+    <p class="eyebrow">Architectuur</p>
+    <h2 class="slide__title">Architectuur & tech stack</h2>
+    <p class="slide__lede">
+      Een gelaagde FastAPI applicatie met SQLAlchemy persistentie en server-rendered UX, verrijkt met HTMX interacties voor een soepele gebruikerservaring.
+    </p>
   </header>
   <div class="slide__content slide__grid">
     <div>
-      <h3 class="slide__section-title">Stack</h3>
+      <h3 class="slide__section-title">Backend stack</h3>
+      <p>Het platform is gebouwd op een moderne Python backend met een duidelijke scheiding van verantwoordelijkheden.</p>
       <ul class="slide__bullets">
-        <li>Backend: FastAPI on Python 3.11 with routers for dashboards and authentication.</li>
-        <li>Persistence: MariaDB via SQLAlchemy 2.x and Alembic-ready migrations.</li>
-        <li>Presentation: Jinja2 templates, static CSS/JS, HTMX for partial swaps and smooth transitions.</li>
+        <li><strong>FastAPI:</strong> Moderne, snelle web framework op Python 3.11 met automatische API documentatie en async/await support.</li>
+        <li><strong>Routers:</strong> Georganiseerd in aparte modules voor dashboards, authenticatie, individuen, bedrijven en presentaties.</li>
+        <li><strong>SQLAlchemy 2.x:</strong> Moderne ORM voor database interacties met type hints ondersteuning.</li>
+        <li><strong>Pydantic v2:</strong> Data validatie en serialisatie voor request/response modellen.</li>
+        <li><strong>PyJWT:</strong> Authenticatie en autorisatie via JWT tokens voor sessiebeheer.</li>
+        <li><strong>Jinja2:</strong> Template engine voor server-side rendering van alle dashboards.</li>
       </ul>
     </div>
+
     <div>
-      <h3 class="slide__section-title">Patterns</h3>
+      <h3 class="slide__section-title">Database en persistentie</h3>
+      <p>De data wordt opgeslagen in een relationele database met ondersteuning voor migraties en seed data.</p>
       <ul class="slide__bullets">
-        <li>Service layer encapsulates metrics and chart assembly for admin panels.</li>
-        <li>Security middleware keeps admin-only surfaces scoped, while template responses stay cache-friendly.</li>
-        <li>Static assets are mounted at <code>/static</code> so the presentation can live inside the product chrome.</li>
+        <li><strong>MariaDB:</strong> Relationele database in Docker voor betrouwbare data opslag en complexe queries.</li>
+        <li><strong>Docker Compose:</strong> Gecontaineriseerde database voor eenvoudige setup en consistentie.</li>
+        <li><strong>Alembic:</strong> Database migratie tool voor versie-gecontroleerde schema wijzigingen.</li>
+        <li><strong>Session management:</strong> SQLAlchemy sessions per request via dependency injection met connection pooling.</li>
+        <li><strong>Seed data:</strong> Synthetische data gegenereerd via scripts en geladen via CSV bestanden.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Frontend stack</h3>
+      <p>De frontend combineert traditionele web technologieën met moderne interactieve elementen.</p>
+      <ul class="slide__bullets">
+        <li><strong>HTML/CSS:</strong> Semantische HTML met custom CSS voor moderne, responsive interface met dark mode support.</li>
+        <li><strong>HTMX:</strong> Interactiviteit zonder complexe JavaScript. Partial page updates voor dashboard panel switches.</li>
+        <li><strong>Chart.js:</strong> Voor grafieken en visualisaties (pie charts, line charts) in de dashboards.</li>
+        <li><strong>Vanilla JavaScript:</strong> Minimale custom JavaScript voor theme switching, filtering en chart rendering.</li>
+        <li><strong>Server-side rendering:</strong> Alle HTML server-side gegenereerd voor snelle laadtijden en goede SEO.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Architectuur patronen</h3>
+      <p>Het platform volgt duidelijke architectuur patronen voor onderhoudbaarheid en schaalbaarheid.</p>
+      <ul class="slide__bullets">
+        <li><strong>Service layer:</strong> Business logica gescheiden van routing en data access. Services encapsuleren berekeningen en aggregatie.</li>
+        <li><strong>Dependency injection:</strong> FastAPI's dependency system voor database sessions, services en authenticatie.</li>
+        <li><strong>Security middleware:</strong> Authenticatie middleware controleert requests en beschermt admin-only routes met JWT validatie.</li>
+        <li><strong>Modulaire structuur:</strong> Code georganiseerd in aparte directories voor routers, models, schemas, services en database.</li>
+        <li><strong>Startup warmup:</strong> Admin dashboard metrics geprecomputeerd bij opstarten voor snelle eerste laadtijden.</li>
       </ul>
     </div>
   </div>
