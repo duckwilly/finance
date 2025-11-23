@@ -7,6 +7,7 @@ from .analytics import (
     spending_trend,
     party_insights,
     top_spenders,
+    flex_analytics,
 )
 from .types import ToolResult, UserScope
 
@@ -18,6 +19,7 @@ __all__ = [
     "spending_trend",
     "party_insights",
     "top_spenders",
+    "flex_analytics",
     "ToolResult",
     "UserScope",
 ]

@@ -20,6 +20,7 @@ from .tools import (
     party_insights,
     spending_trend,
     top_spenders,
+    flex_analytics,
 )
 from .sql_generator import SQLGenerator, QuickTemplateManager
 from .chart_generator import ChartGenerator
@@ -114,6 +115,22 @@ class ToolRegistry:
                     "limit": 5,
                 },
             ),
+            "flex_analytics": ToolSpec(
+                name="flex_analytics",
+                description=(
+                    "Flexible comparisons for cashflow and holdings. "
+                    "Args: metric=income|expenses|net_cash_flow|holdings_value|holdings_unrealized_pl, "
+                    "party_ids=[], party_type=company|individual, name_prefix='m', days, limit, "
+                    "chart_type (line|bar|doughnut), x_axis, y_axis."
+                ),
+                handler=flex_analytics,
+                default_args={
+                    "metric": "net_cash_flow",
+                    "days": 365,
+                    "limit": 10,
+                    "chart_type": None,
+                },
+            ),
         }
 
     def describe_keywords(self) -> list[dict[str, str]]:
@@ -146,6 +163,11 @@ class ToolRegistry:
             "leaderboard metric=category_expenses:travel direction=top days=90; "
             "party_insights party_name=alex metric=income granularity=monthly; "
             "party_insights party_id=20 party_type=individual metric=summary."
+        )
+        lines.append(
+            "flex_analytics: metric=income|expenses|net_cash_flow|holdings_value|holdings_unrealized_pl, "
+            "party_ids=[...], party_type=company|individual, name_prefix to search parties, days window, limit. "
+            "Defaults: line chart over months for cashflow metrics (stacked by party), bar/doughnut for holdings snapshots."
         )
         return "\n".join(lines)
 

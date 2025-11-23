@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 import re
 
@@ -15,6 +15,7 @@ from app.models import (
     AppUser,
     Category,
     EmploymentContract,
+    Instrument,
     JournalEntry,
     JournalLine,
     OrgPartyMap,
@@ -68,6 +69,343 @@ def _normalize_party_type_hint(value: Any) -> PartyType | None:
     hint = _normalize_party_type(value)
     return hint if hint is not None else PartyType.INDIVIDUAL
 
+
+def _coerce_party_ids(value: Any) -> list[int]:
+    """Convert incoming ids into an int list, dropping invalid entries."""
+    if value is None:
+        return []
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    ids: list[int] = []
+    for item in values:
+        try:
+            candidate = int(str(item).strip())
+            ids.append(candidate)
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+def _resolve_party_scope(scope: UserScope, party_ids: list[int] | None) -> list[int] | None:
+    """
+    Enforce caller scope for multi-party datasets.
+
+    Admins can request any party ids (or omit for all). Non-admins are pinned to their party.
+    """
+    requested_ids = _coerce_party_ids(party_ids) if party_ids else []
+    if scope.role == "admin":
+        return requested_ids or None
+
+    scoped_id = scope.resolve_party_id(None)
+    if scoped_id is None:
+        raise PermissionError("User scope is missing a party_id for this request")
+
+    if requested_ids and scoped_id not in requested_ids:
+        raise PermissionError("You are not allowed to query data for another party")
+
+    return [scoped_id]
+
+
+def _map_company_ids(
+    session: Session,
+    ids: Sequence[int] | None,
+) -> tuple[list[int], dict[int, int]]:
+    """
+    Map external company ids (org_id) to internal party ids.
+
+    Returns (party_ids_for_filter, display_map{party_id: org_id}).
+    """
+    clean_ids = _coerce_party_ids(ids)
+    if not clean_ids:
+        return [], {}
+
+    rows = session.execute(
+        select(OrgPartyMap.org_id, OrgPartyMap.party_id).where(OrgPartyMap.org_id.in_(clean_ids))
+    ).all()
+    if not rows:
+        return clean_ids, {}
+
+    party_ids = [row.party_id for row in rows]
+    display_map = {row.party_id: row.org_id for row in rows}
+    return party_ids, display_map
+
+
+def _safe_chart_type(requested: Optional[str], fallback: str) -> str:
+    """Keep the LLM's choice when valid, otherwise use a safe fallback."""
+    allowed = {"bar", "line", "pie", "doughnut"}
+    if requested and str(requested).lower() in allowed:
+        return str(requested).lower()
+    return fallback
+
+
+def _pick_axes(
+    rows: list[dict[str, Any]],
+    requested_x: Optional[str],
+    requested_y: Optional[Any],
+    *,
+    default_x: str,
+    default_y: Any,
+) -> tuple[str, Any]:
+    """
+    Honor LLM axes when they exist in the data; otherwise fall back to safe defaults.
+    Prevents junk charts while still letting the model steer layout.
+    """
+    if not rows:
+        return default_x, default_y
+
+    sample = rows[0]
+    x_axis = requested_x if requested_x and requested_x in sample else default_x
+
+    if isinstance(requested_y, (list, tuple)):
+        if all(isinstance(key, str) and key in sample for key in requested_y):
+            y_axis = list(requested_y)
+        else:
+            y_axis = default_y
+    elif isinstance(requested_y, str):
+        y_axis = requested_y if requested_y in sample else default_y
+    else:
+        y_axis = default_y
+
+    return x_axis, y_axis
+
+
+def flex_analytics(
+    session: Session,
+    scope: UserScope,
+    *,
+    metric: str = "net_cash_flow",
+    party_ids: Optional[Sequence[int]] = None,
+    party_type: Optional[str] = None,
+    name_prefix: Optional[str] = None,
+    days: int = 365,
+    limit: int = 10,
+    chart_type: Optional[str] = None,
+    x_axis: Optional[str] = None,
+    y_axis: Optional[Any] = None,
+    title: Optional[str] = None,
+) -> ToolResult:
+    """
+    Flexible comparisons for party cashflow and holdings metrics.
+
+    The LLM can pick the metric and a party set (explicit ids or name prefix),
+    and this helper will pick a sensible chart config (line for time-series,
+    bar/pie for snapshots) while keeping scope enforcement.
+    """
+
+    metric_key = str(metric or "net_cash_flow").strip().lower()
+    if metric_key in {"cash_flow", "cashflow"}:
+        metric_key = "net_cash_flow"
+    if metric_key in {"holdings_pl", "stock_pl", "stock_gains"}:
+        metric_key = "holdings_unrealized_pl"
+    if metric_key in {"holdings_market_value", "market_value", "stock_value"}:
+        metric_key = "holdings_value"
+
+    timeseries_metrics = {"income", "expenses", "net_cash_flow"}
+    holdings_metrics = {"holdings_value", "holdings_unrealized_pl"}
+
+    if metric_key not in timeseries_metrics | holdings_metrics:
+        raise ValueError(
+            f"Unsupported flex metric '{metric}'. "
+            "Use income|expenses|net_cash_flow|holdings_value|holdings_unrealized_pl"
+        )
+
+    limit_val = max(1, _clean_int(limit, 10))
+    party_type_filter = _normalize_party_type(party_type)
+    resolved_parties: list[int] | None
+    display_id_map: dict[int, int] = {}
+    if scope.role == "admin":
+        if party_type_filter == PartyType.COMPANY:
+            resolved_parties, display_id_map = _map_company_ids(session, party_ids)
+        else:
+            resolved_parties = _coerce_party_ids(party_ids) or None
+    else:
+        resolved_parties = _resolve_party_scope(scope, party_ids)
+    name_filter = str(name_prefix).strip() if name_prefix else None
+
+    if metric_key in timeseries_metrics:
+        start = _start_date(days)
+        month_label = func.date_format(JournalEntry.txn_date, "%Y-%m").label("month")
+        income_expr = func.coalesce(
+            func.sum(case((Section.name == "income", func.abs(JournalLine.amount)), else_=0)), 0
+        ).label("income_total")
+        expense_expr = func.coalesce(
+            func.sum(case((Section.name == "expense", func.abs(JournalLine.amount)), else_=0)), 0
+        ).label("expense_total")
+
+        query = (
+            select(
+                Party.id.label("party_id"),
+                Party.display_name.label("party_name"),
+                Party.party_type.label("party_type"),
+                month_label,
+                income_expr,
+                expense_expr,
+            )
+            .select_from(JournalLine)
+            .join(JournalEntry, JournalEntry.id == JournalLine.entry_id)
+            .join(Account, Account.id == JournalLine.account_id)
+            .join(Party, Party.id == Account.party_id)
+            .outerjoin(Category, Category.id == JournalLine.category_id)
+            .outerjoin(Section, Section.id == Category.section_id)
+            .where(JournalEntry.txn_date >= start)
+            .group_by(Party.id, Party.display_name, Party.party_type, month_label)
+            .order_by(month_label.asc(), Party.display_name.asc())
+        )
+
+        if party_type_filter:
+            query = query.where(Party.party_type == party_type_filter)
+        if resolved_parties:
+            query = query.where(Party.id.in_(resolved_parties))
+        if name_filter:
+            query = query.where(Party.display_name.ilike(f"{name_filter}%"))
+
+        rows = session.execute(query).all()
+
+        # Rank parties by the requested metric to keep the chart legible
+        party_totals: dict[int, float] = {}
+
+        def _metric_value(r: Any) -> float:
+            income_val = _as_float(getattr(r, "income_total", 0))
+            expense_val = _as_float(getattr(r, "expense_total", 0))
+            if metric_key == "income":
+                return income_val
+            if metric_key == "expenses":
+                return expense_val
+            return income_val - expense_val
+
+        for row in rows:
+            party_totals[row.party_id] = party_totals.get(row.party_id, 0.0) + _metric_value(row)
+
+        top_parties: set[int]
+        if resolved_parties:
+            top_parties = set(resolved_parties)
+        else:
+            top_ids = sorted(party_totals, key=party_totals.get, reverse=True)[:limit_val]
+            top_parties = set(top_ids)
+
+        data_rows: list[dict[str, Any]] = []
+        for row in rows:
+            if row.party_id not in top_parties:
+                continue
+            income_val = _as_float(row.income_total)
+            expense_val = _as_float(row.expense_total)
+            net_val = income_val - expense_val
+            data_rows.append(
+                {
+                    "party_id": display_id_map.get(row.party_id, row.party_id),
+                    "party_name": row.party_name,
+                    "party_type": row.party_type,
+                    "month": row.month,
+                    "income_total": income_val,
+                    "expense_total": expense_val,
+                    "net_cash_flow": net_val,
+                }
+            )
+
+        data_rows.sort(key=lambda r: (r.get("month") or "", r.get("party_name") or ""))
+
+        default_y = (
+            "income_total" if metric_key == "income" else "expense_total" if metric_key == "expenses" else "net_cash_flow"
+        )
+        default_x = "month"
+        x_default, y_default = _pick_axes(
+            data_rows,
+            x_axis,
+            y_axis,
+            default_x=default_x,
+            default_y=default_y,
+        )
+
+        chart_default = _safe_chart_type(chart_type, "line")
+        stack_default = "party_name" if len({r["party_name"] for r in data_rows}) > 1 else None
+        chart_title = title or f"{str(y_default).replace('_', ' ').title()} over time"
+
+        return ToolResult(
+            keyword=f"flex_{metric_key}",
+            title=chart_title,
+            rows=data_rows,
+            chart_type=chart_default,
+            x_axis=x_default,
+            y_axis=y_default,
+            stack_by=stack_default,
+            sort=None,
+            unit="currency",
+        )
+
+    # Holdings snapshot metrics
+    value_expr = func.coalesce(
+        func.sum(PositionAgg.qty * func.coalesce(PositionAgg.last_price, 0)), 0
+    ).label("holdings_value")
+    pl_expr = func.coalesce(func.sum(PositionAgg.unrealized_pl), 0).label("holdings_unrealized_pl")
+
+    selected_expr = value_expr if metric_key == "holdings_value" else pl_expr
+    query = (
+        select(
+            Party.id.label("party_id"),
+            Party.display_name.label("party_name"),
+            Party.party_type.label("party_type"),
+            value_expr,
+            pl_expr,
+        )
+        .select_from(PositionAgg)
+        .join(Account, Account.id == PositionAgg.account_id)
+        .join(Party, Party.id == Account.party_id)
+        .join(Instrument, Instrument.id == PositionAgg.instrument_id)
+        .group_by(Party.id, Party.display_name, Party.party_type)
+        .order_by(selected_expr.desc())
+    )
+
+    if party_type_filter:
+        query = query.where(Party.party_type == party_type_filter)
+    if resolved_parties:
+        query = query.where(Party.id.in_(resolved_parties))
+    if name_filter:
+        query = query.where(Party.display_name.ilike(f"{name_filter}%"))
+
+    query = query.limit(limit_val)
+    rows = session.execute(query).all()
+
+    data_rows = [
+        {
+            "party_id": display_id_map.get(row.party_id, row.party_id),
+            "party_name": row.party_name,
+            "party_type": row.party_type,
+            "holdings_value": _as_float(getattr(row, "holdings_value", 0)),
+            "holdings_unrealized_pl": _as_float(getattr(row, "holdings_unrealized_pl", 0)),
+        }
+        for row in rows
+    ]
+
+    if not data_rows:
+        return ToolResult(
+            keyword=f"flex_{metric_key}",
+            title="No data",
+            rows=[],
+            chart_type=None,
+        )
+
+    default_y = "holdings_value" if metric_key == "holdings_value" else "holdings_unrealized_pl"
+    default_x = "party_name"
+    x_default, y_default = _pick_axes(
+        data_rows,
+        x_axis,
+        y_axis,
+        default_x=default_x,
+        default_y=default_y,
+    )
+    chart_default = _safe_chart_type(chart_type, "doughnut" if len(data_rows) <= 8 else "bar")
+    chart_title = title or f"{str(y_default).replace('_', ' ').title()} by party"
+
+    return ToolResult(
+        keyword=f"flex_{metric_key}",
+        title=chart_title,
+        rows=data_rows,
+        chart_type=chart_default,
+        x_axis=x_default,
+        y_axis=y_default,
+        stack_by=None,
+        sort="desc",
+        unit="currency",
+    )
 
 def expenses_by_category(
     session: Session,
@@ -850,4 +1188,5 @@ __all__ = [
     "leaderboard",
     "party_insights",
     "top_spenders",
+    "flex_analytics",
 ]
