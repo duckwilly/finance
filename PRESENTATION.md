@@ -5,11 +5,13 @@ We moeten nog even kijken hoe we dit willen verdelen. Check zelf maar welke onde
 ## Topics
 
 - Overview of the project (A)
-- Overview of the architecture (A)
-    - Tech stack:
-        - Frontend: HTML, CSS, JavaScript, HTMX
-        - Backend: Python, SQLAlchemy
-        - Database: MariaDB on Docker
+    - Simulated bank data for individuals and companies, including transactions and stock holdings
+    - Admin dashboard for browsing and searching individual and company data, big picture view of all the data
+    - Individuals can log in and view their own data and data for their company
+- Tech stack (A)
+    - Frontend: HTML, CSS, JavaScript, HTMX, Chart.js 
+    - Backend: Python, SQLAlchemy, FastAPI, Jinja2, Pydantic, PyJWT
+    - Database: MariaDB on Docker
 - Database design (M)
     - Nature of financial data
     - Structure of the database
