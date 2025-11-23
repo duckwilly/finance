@@ -1,0 +1,91 @@
+{% set dashboard = slide_payload.individual_dashboard %}
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">Data sample</p>
+    <h2 class="slide__title">Simulated bank data (user 3)</h2>
+    <p class="slide__lede">
+      A real record from the seed set to show how individuals look in the database, how accounts aggregate, and what lands on the dashboard.
+    </p>
+  </header>
+  <div class="slide__content slide__grid">
+    <div class="slide__callout">
+      <p class="slide__callout-title">What we store</p>
+      <p>
+        Parties join to accounts, journal lines, and holdings. Income and expenses roll up per reporting period, and profiles keep contact details and job context.
+      </p>
+      <p>
+        The cards on the right pull live ORM data for individual user 3 so you can click through to the full dashboard view.
+      </p>
+    </div>
+
+    <div class="demo-panel">
+      {% if dashboard %}
+      <div class="demo-panel__header">
+        <div>
+          <a class="demo-panel__name" href="{{ request.url_for('read_individual_dashboard', user_id=dashboard.profile.id) }}">{{ dashboard.profile.name }}</a>
+          <p class="demo-panel__meta">{{ dashboard.profile.email }} • {{ dashboard.period_label }}</p>
+        </div>
+        {% if dashboard.employer_name %}
+        <div class="demo-panel__badge">{{ dashboard.employer_name }}</div>
+        {% endif %}
+      </div>
+      <dl class="demo-metrics">
+        <div>
+          <dt>Net worth</dt>
+          <dd>{{ humanize_currency(dashboard.summary.net_worth, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Cash</dt>
+          <dd>{{ humanize_currency(dashboard.summary.cash_balance, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Holdings</dt>
+          <dd>{{ humanize_currency(dashboard.summary.holdings_value, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Income</dt>
+          <dd>{{ humanize_currency(dashboard.summary.period_income, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Expenses</dt>
+          <dd>{{ humanize_currency(dashboard.summary.period_expenses, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Net cash flow</dt>
+          <dd>{{ humanize_currency(dashboard.summary.net_cash_flow, decimals=2) }}</dd>
+        </div>
+      </dl>
+
+      <div class="demo-split">
+        <div>
+          <p class="demo-split__title">Accounts</p>
+          <ul class="demo-list">
+            {% for account in dashboard.accounts[:3] %}
+            <li>
+              <span>{{ account.name or account.type }}</span>
+              <span>{{ humanize_currency(account.balance, decimals=2) }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        <div>
+          <p class="demo-split__title">Top holdings</p>
+          <ul class="demo-list">
+            {% for holding in dashboard.holdings[:3] %}
+            <li>
+              <span>{{ holding.instrument_symbol }}</span>
+              <span>{{ humanize_currency(holding.market_value, decimals=2) }}</span>
+            </li>
+            {% endfor %}
+            {% if not dashboard.holdings %}
+            <li class="demo-list__empty">No holdings on file</li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+      {% else %}
+      <p class="demo-panel__empty">Unable to load user 3 right now. Check database connectivity and seed data.</p>
+      {% endif %}
+    </div>
+  </div>
+</article>
