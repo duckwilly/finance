@@ -28,15 +28,27 @@
     </header>
 
     <div class="presentation__layout">
-      <aside class="presentation__nav" data-slide-nav>
+      <button
+        type="button"
+        class="presentation__nav-toggle"
+        data-nav-toggle
+        aria-expanded="true"
+        aria-controls="presentation-nav"
+        aria-label="Toggle navigation"
+        title="Hide navigation"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+
+      <aside class="presentation__nav" id="presentation-nav" data-slide-nav>
         <div class="presentation__nav-header">
           <div>
             <p class="eyebrow">Navigation</p>
             <h2 class="presentation__nav-title">Topics</h2>
           </div>
-          <button type="button" class="presentation__nav-toggle" data-nav-toggle aria-expanded="true">
-            Collapse
-          </button>
         </div>
         <ol class="presentation__nav-list">
           {% for slide in slides %}
@@ -49,7 +61,7 @@
               hx-target="#slide-stage"
               hx-swap="innerHTML transition:true"
             >
-              <span class="presentation__nav-label">{{ '%02d' % loop.index }}</span>
+              <span class="presentation__nav-label">{{ slide.order or '%02d' % loop.index }}</span>
               <span class="presentation__nav-body">
                 <span class="presentation__nav-title-text">{{ slide.title }}</span>
                 <span class="presentation__nav-summary">{{ slide.summary }}</span>
@@ -67,7 +79,7 @@
 
         <div class="presentation__controls" aria-label="Slide controls">
           <div class="presentation__progress" data-progress-label>
-            {{ '%02d' % 1 }} / {{ '%02d' % slides|length }} — {{ active_slide.title }}
+            {{ active_slide.order or '%02d' % 1 }} / {{ '%02d' % slides|length }} — {{ active_slide.title }}
           </div>
           <div class="presentation__control-buttons">
             <button type="button" class="presentation__arrow" data-prev aria-label="Previous slide">←</button>

@@ -21,9 +21,11 @@
     const total = slides.length;
     const slide = slides[index];
     if (progressLabel && slide) {
-      const paddedIndex = String(index + 1).padStart(2, '0');
-      const paddedTotal = String(total).padStart(2, '0');
-      progressLabel.textContent = `${paddedIndex} / ${paddedTotal} — ${slide.title}`;
+      const activeOrder = slide.order || String(index + 1);
+      const finalOrder = slides[total - 1]?.order || String(total);
+      const displayIndex = activeOrder.includes('.') ? activeOrder : activeOrder.padStart(2, '0');
+      const displayTotal = finalOrder.includes('.') ? finalOrder : String(total).padStart(2, '0');
+      progressLabel.textContent = `${displayIndex} / ${displayTotal} — ${slide.title}`;
     }
     updateNav();
     updateArrows();
@@ -91,14 +93,18 @@
     }
   };
 
-  const toggleNav = () => {
+  const setNavCollapsed = (collapsed) => {
     if (!nav || !navToggle) return;
-    const isCollapsed = nav.classList.toggle('is-collapsed');
-    navToggle.textContent = isCollapsed ? 'Expand' : 'Collapse';
-    navToggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
-    if (layout) {
-      layout.classList.toggle('is-nav-collapsed', isCollapsed);
-    }
+    nav.classList.toggle('is-collapsed', collapsed);
+    nav.hidden = collapsed;
+    navToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    navToggle.setAttribute('title', collapsed ? 'Show navigation' : 'Hide navigation');
+    layout?.classList.toggle('is-nav-collapsed', collapsed);
+  };
+
+  const toggleNav = () => {
+    const isCollapsed = nav?.classList.contains('is-collapsed');
+    setNavCollapsed(!isCollapsed);
   };
 
   if (nav) {
@@ -129,4 +135,5 @@
   }
 
   updateProgress();
+  setNavCollapsed(false);
 })();

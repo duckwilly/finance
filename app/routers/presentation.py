@@ -21,6 +21,7 @@ class Slide:
     title: str
     template: str
     summary: str
+    order: str | None = None
 
 
 SLIDES: tuple[Slide, ...] = (
@@ -29,36 +30,42 @@ SLIDES: tuple[Slide, ...] = (
         title="Project overview",
         template="presentation/slides/overview.html",
         summary="High-level goals and the audiences we support.",
+        order="1",
     ),
     Slide(
         slug="architecture",
         title="Architecture & tech stack",
         template="presentation/slides/architecture.html",
         summary="How the FastAPI, database, and front-end layers fit together.",
+        order="2",
     ),
     Slide(
         slug="database",
         title="Database design",
         template="presentation/slides/database.html",
         summary="Schema highlights for financial data, relationships, and goals.",
+        order="3",
     ),
     Slide(
         slug="features",
         title="Features & demos",
         template="presentation/slides/features.html",
         summary="Dashboards, admin workflows, and storytelling moments to click through.",
+        order="4.1",
     ),
     Slide(
         slug="ai-chatbot",
         title="AI chatbot capabilities",
         template="presentation/slides/ai_chatbot.html",
         summary="Prompt assembly, visual responses, and database-aware tooling.",
+        order="4.2",
     ),
     Slide(
         slug="operational-notes",
         title="Operations & logging",
         template="presentation/slides/operations.html",
         summary="Telemetry, startup warmups, and how we monitor the platform.",
+        order="5",
     ),
 )
 
@@ -71,7 +78,17 @@ def _get_slide(slug: str) -> Slide:
 
 
 def _serialize_slides(slides: Iterable[Slide]) -> list[dict[str, str]]:
-    return [{"slug": slide.slug, "title": slide.title, "summary": slide.summary} for slide in slides]
+    serialized: list[dict[str, str]] = []
+    for index, slide in enumerate(slides, start=1):
+        serialized.append(
+            {
+                "slug": slide.slug,
+                "title": slide.title,
+                "summary": slide.summary,
+                "order": slide.order or str(index),
+            }
+        )
+    return serialized
 
 
 @router.get("/", summary="Interactive presentation", response_class=HTMLResponse)
