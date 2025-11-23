@@ -10,20 +10,16 @@
       <ul class="slide__bullets">
         <li>Login endpoint zet een short-lived JWT in een HttpOnly cookie; geen token in localStorage.</li>
         <li>Claims: <code>sub</code>, <code>user_id</code>, <code>party_id</code>, rollen en een lijst van toegestane <code>company_ids</code>.</li>
-        <li>Tokens zijn kort geldig; opnieuw inloggen of een nieuwe sessie opvragen houdt demo's veilig.</li>
+        <li>Tokens zijn een uur geldig</li>
       </ul>
     </div>
     <div>
       <h3 class="slide__section-title">Autorisatie</h3>
       <ul class="slide__bullets">
-        <li>Dependencies per router (<code>require_admin_user</code>, <code>require_company_access</code>, <code>require_individual_access</code>) check claims en rollen.</li>
+        <li>Dependencies per router (<code>require_admin_user</code>, <code>require_company_access</code>, <code>require_individual_access</code>).</li>
         <li>Admin overschrijft alle checks; company routes vereisen admin of een <code>company_id</code> in het token.</li>
         <li>Employment-relaties voegen die <code>company_ids</code> toe zodat werknemers de dashboards van hun werkgever kunnen zien.</li>
       </ul>
-      <div class="slide__callout">
-        <p class="slide__callout-title">Praatpunt</p>
-        <p>Benadruk dat de claims direct de demo's sturen: admin kan alles, medewerker krijgt enkel eigen bedrijf, individu alleen eigen rekeningen.</p>
-      </div>
     </div>
   </div>
   <div class="auth-diagram" aria-label="Schema authenticatie en autorisatie">
@@ -48,6 +44,5 @@
         <p class="auth-diagram__body">Admin: alles • Employee: eigen bedrijf • Individu: eigen dashboards</p>
       </div>
     </div>
-    <p class="auth-diagram__note">Laat de flow zien op de demo: log in als admin, open een company dashboard en wissel naar een individueel dashboard met dezelfde sessie.</p>
   </div>
 </article>
