@@ -38,6 +38,8 @@ def render_dashboard_template(
 ) -> HTMLResponse:
     """Render the unified dashboard template with supplied content."""
 
+    embed_flag = str(request.query_params.get("embed", "")).lower() in {"1", "true", "yes", "on"}
+
     params = dict(panel_params or {})
     card_payloads: list[dict[str, object]] = []
 
@@ -72,6 +74,7 @@ def render_dashboard_template(
         "show_admin_return": show_admin_return,
         "admin_return_url": request.url_for("read_dashboard"),
         "list_htmx_config": list_htmx_config,
+        "is_embed": embed_flag,
     }
 
     return templates.TemplateResponse(

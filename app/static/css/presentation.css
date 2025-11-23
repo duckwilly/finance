@@ -1,3 +1,7 @@
+:root {
+  --mono: "SFMono-Regular", "JetBrains Mono", "Fira Code", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
 :root[data-theme="light"] {
   --presentation-surface: #ffffff;
   --presentation-surface-strong: #f3f4ff;
@@ -230,6 +234,7 @@
   display: grid;
   gap: 0.5rem;
   overflow: auto;
+  align-content: start;
 }
 
 .presentation__nav-link {
@@ -364,6 +369,41 @@
   font-weight: 700;
 }
 
+.code-shell {
+  background: linear-gradient(120deg, rgba(95, 106, 252, 0.12), rgba(96, 165, 250, 0.08));
+  border: 1px solid var(--presentation-border);
+  border-radius: 14px;
+  padding: 0.75rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  margin: 0.5rem 0;
+}
+
+.code-block {
+  font-family: var(--mono);
+  background: radial-gradient(circle at 10% 10%, rgba(96, 165, 250, 0.16), transparent 35%),
+    radial-gradient(circle at 90% 20%, rgba(244, 114, 182, 0.18), transparent 40%),
+    #0f172a;
+  color: #e5e7eb;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  overflow: auto;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.code-shell .code-block {
+  margin: 0;
+}
+
+.code-block code {
+  font-family: inherit;
+  color: inherit;
+  white-space: pre;
+  display: block;
+}
+
 .demo-panel {
   background: var(--presentation-surface);
   border: 1px solid var(--presentation-border);
@@ -462,6 +502,102 @@
   margin: 0;
   color: var(--presentation-muted);
   font-style: italic;
+}
+
+.slide__demo {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.slide__embed {
+  border: 1px solid var(--presentation-border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: var(--presentation-shadow);
+  background: var(--presentation-surface);
+}
+
+.slide__embed iframe {
+  width: 100%;
+  min-height: 80vh;
+  border: none;
+  background: #fff;
+}
+
+.slide__demo-note {
+  margin: 0;
+  color: var(--presentation-muted);
+}
+
+.slide__demo-note.is-empty {
+  color: var(--presentation-text);
+  font-weight: 600;
+}
+
+.slide--full-embed {
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.slide__embed--full {
+  border: none;
+}
+
+.slide__embed--full iframe {
+  min-height: 90vh;
+}
+
+.auth-diagram {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.auth-diagram__track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: stretch;
+}
+
+.auth-diagram__node {
+  flex: 1 1 200px;
+  background: var(--presentation-surface);
+  border: 1px solid var(--presentation-border);
+  border-radius: 14px;
+  padding: 0.75rem 0.9rem;
+  box-shadow: var(--presentation-shadow);
+}
+
+.auth-diagram__title {
+  margin: 0 0 0.15rem;
+  font-weight: 700;
+}
+
+.auth-diagram__body {
+  margin: 0;
+  color: var(--presentation-muted);
+  font-size: 0.95rem;
+}
+
+.auth-diagram__arrow {
+  display: grid;
+  place-items: center;
+  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  border: 1px dashed var(--presentation-border);
+  color: var(--presentation-muted);
+  min-width: 42px;
+  font-weight: 700;
+}
+
+.auth-diagram__note {
+  margin: 0;
+  color: var(--presentation-muted);
+  font-size: 0.95rem;
 }
 
 .presentation__controls {

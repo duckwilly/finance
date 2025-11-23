@@ -40,6 +40,7 @@
           </p>
           {% endif %}
         </div>
+        {% if not is_embed %}
         <div class="page__meta">
           {% if hero_badge %}
           <div class="badge">{{ hero_badge }}</div>
@@ -93,6 +94,7 @@
           </button>
           <a class="logout-link" href="{{ request.url_for('logout') }}">Log out</a>
         </div>
+        {% endif %}
       </header>
 
       <main class="page__content">

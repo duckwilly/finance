@@ -6,12 +6,14 @@ from typing import Iterable
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from app.core.logger import get_logger
 from app.core.security import AuthenticatedUser, require_admin_user
 from app.core.templates import templates
 from app.db.session import get_sessionmaker
+from app.models import AppUser, OrgPartyMap, UserPartyMap
 from app.services import IndividualsService
 
 LOGGER = get_logger(__name__)
@@ -88,101 +90,45 @@ SLIDES: tuple[Slide, ...] = (
     ),
     Slide(
         slug="database",
-        title="Database design",
+        title="Database-ontwerp",
         template="presentation/slides/database.html",
-        summary="Schema highlights for financial data, relationships, and goals.",
+        summary="Aard van financiële data, 3NF/BCNF-normalisatie en ons dubbelboekings-journal.",
         order="3",
     ),
     Slide(
-        slug="data-nature",
-        title="Nature of financial data",
-        template="presentation/slides/stub.html",
-        summary="What we track across parties, accounts, and holdings.",
-        order="3.1",
-    ),
-    Slide(
-        slug="data-structure",
-        title="Structure of the database",
-        template="presentation/slides/stub.html",
-        summary="How tables, journals, and seed data are shaped.",
-        order="3.2",
-    ),
-    Slide(
-        slug="data-relationships",
-        title="Relationships between tables",
-        template="presentation/slides/stub.html",
-        summary="Links across accounts, transactions, and equities.",
-        order="3.3",
-    ),
-    Slide(
-        slug="data-goals",
-        title="Goals and design decisions",
-        template="presentation/slides/stub.html",
-        summary="Why the schema is modeled for financial reporting.",
-        order="3.4",
-    ),
-    Slide(
         slug="features",
-        title="Features & demos",
+        title="Demo",
         template="presentation/slides/features.html",
-        summary="Dashboards, admin workflows, and storytelling moments to click through.",
+        summary="Kort overzicht van de onderdelen die we live laten zien.",
         order="4",
     ),
     Slide(
         slug="auth",
-        title="Authentication and authorization",
+        title="Authenticatie en autorisatie",
         template="presentation/slides/auth.html",
-        summary="Sign-in flows, JWT cookies, and scoped dashboards.",
+        summary="Aanmeldflow, JWT-cookies en toegang per rol.",
         order="4.1",
     ),
     Slide(
         slug="admin-dashboard",
-        title="Admin dashboard overview",
-        template="presentation/slides/stub.html",
-        summary="Admin hubs for browsing companies, individuals, and transactions.",
+        title="Admin dashboard",
+        template="presentation/slides/admin_dashboard.html",
+        summary="Navigatie voor zoekbare lijsten van personen, bedrijven en transacties.",
         order="4.2",
-    ),
-    Slide(
-        slug="admin-big-picture",
-        title="Big picture database view",
-        template="presentation/slides/stub.html",
-        summary="Top-level metrics across the dataset.",
-        order="4.2.1",
-    ),
-    Slide(
-        slug="admin-views",
-        title="Entity drill-downs",
-        template="presentation/slides/stub.html",
-        summary="Views of companies, individuals, transactions, and holdings.",
-        order="4.2.2",
     ),
     Slide(
         slug="company-dashboard",
         title="Company dashboard",
-        template="presentation/slides/stub.html",
-        summary="Net worth, payroll, and transaction breakdowns for a company.",
+        template="presentation/slides/company_dashboard.html",
+        summary="Bedrijfswaarden, cashflow en payroll in één scherm.",
         order="4.3",
     ),
     Slide(
         slug="individual-dashboard",
         title="Individual dashboard",
-        template="presentation/slides/stub.html",
-        summary="Personal net worth, brokerage holdings, income, and expenses.",
+        template="presentation/slides/individual_dashboard.html",
+        summary="Persoonlijk vermogen, holdings, inkomsten en uitgaven.",
         order="4.4",
-    ),
-    Slide(
-        slug="ai-insights",
-        title="AI insights demo",
-        template="presentation/slides/stub.html",
-        summary="Using the AI chatbot to narrate trends and generate visuals.",
-        order="4.5",
-    ),
-    Slide(
-        slug="ai-trend-example",
-        title="AI trend walkthrough",
-        template="presentation/slides/stub.html",
-        summary="Example of charting a company trending up or down.",
-        order="4.5.1",
     ),
     Slide(
         slug="show-log",
@@ -268,7 +214,32 @@ def _load_individual_dashboard(user_id: int):
         session.close()
 
 
+def _load_demo_targets() -> dict[str, int | None]:
+    session = SESSION_FACTORY()
+    try:
+        company_id = (
+            session.execute(select(OrgPartyMap.org_id).order_by(OrgPartyMap.org_id).limit(1)).scalar_one_or_none()
+        )
+        individual_user_id = (
+            session.execute(
+                select(UserPartyMap.user_id)
+                .join(AppUser, AppUser.id == UserPartyMap.user_id)
+                .where(AppUser.username != "admin")
+                .order_by(UserPartyMap.user_id)
+                .limit(1)
+            ).scalar_one_or_none()
+        )
+        return {"company_id": company_id, "individual_user_id": individual_user_id}
+    except Exception:
+        LOGGER.exception("Failed to load demo targets for presentation slides")
+        return {"company_id": None, "individual_user_id": None}
+    finally:
+        session.close()
+
+
 def _get_slide_payload(slide: Slide) -> dict[str, object]:
+    if slide.slug in {"admin-dashboard", "company-dashboard", "individual-dashboard"}:
+        return {"demo_targets": _load_demo_targets()}
     if slide.slug == "simulated-data":
         return {"individual_dashboard": _load_individual_dashboard(3)}
     return {}
