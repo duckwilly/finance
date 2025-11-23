@@ -163,7 +163,7 @@ async def read_dashboard(
             "value": metrics.total_individuals,
             "value_type": "number",
             "decimals": 0,
-            "hint": "People we track across the platform.",
+            "hint": "Individual users.",
         },
         {
             "panel": "companies",
@@ -171,7 +171,7 @@ async def read_dashboard(
             "value": metrics.total_companies,
             "value_type": "number",
             "decimals": 0,
-            "hint": "Businesses on file with us.",
+            "hint": "Companies simulated",
         },
         {
             "panel": "transactions",
@@ -179,7 +179,7 @@ async def read_dashboard(
             "value": metrics.total_transactions,
             "value_type": "number",
             "decimals": 0,
-            "hint": "Simulated records to explore.",
+            "hint": "Simulated transactions",
         },
         {
             "panel": "stocks",
