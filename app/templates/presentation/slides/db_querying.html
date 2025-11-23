@@ -1,0 +1,120 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">AI copilot</p>
+    <h2 class="slide__title">Python database querying</h2>
+    <p class="slide__lede">
+      Python tools gebruiken SQLAlchemy ORM om data op te halen uit de database, met automatische toegangscontrole en gestructureerde resultaten.
+    </p>
+  </header>
+  <div class="slide__content">
+    <div style="margin-bottom: 1rem; padding: 1rem; background: var(--presentation-surface-strong); border-radius: 8px; border-left: 3px solid var(--primary);">
+      <p style="margin: 0; font-size: 0.95rem;"><strong>Tool Registry systeem:</strong> De AI geeft aan welke tools nodig zijn (bijv. "expenses_by_category"), en het Tool Registry systeem voert deze uit met SQLAlchemy queries. Elke tool heeft toegangscontrole via UserScope, zodat gebruikers alleen hun eigen data kunnen zien.</p>
+    </div>
+  </div>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Tool Registry</h3>
+      <p>Tools worden geregistreerd en uitgevoerd:</p>
+      <pre class="slide__code"><code class="language-python">class ToolRegistry:
+    def execute_calls(self, calls, user_context, db_session):
+        scope = UserScope.from_context(user_context)
+        results = []
+        
+        for call in calls:
+            tool_name = call.get("tool")  # bijv. "expenses_by_category"
+            spec = self._tools.get(tool_name)
+            args = {**(spec.default_args or {}), **provided_args}
+            
+            # Execute met scope enforcement
+            result = spec.handler(db_session, scope, **args)
+            results.append(result)
+        
+        return results</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Tool calls:</strong> AI geeft lijst van tools die uitgevoerd moeten worden</li>
+        <li><strong>Scope enforcement:</strong> UserScope controleert toegang (admin vs individueel)</li>
+        <li><strong>Error handling:</strong> Permission errors worden opgevangen en gelogd</li>
+        <li><strong>Gestructureerde output:</strong> Elke tool retourneert een ToolResult</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">SQLAlchemy queries</h3>
+      <p>Voorbeeld: expenses_by_category tool:</p>
+      <pre class="slide__code"><code class="language-python">def expenses_by_category(session, scope, days=30, party_id=None):
+    target_party = scope.resolve_party_id(party_id)
+    start = date.today() - timedelta(days=days)
+    
+    query = (
+        select(
+            func.coalesce(Category.name, "Uncategorised").label("category"),
+            func.sum(func.abs(JournalLine.amount)).label("total")
+        )
+        .select_from(JournalLine)
+        .join(JournalEntry, JournalEntry.id == JournalLine.entry_id)
+        .join(Account, Account.id == JournalLine.account_id)
+        .outerjoin(Category, Category.id == JournalLine.category_id)
+        .outerjoin(Section, Section.id == Category.section_id)
+        .where(
+            Section.name == "expense",
+            JournalEntry.txn_date >= start,
+            Account.party_id == target_party
+        )
+        .group_by(Category.name)
+        .order_by(total.desc())
+        .limit(8)
+    )
+    
+    rows = session.execute(query).all()
+    return ToolResult(keyword="expenses_by_category", ...)</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>ORM queries:</strong> SQLAlchemy select statements met joins</li>
+        <li><strong>Aggregaties:</strong> SUM, COUNT, GROUP BY voor statistieken</li>
+        <li><strong>Filters:</strong> Automatische party_id filtering via scope</li>
+        <li><strong>Type safety:</strong> Python types in plaats van raw SQL strings</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Toegangscontrole</h3>
+      <p>UserScope zorgt voor security:</p>
+      <pre class="slide__code"><code class="language-python">@dataclass(frozen=True)
+class UserScope:
+    role: str  # "admin" | "individual" | "company"
+    person_id: Optional[int]
+    company_id: Optional[int]
+    
+    def resolve_party_id(self, requested_id):
+        if self.role == "admin":
+            return requested_id  # Admins kunnen alles zien
+        
+        # Non-admins: alleen eigen data
+        scoped_id = self.company_id or self.person_id
+        if requested_id != scoped_id:
+            raise PermissionError("Not allowed")
+        return scoped_id</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Admin:</strong> Volledige toegang tot alle data</li>
+        <li><strong>Individueel:</strong> Alleen eigen party_id data</li>
+        <li><strong>Bedrijf:</strong> Alleen gekoppelde company_id data</li>
+        <li><strong>Automatisch:</strong> Elke query wordt automatisch gefilterd</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Beschikbare tools</h3>
+      <p>Verschillende analytics tools voor verschillende use cases:</p>
+      <ul class="slide__bullets">
+        <li><strong>expenses_by_category:</strong> Uitgaven gegroepeerd per categorie</li>
+        <li><strong>income_by_category:</strong> Inkomsten gegroepeerd per categorie</li>
+        <li><strong>monthly_cash_flow_comparison:</strong> Maandelijkse inkomsten vs uitgaven</li>
+        <li><strong>spending_trend:</strong> Tijdreeks van uitgaven over tijd</li>
+        <li><strong>leaderboard:</strong> Top/bottom lijsten (alleen admin)</li>
+        <li><strong>party_insights:</strong> Gedetailleerde metrics voor specifieke party</li>
+        <li><strong>flex_analytics:</strong> Flexibele vergelijkingen tussen partijen</li>
+      </ul>
+      <p style="margin-top: 0.75rem; font-size: 0.9rem; color: var(--presentation-muted);">Elke tool retourneert een <code>ToolResult</code> met keyword, title, rows (data), chart_type, x_axis, y_axis, en metadata voor visualisatie.</p>
+    </div>
+  </div>
+</article>
+
