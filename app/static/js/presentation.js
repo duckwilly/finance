@@ -210,17 +210,19 @@
       updateProgress();
       wireEmbeds(stage);
       requestAnimationFrame(syncNavHeight);
+      // Re-highlight code blocks after HTMX swap
+      if (window.Prism) {
+        window.Prism.highlightAll();
+      }
     });
   }
 
-  const stored = readStoredSlide();
-  const shouldRestore = stored && slugIndex(stored) !== -1 && stored !== activeSlug;
-  if (shouldRestore) {
-    loadSlide(stored);
-  } else {
-    persistActiveSlide(activeSlug);
-    updateProgress();
+  // Initial highlight on page load
+  if (window.Prism) {
+    window.Prism.highlightAll();
   }
+
+  updateProgress();
   setNavCollapsed(false);
   window.addEventListener('resize', syncNavHeight);
   window.addEventListener('load', syncNavHeight, { once: true });

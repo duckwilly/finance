@@ -1,0 +1,82 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">AI copilot</p>
+    <h2 class="slide__title">Prompt assembly</h2>
+    <p class="slide__lede">
+      Prompts worden dynamisch samengesteld met relevante context om de AI model te helpen accurate, gestructureerde responses te genereren.
+    </p>
+  </header>
+  <div class="slide__content">
+    <div style="margin-bottom: 1rem; padding: 1rem; background: var(--presentation-surface-strong); border-radius: 8px; border-left: 3px solid var(--primary);">
+      <p style="margin: 0; font-size: 0.95rem;"><strong>Wat is een prompt?</strong> Een prompt is de instructie die we naar de AI (LLM) sturen. In plaats van een statische prompt, bouwen we deze dynamisch op met context over de gebruiker, de huidige pagina, en beschikbare data. Dit zorgt ervoor dat de AI relevante, accurate responses geeft in het juiste format (altijd JSON).</p>
+    </div>
+  </div>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Code structuur</h3>
+      <p>De <code>build_system_prompt</code> functie assembleert de prompt:</p>
+      <pre class="slide__code" style="max-height: none; overflow: visible;"><code class="language-python">def build_system_prompt(
+    self,
+    user_context: Dict[str, Any],
+    page_context: str,
+    response_schema: str,
+) -> str:
+    """Build the system prompt with app, page, and schema context."""
+    
+    user_line = self._format_user_context(user_context)
+    visualization_lines = "\n".join(
+        f"- {item['keyword']}: {item['description']}" 
+        for item in self.allowed_visualizations
+    )
+    
+    chart_rules = (
+        "Chart type expectations:\n"
+        "- bar/line: require x_axis (label or time) and y_axis (one or more numeric fields); stack_by creates separate series per category.\n"
+        "- pie/doughnut: require x_axis (label) and a single y_axis; stack_by is not allowed.\n"
+        "Valid sort values: asc|desc applied to y_axis totals. Unit may be 'currency' to force currency formatting.\n"
+        "Always include x_axis for every visualization descriptor to avoid rendering failures."
+    )
+    
+    return (
+        f"{self.APP_HEADER}\n"
+        f"Current page: {page_context}.\n"
+        f"Current user: {user_line}.\n"
+        "You must always respond with a single JSON object that follows the"
+        " specified contract and never include markdown or prose outside of"
+        " the JSON body."
+        "\n\nDatabase schema (authoritative):\n"
+        f"{self.database_schema}\n\n"
+        "Allowed visualization keywords (choose up to three distinct entries):\n"
+        f"{visualization_lines}\n\n"
+        f"{chart_rules}\n\n"
+        f"Response contract:\n{response_schema}"
+    )</code></pre>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Prompt onderdelen</h3>
+      <ul class="slide__bullets">
+        <li><strong>APP_HEADER:</strong> Basisrol van de AI</li>
+        <li><strong>PAGE_CONTEXT:</strong> Huidige pagina voor relevante visualisaties</li>
+        <li><strong>USER_CONTEXT:</strong> user_context (dict) wordt geformatteerd naar user_line (string met role, person_id, company_id, username)</li>
+        <li><strong>DATABASE_SCHEMA:</strong> Volledige database structuur</li>
+        <li><strong>ALLOWED_VISUALIZATIONS:</strong> Beschikbare keywords (max 3 per response)</li>
+        <li><strong>CHART_RULES:</strong> Regels voor chart types en velden</li>
+        <li><strong>RESPONSE_SCHEMA:</strong> Exact JSON format (altijd structured output)</li>
+      </ul>
+      
+      <h3 class="slide__section-title" style="margin-top: 1.5rem;">Response format</h3>
+      <pre class="slide__code"><code class="language-json">{
+  "reply": "Tekstuele uitleg",
+  "visualizations": [{
+    "keyword": "expenses_by_category",
+    "chart_type": "pie",
+    "x_axis": "category",
+    "y_axis": "total"
+  }]
+}</code></pre>
+      <p style="margin-top: 0.5rem; font-size: 0.9rem; color: var(--presentation-muted);">Altijd JSON, gevalideerd met Pydantic, 0-3 visualisaties per response.</p>
+    </div>
+  </div>
+</article>
+

@@ -1,0 +1,84 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">Features & demo's</p>
+    <h2 class="slide__title">Log tonen</h2>
+    <p class="slide__lede">
+      Een geavanceerd logging systeem met Rich console output, file logging en context-aware metadata voor monitoring en debugging tijdens demo's.
+    </p>
+  </header>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Rich console logging</h3>
+      <p>Het platform gebruikt Rich voor gekleurde console output:</p>
+      <pre class="slide__code"><code class="language-python">from app.core.logger import get_logger
+
+LOGGER = get_logger(__name__)
+LOGGER.info("Dashboard requested")
+LOGGER.error("Failed", extra={"user_id": 123})</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Gekleurde output:</strong> Log levels hebben verschillende kleuren (zichtbaar in terminal, niet in code)</li>
+        <li><strong>Structured formatting:</strong> Timestamps, levels en module namen</li>
+        <li><strong>Rich tracebacks:</strong> Stack traces met syntax highlighting</li>
+        <li><strong>Real-time:</strong> Perfect voor live demo's</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">File logging</h3>
+      <p>Logs worden opgeslagen in bestanden met daily rotation:</p>
+      <pre class="slide__code"><code class="language-bash">logs/
+  ├── 2025_11_19.log
+  ├── 2025_11_20.log
+  └── 2025_11_23.log</code></pre>
+      <p>Format:</p>
+      <pre class="slide__code"><code class="language-log">2025-11-23 14:30:15 | INFO | 
+  app.routers.dashboard | 
+  Dashboard requested
+
+2025-11-23 14:30:16 | ERROR | 
+  app.services.admin | 
+  user_id=3 Failed</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Daily rotation:</strong> Nieuw bestand per dag</li>
+        <li><strong>Structured:</strong> Timestamp, level, module, message</li>
+        <li><strong>Live monitoring:</strong> <code>tail -f logs/*.log</code></li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Context-aware logging</h3>
+      <p>Logs bevatten contextuele metadata:</p>
+      <pre class="slide__code"><code class="language-python">from app.core.logger import log_context
+
+log_context.bind(user_id=123, action="load")
+LOGGER.info("Loading data")
+# Output: user_id=123 action=load Loading data</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Metadata:</strong> user_id, request_id, etc. automatisch toegevoegd</li>
+        <li><strong>Traceerbaarheid:</strong> Alle logs van een actie makkelijk vinden</li>
+        <li><strong>Debugging:</strong> Volledige context voor probleemoplossing</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Live demo monitoring</h3>
+      <p>Tijdens een demo logs real-time bekijken:</p>
+      <pre class="slide__code"><code class="language-bash"># Terminal 1
+uvicorn app.main:app --reload
+
+# Terminal 2
+tail -f logs/*.log</code></pre>
+      <p>Voorbeeld output:</p>
+      <pre class="slide__code"><code class="language-log">14:30:15 INFO  Presentation requested
+14:30:16 INFO  Rendering slide overview
+14:30:17 INFO  Dashboard requested
+14:30:18 INFO  user_id=3 Loading dashboard</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Live monitoring:</strong> Zie direct wat er gebeurt</li>
+        <li><strong>Request tracing:</strong> Volg user journey door logs</li>
+        <li><strong>Error tracking:</strong> Fouten met volledige context</li>
+      </ul>
+    </div>
+  </div>
+</article>
+

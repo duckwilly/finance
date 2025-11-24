@@ -1,0 +1,111 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">AI copilot</p>
+    <h2 class="slide__title">JSON responses</h2>
+    <p class="slide__lede">
+      De AI geeft altijd gestructureerde JSON responses terug die worden gevalideerd en omgezet naar bruikbare data voor de frontend.
+    </p>
+  </header>
+  <div class="slide__content">
+    <div style="margin-bottom: 1rem; padding: 1rem; background: var(--presentation-surface-strong); border-radius: 8px; border-left: 3px solid var(--primary);">
+      <p style="margin: 0; font-size: 0.95rem;"><strong>Waarom JSON?</strong> LLMs kunnen onvoorspelbaar zijn - soms geven ze markdown, soms extra tekst, soms code fences. Door altijd JSON te eisen en te valideren, zorgen we voor consistente, parseerbare responses die we betrouwbaar kunnen verwerken.</p>
+    </div>
+  </div>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">AI Response structuur</h3>
+      <p>De AI geeft altijd dit format terug:</p>
+      <pre class="slide__code"><code class="language-json">{
+  "reply": "Tekstuele uitleg voor de gebruiker",
+  "visualizations": [
+    {
+      "keyword": "expenses_by_category",
+      "title": "Uitgaven per categorie",
+      "chart_type": "pie",
+      "x_axis": "category",
+      "y_axis": "total",
+      "unit": "currency"
+    }
+  ]
+}</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>reply:</strong> Altijd aanwezig, tekstuele uitleg voor de gebruiker</li>
+        <li><strong>visualizations:</strong> Array van 0-3 visualisatie descriptors</li>
+        <li><strong>Maximaal 3:</strong> De prompt beperkt het aantal visualisaties</li>
+        <li><strong>Structured:</strong> Geen markdown of vrije tekst buiten JSON</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Validatie & transformatie</h3>
+      <p>Response wordt gevalideerd en omgezet:</p>
+      <pre class="slide__code"><code class="language-python">class ChatbotQueryResponse(BaseModel):
+    response: str
+    chart_config: Optional[dict] = None
+    chart_title: Optional[str] = None
+    table_data: Optional[List[dict]] = None
+    sql_query: Optional[str] = None
+    mode: str
+    visualizations: Optional[List[dict]] = None</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Pydantic validatie:</strong> Type safety en automatische validatie</li>
+        <li><strong>Error handling:</strong> LLM quirks worden opgevangen (code fences, extra tekst)</li>
+        <li><strong>Transformatie:</strong> AI response → ChatbotQueryResponse → Frontend</li>
+        <li><strong>Fallbacks:</strong> Als parsing faalt, wordt er een error response gegeven</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Error handling</h3>
+      <p>LLMs kunnen onvoorspelbaar zijn. We hanteren verschillende scenario's:</p>
+      <pre class="slide__code"><code class="language-python">def _parse_json_response(self, content: str):
+    # Verwijder code fences (```json ... ```)
+    fenced_match = re.search(r"```(?:json)?\s*(.*?)```", content)
+    if fenced_match:
+        content = fenced_match.group(1)
+    
+    # Extract eerste JSON object
+    json_match = re.search(r'\{.*\}', content, re.DOTALL)
+    if json_match:
+        return json.loads(json_match.group())
+    
+    # Fallback: probeer direct te parsen
+    return json.loads(content)</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Code fences:</strong> Verwijderd als LLM ```json blocks gebruikt</li>
+        <li><strong>Extra tekst:</strong> Eerste JSON object wordt geëxtraheerd</li>
+        <li><strong>Multiple attempts:</strong> Verschillende parsing strategieën</li>
+        <li><strong>Graceful degradation:</strong> Bij falen wordt een error response gegeven</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Visualisatie flow</h3>
+      <p>Visualizations worden omgezet naar Chart.js configs:</p>
+      <pre class="slide__code"><code class="language-python"># AI geeft visualization descriptor
+{
+  "keyword": "expenses_by_category",
+  "chart_type": "pie",
+  "x_axis": "category",
+  "y_axis": "total"
+}
+
+# Python tool haalt data op
+data = expenses_by_category(user_id=3)
+
+# ChartGenerator maakt Chart.js config
+chart_config = ChartGenerator().generate({
+  "type": "pie",
+  "data": {...},
+  "options": {...}
+})</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Descriptor:</strong> AI geeft alleen metadata (keyword, type, axes)</li>
+        <li><strong>Data fetching:</strong> Python tools halen echte data op</li>
+        <li><strong>Chart generation:</strong> ChartGenerator maakt Chart.js config</li>
+        <li><strong>Frontend:</strong> Chart.js rendert direct in de browser</li>
+      </ul>
+    </div>
+  </div>
+</article>
+

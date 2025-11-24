@@ -1,0 +1,58 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">Toegang en autorisatie</p>
+    <h2 class="slide__title">Individuele en bedrijfstoegang</h2>
+    <p class="slide__lede">
+      Mensen kunnen inloggen om hun eigen data en gekoppelde bedrijfsrecords te bekijken. Het systeem biedt gepersonaliseerde dashboards op basis van de rol en toegangsrechten van de gebruiker.
+    </p>
+  </header>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Authenticatie en rollen</h3>
+      <p>Het platform ondersteunt drie hoofdrollen met verschillende toegangsniveaus:</p>
+      <ul class="slide__bullets">
+        <li><strong>Admin gebruikers:</strong> Hebben volledige toegang tot alle dashboards en kunnen alle individuen en bedrijven bekijken. Ze worden na inloggen doorgestuurd naar het admin dashboard.</li>
+        <li><strong>Individuele gebruikers:</strong> Kunnen alleen hun eigen persoonlijke dashboard bekijken. Ze zien hun netto waarde, accounts, holdings, inkomsten en uitgaven.</li>
+        <li><strong>Bedrijfsgebruikers:</strong> Kunnen toegang krijgen tot bedrijfsdashboards waaraan ze gekoppeld zijn via hun werkrelatie. Ze zien zowel hun persoonlijke data als de bedrijfsdata.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Individueel dashboard</h3>
+      <p>Elke individuele gebruiker krijgt een gepersonaliseerd dashboard met hun financiële overzicht.</p>
+      <ul class="slide__bullets">
+        <li><strong>Netto waarde:</strong> Totaal van cash en investment holdings, gecombineerd in één metric.</li>
+        <li><strong>Cash accounts:</strong> Overzicht van checking en savings accounts met hun saldi.</li>
+        <li><strong>Brokerage holdings:</strong> Alle stock holdings met huidige marktwaarde en winst/verlies statistieken.</li>
+        <li><strong>Inkomsten en uitgaven:</strong> Breakdown per periode met categorieën voor uitgaven.</li>
+        <li><strong>Net cashflow:</strong> Het verschil tussen inkomsten en uitgaven voor de geselecteerde periode.</li>
+        <li><strong>Account details:</strong> Gedetailleerde lijst van alle accounts met transactiegeschiedenis.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Bedrijfsdashboard</h3>
+      <p>Gekoppelde gebruikers kunnen ook bedrijfsdashboards bekijken waartoe ze toegang hebben.</p>
+      <ul class="slide__bullets">
+        <li><strong>Bedrijfsmetrics:</strong> Netto waarde, cash positie, en holdings value voor het bedrijf.</li>
+        <li><strong>Payroll overzicht:</strong> Totaal payroll en breakdown per werknemer of afdeling.</li>
+        <li><strong>Inkomsten en uitgaven:</strong> Bedrijfsinkomsten en uitgaven per categorie, met mogelijkheid tot drill-down naar transacties.</li>
+        <li><strong>Net cashflow:</strong> Bedrijfscashflow voor de geselecteerde periode.</li>
+        <li><strong>Transactiegeschiedenis:</strong> Volledige lijst van bedrijfstransacties met filter- en sorteeropties.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Toegangscontrole</h3>
+      <p>Het systeem controleert automatisch of een gebruiker toegang heeft tot de gevraagde data.</p>
+      <ul class="slide__bullets">
+        <li><strong>Automatische routing:</strong> Na inloggen worden gebruikers automatisch doorgestuurd naar hun relevante dashboard (admin, individueel of bedrijf).</li>
+        <li><strong>Autorisatie checks:</strong> Elke dashboard request wordt gecontroleerd. Individuen kunnen alleen hun eigen data bekijken, tenzij ze admin zijn.</li>
+        <li><strong>Bedrijfstoegang:</strong> Gebruikers kunnen alleen bedrijfsdashboards bekijken van bedrijven waaraan ze gekoppeld zijn via hun werkrelatie.</li>
+        <li><strong>Security middleware:</strong> Alle routes zijn beschermd door authenticatie middleware die sessies valideert en toegang controleert.</li>
+        <li><strong>403 errors:</strong> Pogingen om data te bekijken zonder de juiste rechten resulteren in een "Access denied" foutmelding.</li>
+      </ul>
+    </div>
+  </div>
+</article>
+

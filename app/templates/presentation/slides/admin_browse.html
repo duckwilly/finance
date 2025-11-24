@@ -1,0 +1,52 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">Admin functionaliteit</p>
+    <h2 class="slide__title">Admin browse en zoeken</h2>
+    <p class="slide__lede">
+      Het admin dashboard biedt uitgebreide tools om door alle data te navigeren, te zoeken en te filteren op individuen, bedrijven, transacties en holdings.
+    </p>
+  </header>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Dashboard overzicht</h3>
+      <p>Het admin dashboard is het centrale punt voor alle administratieve taken. Het toont direct een overzicht van de belangrijkste metrics en biedt snelle toegang tot verschillende dataviews.</p>
+      <ul class="slide__bullets">
+        <li><strong>Vier hoofdpanels:</strong> Individuals, Companies, Transactions en Assets under management (stocks). Elk panel toont het totaal aantal records en biedt directe toegang tot de gedetailleerde lijst.</li>
+        <li><strong>Metrics in één oogopslag:</strong> Het dashboard toont direct het totaal aantal individuen, bedrijven, transacties en de totale assets under management, inclusief een breakdown van cash versus geïnvesteerde holdings.</li>
+        <li><strong>Interactieve navigatie:</strong> Door op een panel te klikken, wordt de bijbehorende lijst en visualisatie geladen zonder de pagina te verversen, dankzij HTMX.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Zoek- en filterfunctionaliteit</h3>
+      <p>Elke lijst in het admin dashboard beschikt over krachtige zoek- en filteropties om snel de gewenste informatie te vinden.</p>
+      <ul class="slide__bullets">
+        <li><strong>Real-time zoeken:</strong> Een zoekbalk boven elke lijst filtert direct de resultaten terwijl je typt. De zoekfunctie doorzoekt alle relevante velden, zoals namen, werkgevers, functietitels en andere metadata.</li>
+        <li><strong>Sorteerbare kolommen:</strong> Elke kolom in de tabel is klikbaar om te sorteren op oplopende of aflopende volgorde. Dit werkt voor tekst, getallen en valuta, met intelligente parsing van verschillende formaten.</li>
+        <li><strong>Zoekbereik:</strong> Voor individuen doorzoekt het systeem naam, werkgever en functietitel. Voor bedrijven worden bedrijfsnaam en gerelateerde informatie doorzocht.</li>
+        <li><strong>Resultaat teller:</strong> De lijst toont continu hoeveel resultaten er zichtbaar zijn na filtering, zodat je altijd weet hoeveel records matchen met je zoekopdracht.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Individuen en bedrijven lijsten</h3>
+      <p>Beide lijsten geven een compleet overzicht met relevante financiële informatie en drill-down mogelijkheden.</p>
+      <ul class="slide__bullets">
+        <li><strong>Individuen:</strong> Naam, functietitel, werkgever, maandelijks inkomen, account saldi en brokerage assets. Klikken op een naam gaat naar het persoonlijke dashboard.</li>
+        <li><strong>Bedrijven:</strong> Bedrijfsnaam, aantal werknemers, winstmarge en andere metrics. Klikken op een bedrijfsnaam leidt naar het volledige bedrijfsdashboard.</li>
+        <li><strong>Visualisaties:</strong> Pie charts tonen verdelingen (inkomens voor individuen, winstmarges voor bedrijven) om patronen te identificeren.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Transacties en holdings</h3>
+      <p>Naast individuen en bedrijven kunnen admins ook door transacties en stock holdings navigeren.</p>
+      <ul class="slide__bullets">
+        <li><strong>Transacties overzicht:</strong> Complete lijst van alle transacties met filter- en sorteeropties op datum, bedrag, partij en categorie.</li>
+        <li><strong>Stock holdings:</strong> Overzicht van alle stock holdings met winst/verlies statistieken en leaderboards voor grootste winsten en verliezen.</li>
+        <li><strong>Trend visualisaties:</strong> Line charts tonen prijstrends over tijd voor marktanalyse.</li>
+      </ul>
+    </div>
+  </div>
+</article>
+

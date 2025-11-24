@@ -1,0 +1,107 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">AI copilot</p>
+    <h2 class="slide__title">Dashboard grafieken via HTTP</h2>
+    <p class="slide__lede">
+      ToolResult data wordt omgezet naar Chart.js configuraties en via HTTP endpoints geserveerd aan de frontend voor directe rendering in de browser.
+    </p>
+  </header>
+  <div class="slide__content">
+    <div style="margin-bottom: 1rem; padding: 1rem; background: var(--presentation-surface-strong); border-radius: 8px; border-left: 3px solid var(--primary);">
+      <p style="margin: 0; font-size: 0.95rem;"><strong>Complete flow:</strong> Python tools halen data op → ToolResult structuur → ChartGenerator maakt Chart.js config → HTTP response → Frontend rendert met Chart.js. Alles gebeurt server-side tot de laatste stap, waardoor we volledige controle hebben over de data en visualisatie.</p>
+    </div>
+  </div>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">ChartGenerator</h3>
+      <p>Converteert ToolResult naar Chart.js config:</p>
+      <pre class="slide__code"><code class="language-python">class ChartGenerator:
+    def generate_chart_config_enforced(
+        self, data, descriptor, fallback_chart_type, title
+    ):
+        chart_type = descriptor.get("chart_type") or "bar"
+        x_axis = descriptor.get("x_axis")
+        y_axis = descriptor.get("y_axis")
+        unit = descriptor.get("unit")
+        
+        # Extract labels en values
+        labels = [row[x_axis] for row in data]
+        values = [row[y_axis] for row in data]
+        
+        # Build Chart.js config
+        return {
+            "type": chart_type,
+            "data": {
+                "labels": labels,
+                "datasets": [{
+                    "data": values,
+                    "backgroundColor": self.colors[0]
+                }]
+            },
+            "options": self._build_options(chart_type, unit, title)
+        }</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Input:</strong> ToolResult met rows, chart_type, x_axis, y_axis</li>
+        <li><strong>Processing:</strong> Extract labels/values, build datasets</li>
+        <li><strong>Output:</strong> Chart.js config dict (JSON-serializable)</li>
+        <li><strong>Validatie:</strong> Controleert of velden bestaan in data</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">HTTP Response</h3>
+      <p>Chart config wordt via HTTP endpoint teruggestuurd:</p>
+      <pre class="slide__code"><code class="language-python">@router.post("/query", response_model=ChatbotQueryResponse)
+async def chatbot_query(payload, db, user_context):
+    result = await chatbot.process_query(...)
+    
+    return ChatbotQueryResponse(
+        response=result["response"],
+        chart_config=result.get("chart_config"),  # Chart.js config
+        chart_title=result.get("chart_title"),
+        table_data=result.get("table_data"),
+        visualizations=result.get("visualizations"),
+        mode=result.get("mode")
+    )</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>FastAPI endpoint:</strong> POST /ai_chatbot/query</li>
+        <li><strong>Pydantic model:</strong> ChatbotQueryResponse valideert output</li>
+        <li><strong>JSON response:</strong> Chart config als dict in JSON</li>
+        <li><strong>Frontend:</strong> Ontvangt config en rendert direct</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Chart types</h3>
+      <p>Ondersteunde chart types en wanneer ze gebruikt worden:</p>
+      <ul class="slide__bullets">
+        <li><strong>Bar:</strong> Categorische vergelijkingen (expenses by category)</li>
+        <li><strong>Line:</strong> Tijdreeksen (monthly trends, spending over time)</li>
+        <li><strong>Pie/Doughnut:</strong> Proporties (income distribution, category breakdown)</li>
+        <li><strong>Stacked bar:</strong> Multi-series met stack_by (income vs expenses by month)</li>
+        <li><strong>Multi-series:</strong> Meerdere y_axis waarden (income + expenses)</li>
+      </ul>
+      <p style="margin-top: 0.75rem; font-size: 0.9rem; color: var(--presentation-muted);">ChartGenerator detecteert automatisch het beste chart type op basis van data structuur, of gebruikt het type dat de AI specificeert.</p>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Frontend rendering</h3>
+      <p>Chart.js rendert de config direct in de browser:</p>
+      <pre class="slide__code"><code class="language-javascript">// Frontend ontvangt chart_config van API
+const config = response.chart_config;
+
+// Chart.js rendert direct
+const chart = new Chart(
+    document.getElementById('chart-canvas'),
+    config
+);</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Direct rendering:</strong> Geen extra transformatie nodig</li>
+        <li><strong>Currency formatting:</strong> Automatische € formatting voor currency velden</li>
+        <li><strong>Responsive:</strong> Charts passen zich aan aan container grootte</li>
+        <li><strong>Interactief:</strong> Tooltips, legends, zoom via Chart.js</li>
+      </ul>
+    </div>
+  </div>
+</article>
+

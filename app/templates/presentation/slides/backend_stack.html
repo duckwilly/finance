@@ -1,0 +1,74 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">Backend</p>
+    <h2 class="slide__title">Backend stack</h2>
+    <p class="slide__lede">
+      Python services met SQLAlchemy, FastAPI, Jinja2, Pydantic en PyJWT voor een modulaire, type-safe backend architectuur.
+    </p>
+  </header>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Hoe werkt het?</h3>
+      <p>Wanneer een gebruiker een pagina opvraagt, gebeurt dit:</p>
+      <ol class="slide__bullets" style="list-style-type: decimal; padding-left: 1.5rem;">
+        <li><strong>Request komt binnen:</strong> FastAPI ontvangt de HTTP request</li>
+        <li><strong>Database connectie:</strong> Er wordt automatisch een database sessie geopend</li>
+        <li><strong>Service laadt data:</strong> De service haalt de benodigde data op</li>
+        <li><strong>Template renderen:</strong> Jinja2 genereert de HTML pagina</li>
+        <li><strong>Response:</strong> De HTML wordt teruggestuurd naar de browser</li>
+      </ol>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Voorbeeld: Dashboard route</h3>
+      <p>Een concrete route die een dashboard toont:</p>
+      <pre class="slide__code"><code class="language-python">@router.get("/dashboard/")
+async def read_dashboard(
+    session: Session = Depends(get_db_session),
+    admin_service: AdminService = Depends(get_admin_service)
+):
+    # Haal data op via service
+    metrics = admin_service.get_metrics(session)
+    
+    # Genereer HTML pagina
+    return templates.TemplateResponse(
+        "admin/dashboard.html",
+        {"metrics": metrics}
+    )</code></pre>
+      <p><strong>Depends()</strong> zorgt ervoor dat FastAPI automatisch de database sessie en service aanmaakt.</p>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Database modellen</h3>
+      <p>Elke tabel in de database heeft een Python class:</p>
+      <pre class="slide__code"><code class="language-python">class Party(Base):
+    id: Mapped[int]
+    name: Mapped[str]
+    party_type: Mapped[str]</code></pre>
+      <p>Dit maakt het makkelijk om data op te halen:</p>
+      <pre class="slide__code"><code class="language-python"># Vind alle individuen
+individuals = session.query(Party)
+    .filter(Party.party_type == "individual")
+    .all()</code></pre>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Service layer</h3>
+      <p>Berekeningen en business logica zitten in services:</p>
+      <pre class="slide__code"><code class="language-python">class AdminService:
+    def get_metrics(self, session):
+        # Tel aantal individuen
+        count = session.query(Party).count()
+        
+        # Bereken totalen
+        total_cash = session.query(func.sum(Account.balance)).scalar()
+        
+        return {
+            "total_individuals": count,
+            "total_cash": total_cash
+        }</code></pre>
+      <p>Services kunnen door meerdere routes gebruikt worden, dus code wordt niet herhaald.</p>
+    </div>
+  </div>
+</article>
+
