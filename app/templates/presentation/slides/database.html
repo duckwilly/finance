@@ -1,25 +1,50 @@
 <article class="slide" data-slide-fragment>
   <header class="slide__header">
     <p class="eyebrow">Database</p>
-    <h2 class="slide__title">Database design</h2>
-    <p class="slide__lede">Schema built for financial data: parties, accounts, double-entry journals, and stock holdings with historical prices.</p>
+    <h2 class="slide__title">Database-ontwerp</h2>
+    <p class="slide__lede">Financiële data in 3NF/BCNF met een single source of truth</p>
   </header>
   <div class="slide__content slide__grid">
     <div>
-      <h3 class="slide__section-title">Principles</h3>
+      <h3 class="slide__section-title">Aard van financiële data</h3>
       <ul class="slide__bullets">
-        <li>Separation of parties (companies vs individuals) with searchable admin listings.</li>
-        <li>Ledger-first view of transactions so totals balance and drill-downs stay consistent.</li>
-        <li>Stock prices and FX rates fetched historically to keep performance demos grounded in real signals.</li>
+        <li>Financiële data moeten in principe onveranderlijk zijn: we voegen boekingen toe in plaats van saldo's te bewerken, saldo's zijn de som van de boekingen.</li>
+        <li>We modelleren personen en bedrijven expliciet gescheiden (<code>individual_profile</code>, <code>company_profile</code>) bovenop één generiek <code>party</code>-model. Natuurlijke personen kunnen inloggen en hun eigen data zien, maar ook de data van hun werkgever.</li>
+        <li>De database is genormaliseerd tot 3NF/BCNF: elk feit staat precies één keer in de database en alle niet-sleutelattributen hangen volledig af van de primaire sleutel, zodat double spend, duplicatie en update-anomalieën worden vermeden.</li>
       </ul>
+      <div class="slide__callout code-shell" aria-label="Voorbeeld 3NF/BCNF">
+        <div class="code-block">
+          <code>-- Niet genormaliseerd: bedrijfsnaam in elke rekening
+account(id, iban, company_name, company_vat)
+
+-- 3NF/BCNF: scheiding tussen rekening en bedrijf
+account(id, iban, company_id)
+company(id, name, vat_number)</code>
+        </div>
+      </div>
     </div>
     <div>
-      <h3 class="slide__section-title">Talking points</h3>
+      <h3 class="slide__section-title">Journaalmodel & schaal</h3>
       <ul class="slide__bullets">
-        <li>Schema SQL lives in <code>sql/schema.sql</code> and backs the seed CSVs for predictable demo data.</li>
-        <li>Session helpers in <code>app/db</code> keep connections scoped per request.</li>
-        <li>Admin dashboards precompute metrics on startup so the first slide feels instant.</li>
+        <li>We gebruiken een dubbelboekings-journal (<code>journal_entry</code> + <code>journal_line</code>).</li>
+        <li>Voor elke boeking geldt in SQL: de som van <code>journal_line.amount</code> per <code>entry_id</code> en valuta is altijd nul; posities, cashflow en P&amp;L zijn hier directe afgeleiden van.</li>
+        <li>Alle feiten zijn herleidbaar en opnieuw te berekenen uit het journaal en marktdata; tabellen als <code>cash_flow_fact</code> zijn performance-lagen, niet de bron van waarheid.</li>
+        <li>Onze simulatie werkt standaard met ~550 partijen, ~1500 rekeningen, ~100k boekingen op een tijdschaal van 1 jaar. Veel grotere simulaties zijn ook mogelijk.</li>
       </ul>
+    </div>
+  </div>
+  <div class="slide__callout code-shell" aria-label="Voorbeeld dubbel journaal (double-entry)">
+    <div class="code-block">
+      <code>INSERT INTO journal_entry (id, entry_code, txn_date, description)
+VALUES (1001, 'PAYROLL-APR-ACME', '2025-04-25', 'Salaris april - ACME BV');
+
+INSERT INTO journal_line (entry_id, account_id, amount, currency_code, line_memo)
+VALUES
+  (1001, 2001, -2500.00, 'EUR', 'Salaris uit bedrijfsrekening'),
+  (1001, 3001,  2500.00, 'EUR', 'Netto salaris naar werknemer');
+
+-- Voor elke entry geldt:
+--   SUM(amount) PER (entry_id, currency_code) = 0</code>
     </div>
   </div>
 </article>

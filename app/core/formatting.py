@@ -35,7 +35,11 @@ def humanize_number(
     
     # For numbers less than 1000, show appropriate decimals
     if d == d.to_integral():
-        return f"{sign}{d.normalize()}"
+        # format as fixed-point to avoid scientific notation for whole numbers
+        whole = format(d, "f")
+        if "." in whole:
+            whole = whole.rstrip("0").rstrip(".") or "0"
+        return f"{sign}{whole}"
     else:
         return f"{sign}{d:.{decimals}f}"
     

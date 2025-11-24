@@ -1,4 +1,4 @@
-{% macro render_list_view(id, view, enable_search=True) -%}
+{% macro render_list_view(id, view, enable_search=True, htmx_config=None) -%}
   <div class="list-view" id="{{ id }}" data-list-view>
     <div class="list-view__header">
       <div>
@@ -54,7 +54,20 @@
               {% else %}
                 {% set display_value = value if value is not none and value != '' else '—' %}
                 {% if link_url %}
-                  <a href="{{ link_url }}">{{ display_value }}</a>
+                  <a
+                    href="{{ link_url }}"
+                    {% if htmx_config %}
+                      hx-get="{{ link_url }}"
+                      {% if htmx_config.target %}hx-target="{{ htmx_config.target }}"{% endif %}
+                      {% if htmx_config.swap %}hx-swap="{{ htmx_config.swap }}"{% endif %}
+                      {% if htmx_config.select %}hx-select="{{ htmx_config.select }}"{% endif %}
+                      {% if htmx_config.push_url is not none %}
+                        hx-push-url="{{ 'true' if htmx_config.push_url else 'false' }}"
+                      {% endif %}
+                    {% endif %}
+                  >
+                    {{ display_value }}
+                  </a>
                 {% else %}
                   {{ display_value }}
                 {% endif %}

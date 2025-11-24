@@ -1,0 +1,48 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">Database</p>
+    <h2 class="slide__title">Goals &amp; normalization</h2>
+    <p class="slide__lede">Modeled to survive auditor questions: 3NF/BCNF so updates are safe, plus precomputed facts to keep demos snappy.</p>
+  </header>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Normalization in practice</h3>
+      <ul class="slide__bullets">
+        <li>3NF: split <code>party</code> attributes into <code>individual_profile</code>/<code>company_profile</code> and reference tables for currencies, account types, and txn channels.</li>
+        <li>BCNF: push ownership and employment into <code>account_party_role</code> and <code>employment_contract</code> so permissions depend only on their keys.</li>
+        <li>Ledger integrity: sums per entry must be zero; categories are keyed so “Payroll” spelling drift can’t break P&amp;L.</li>
+        <li>Trades and quotes are keyed by instrument + date to avoid partial dependencies on symbols alone.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="slide__section-title">Why it matters</h3>
+      <ul class="slide__bullets">
+        <li>No update anomalies: changing a company name or access grant touches one row, not 1,500 accounts.</li>
+        <li>Fewer deletes/updates: facts are recomputable from journals + quotes, while summaries live in <code>cash_flow_fact</code> and friends for speed.</li>
+        <li>Traceability: every dashboard number points back to a journal line, trade, or price quote.</li>
+        <li>Seeds stay consistent: CSVs match FKs; loading fails fast if a reference is missing.</li>
+      </ul>
+      <div class="slide__callout code-shell" aria-label="Normalization and integrity checks">
+        <div class="code-block">
+          <code>-- double-entry guardrail: should return zero rows
+SELECT entry_id, SUM(amount) AS imbalance
+FROM journal_line
+GROUP BY entry_id
+HAVING imbalance <> 0;
+
+-- BCNF decomposition: roles move off account
+CREATE TABLE account_party_role (
+  account_id BIGINT UNSIGNED NOT NULL,
+  party_id BIGINT UNSIGNED NOT NULL,
+  role_code VARCHAR(32) NOT NULL,
+  PRIMARY KEY (account_id, party_id, role_code)
+);</code>
+        </div>
+      </div>
+      <div class="slide__callout">
+        <p class="slide__callout-title">Why it mattered</p>
+        <p>Earlier drafts crammed party names and account roles into the account table—updating a company name meant backfilling 1,500 rows and risked inconsistencies. After normalization, a single <code>party</code> update cascades cleanly, and joins stay predictable for analytics and the AI chatbot.</p>
+      </div>
+    </div>
+  </div>
+</article>

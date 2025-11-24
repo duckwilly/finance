@@ -1,7 +1,7 @@
 """FastAPI application instance and startup hooks."""
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -16,6 +16,7 @@ from app.routers import (
     individuals_router,
     presentation_router,
 )
+from app.routers.auth import default_destination
 from app.db.session import get_sessionmaker
 from app.services import AdminService
 
@@ -83,8 +84,12 @@ def create_app() -> FastAPI:
             session.close()
 
     @app.get("/", include_in_schema=False)
-    async def root_redirect():
-        return RedirectResponse(url="/dashboard/")
+    async def root_redirect(request: Request):
+        user = getattr(request.state, "user", None)
+        destination = "/dashboard/"
+        if user is not None:
+            destination = default_destination(user)
+        return RedirectResponse(url=destination)
 
     LOGGER.info("FastAPI application initialised")
     return app

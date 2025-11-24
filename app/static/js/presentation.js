@@ -4,6 +4,7 @@
 
   const slides = JSON.parse(root.dataset.slides || '[]');
   let activeSlug = root.dataset.activeSlide;
+  const storageKey = 'finance:presentation:active-slide';
   const endpointTemplate = root.dataset.slideEndpointTemplate;
   const stage = document.querySelector('#slide-stage');
   const stageContainer = document.querySelector('.presentation__stage');
@@ -15,6 +16,7 @@
   const progressLabel = document.querySelector('[data-progress-label]');
   const prevButton = document.querySelector('[data-prev]');
   const nextButton = document.querySelector('[data-next]');
+  const EMBED_SELECTOR = '.slide__embed iframe';
 
   const slugIndex = (slug) => slides.findIndex((item) => item.slug === slug);
   const endpointFor = (slug) => endpointTemplate.replace('__SLUG__', slug);
@@ -43,12 +45,11 @@
   const updateProgress = () => {
     const index = slugIndex(activeSlug);
     const total = slides.length;
+    if (index === -1) return;
     const slide = slides[index];
     if (progressLabel && slide) {
-      const activeOrder = slide.order || String(index + 1);
-      const finalOrder = slides[total - 1]?.order || String(total);
-      const displayIndex = activeOrder.includes('.') ? activeOrder : activeOrder.padStart(2, '0');
-      const displayTotal = finalOrder.includes('.') ? finalOrder : String(total).padStart(2, '0');
+      const displayIndex = String(index + 1).padStart(2, '0');
+      const displayTotal = String(total).padStart(2, '0');
       progressLabel.textContent = `${displayIndex} / ${displayTotal} — ${slide.title}`;
     }
     updateNav();
@@ -92,12 +93,30 @@
     }
   };
 
+  const readStoredSlide = () => {
+    try {
+      return localStorage.getItem(storageKey);
+    } catch {
+      return null;
+    }
+  };
+
+  const persistActiveSlide = (slug) => {
+    if (!slug) return;
+    try {
+      localStorage.setItem(storageKey, slug);
+    } catch {
+      /* ignore storage errors */
+    }
+  };
+
   const loadSlide = (slug) => {
     if (!slug || slug === activeSlug) return;
     const index = slugIndex(slug);
     if (index === -1) return;
 
     activeSlug = slug;
+    persistActiveSlide(slug);
     updateProgress();
 
     if (window.htmx && stage) {
@@ -137,6 +156,29 @@
     layout?.classList.toggle('is-nav-collapsed', collapsed);
   };
 
+  const resizeIframe = (iframe) => {
+    if (!iframe?.contentWindow || !iframe?.contentDocument) return;
+    try {
+      const doc = iframe.contentDocument.documentElement;
+      const height = doc.scrollHeight;
+      if (height) {
+        iframe.style.height = `${height + 24}px`;
+      }
+    } catch (err) {
+      console.warn('Could not resize embedded iframe', err);
+    }
+  };
+
+  const wireEmbeds = (scope = document) => {
+    const embeds = scope.querySelectorAll(EMBED_SELECTOR);
+    embeds.forEach((frame) => {
+      frame.addEventListener('load', () => resizeIframe(frame), { once: true });
+      if (frame.contentDocument?.readyState === 'complete') {
+        resizeIframe(frame);
+      }
+    });
+  };
+
   const toggleNav = () => {
     const isCollapsed = nav?.classList.contains('is-collapsed');
     setNavCollapsed(!isCollapsed);
@@ -166,6 +208,7 @@
   if (window.htmx && stage) {
     window.htmx.on(stage, 'htmx:afterSwap', () => {
       updateProgress();
+      wireEmbeds(stage);
       requestAnimationFrame(syncNavHeight);
       // Re-highlight code blocks after HTMX swap
       if (window.Prism) {
@@ -183,4 +226,5 @@
   setNavCollapsed(false);
   window.addEventListener('resize', syncNavHeight);
   window.addEventListener('load', syncNavHeight, { once: true });
+  wireEmbeds(document);
 })();

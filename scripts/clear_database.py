@@ -80,7 +80,6 @@ def clear_database():
         "account",
         "user_party_map",
         "org_party_map",
-        "user_salary_monthly",
         "membership",
         "company_access_grant",
         "party_relationship",

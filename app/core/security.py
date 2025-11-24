@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 
 import jwt
@@ -18,7 +18,7 @@ from app.models import (
     OrgPartyMap,
     UserPartyMap,
 )
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 
@@ -130,6 +130,28 @@ class SecurityProvider:
                 individual_id = fallback_user_id
 
             company_ids: set[int] = set()
+            if party_id is not None:
+                employment_rows = session.execute(
+                    select(
+                        EmploymentContract.employer_party_id.label("employer_party_id"),
+                        OrgPartyMap.org_id.label("company_id"),
+                    )
+                    .outerjoin(OrgPartyMap, OrgPartyMap.party_id == EmploymentContract.employer_party_id)
+                    .where(
+                        EmploymentContract.employee_party_id == party_id,
+                        EmploymentContract.start_date <= date.today(),
+                        or_(
+                            EmploymentContract.end_date.is_(None),
+                            EmploymentContract.end_date >= date.today(),
+                        ),
+                    )
+                ).all()
+                for row in employment_rows:
+                    if row.company_id is not None:
+                        company_ids.add(int(row.company_id))
+                    if row.employer_party_id is not None:
+                        company_ids.add(int(row.employer_party_id))
+
             if "ADMIN" not in role_codes:
                 grant_rows = session.execute(
                     select(OrgPartyMap.org_id)
