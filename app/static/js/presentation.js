@@ -222,7 +222,14 @@
     window.Prism.highlightAll();
   }
 
-  updateProgress();
+  const stored = readStoredSlide();
+  const shouldRestore = stored && slugIndex(stored) !== -1 && stored !== activeSlug;
+  if (shouldRestore) {
+    loadSlide(stored);
+  } else {
+    persistActiveSlide(activeSlug);
+    updateProgress();
+  }
   setNavCollapsed(false);
   window.addEventListener('resize', syncNavHeight);
   window.addEventListener('load', syncNavHeight, { once: true });
