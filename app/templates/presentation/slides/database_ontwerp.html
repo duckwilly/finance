@@ -31,9 +31,7 @@ company(id, name, vat_number)</code>
         <li>Alle feiten zijn herleidbaar en opnieuw te berekenen uit het journaal en marktdata; tabellen als <code>cash_flow_fact</code> zijn performance-lagen, niet de bron van waarheid.</li>
         <li>Onze simulatie werkt standaard met ~550 partijen, ~1500 rekeningen, ~100k boekingen op een tijdschaal van 1 jaar. Veel grotere simulaties zijn ook mogelijk.</li>
       </ul>
-    </div>
-  </div>
-  <div class="slide__callout code-shell" aria-label="Voorbeeld dubbel journaal (double-entry)">
+    <div class="slide__callout code-shell" aria-label="Voorbeeld journaalmodel">
     <div class="code-block">
       <code>INSERT INTO journal_entry (id, entry_code, txn_date, description)
 VALUES (1001, 'PAYROLL-APR-ACME', '2025-04-25', 'Salaris april - ACME BV');
@@ -47,4 +45,5 @@ VALUES
 --   SUM(amount) PER (entry_id, currency_code) = 0</code>
     </div>
   </div>
+</div>
 </article>

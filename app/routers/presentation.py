@@ -36,35 +36,35 @@ SLIDES: tuple[Slide, ...] = (
     Slide(
         slug="overview",
         title="Projectoverzicht",
-        template="presentation/slides/overview.html",
+        template="presentation/slides/projectoverzicht.html",
         summary="Hoofddoelen en de doelgroepen die we ondersteunen.",
         order="1",
     ),
     Slide(
         slug="simulated-data",
         title="Gesimuleerde bankdata",
-        template="presentation/slides/simulated_data.html",
+        template="presentation/slides/gesimuleerde_bankdata.html",
         summary="Individuen en bedrijven met transacties, holdings, en gebruiker 3 als echt voorbeeld.",
         order="1.1",
     ),
     Slide(
         slug="admin-browse",
         title="Admin browse en zoeken",
-        template="presentation/slides/admin_browse.html",
+        template="presentation/slides/admin_browse_en_zoeken.html",
         summary="Dashboard ingangspunten om individuen en bedrijven in één oogopslag te doorzoeken.",
         order="1.2",
     ),
     Slide(
-        slug="individual-access",
-        title="Individuele en bedrijfstoegang",
-        template="presentation/slides/individual_access.html",
-        summary="Mensen kunnen inloggen om hun eigen data en gekoppelde bedrijfsrecords te bekijken.",
+        slug="access-control",
+        title="Login, rollen en dashboards",
+        template="presentation/slides/login_rollen_en_dashboards.html",
+        summary="JWT cookies, rolchecks en routing naar de juiste dashboards met een live voorbeeld.",
         order="1.3",
     ),
     Slide(
         slug="architecture",
         title="Architectuur & tech stack",
-        template="presentation/slides/architecture.html",
+        template="presentation/slides/architectuur_en_tech_stack.html",
         summary="Hoe de FastAPI, database en front-end lagen samenwerken.",
         order="2",
     ),
@@ -85,28 +85,28 @@ SLIDES: tuple[Slide, ...] = (
     Slide(
         slug="database-stack",
         title="Database platform",
-        template="presentation/slides/database_stack.html",
+        template="presentation/slides/database_platform.html",
         summary="MariaDB op Docker die de simulaties ondersteunt.",
         order="2.3",
     ),
     Slide(
         slug="database",
         title="Database-ontwerp",
-        template="presentation/slides/database.html",
+        template="presentation/slides/database_ontwerp.html",
         summary="Aard van financiële data, 3NF/BCNF-normalisatie en ons dubbelboekings-journal.",
         order="2.4",
     ),
     Slide(
         slug="auth",
         title="Authenticatie en autorisatie",
-        template="presentation/slides/auth.html",
+        template="presentation/slides/authenticatie_en_autorisatie.html",
         summary="Aanmeldflow, JWT-cookies en toegang per rol.",
         order="2.5",
     ),
     Slide(
         slug="features",
         title="Demo",
-        template="presentation/slides/features.html",
+        template="presentation/slides/demo.html",
         summary="Live demo van de dashboards",
         order="3",
     ),
@@ -120,7 +120,7 @@ SLIDES: tuple[Slide, ...] = (
     Slide(
         slug="admin-dashboard-build",
         title="Admin dashboard: details",
-        template="presentation/slides/admin_dashboard_build.html",
+        template="presentation/slides/admin_dashboard_details.html",
         summary="De opbouw van het admindashboard",
         order="3.1.1",
     ),
@@ -141,14 +141,14 @@ SLIDES: tuple[Slide, ...] = (
     Slide(
         slug="show-log",
         title="Logging",
-        template="presentation/slides/show_log.html",
+        template="presentation/slides/logging.html",
         summary="Logging voor debuggen en monitoren",
         order="3.4",
     ),
     Slide(
         slug="ai-chatbot",
         title="AI chatbot mogelijkheden",
-        template="presentation/slides/ai_chatbot.html",
+        template="presentation/slides/ai_chatbot_mogelijkheden.html",
         summary="Prompt assembly, visuele responses en database-aware tooling.",
         order="4",
     ),
@@ -162,21 +162,21 @@ SLIDES: tuple[Slide, ...] = (
     Slide(
         slug="json-response",
         title="JSON responses",
-        template="presentation/slides/json_response.html",
+        template="presentation/slides/json_responses.html",
         summary="Gestructureerde outputs die door de chatbot worden geretourneerd, gevalideerd met Pydantic.",
         order="4.2",
     ),
     Slide(
         slug="db-querying",
         title="Python database querying",
-        template="presentation/slides/db_querying.html",
+        template="presentation/slides/python_database_querying.html",
         summary="SQLAlchemy ORM queries met automatische toegangscontrole via Tool Registry systeem.",
         order="4.3",
     ),
     Slide(
         slug="dashboard-charts",
         title="Dashboard grafieken via HTTP",
-        template="presentation/slides/dashboard_charts.html",
+        template="presentation/slides/dashboard_grafieken_via_http.html",
         summary="ToolResult → ChartGenerator → Chart.js config → HTTP response → Frontend rendering.",
         order="4.4",
     ),
@@ -251,7 +251,7 @@ def _load_demo_targets() -> dict[str, int | None]:
 
 
 def _get_slide_payload(slide: Slide) -> dict[str, object]:
-    if slide.slug in {"admin-dashboard", "company-dashboard", "individual-dashboard"}:
+    if slide.slug in {"admin-dashboard", "company-dashboard", "individual-dashboard", "access-control"}:
         return {"demo_targets": _load_demo_targets()}
     if slide.slug == "admin-dashboard-build":
         return {"income_chart": _load_income_chart()}

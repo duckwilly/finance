@@ -1,0 +1,80 @@
+{% set demo_targets = slide_payload.get('demo_targets', {}) %}
+{% set individual_id = demo_targets.get('individual_user_id') if demo_targets else None %}
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <p class="eyebrow">Individuele en bedrijfstoegang</p>
+    <h2 class="slide__title">Login, rollen en dashboards</h2>
+    <p class="slide__lede">
+      JWT in HttpOnly cookies, rolchecks per router, en directe routing naar het juiste dashboard.
+    </p>
+  </header>
+
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Aanmeldflow (JWT cookies)</h3>
+      <ul class="slide__bullets">
+        <li>Het loginformulier zet een JWT in een HttpOnly cookie; niets in localStorage.</li>
+        <li>Claims: <code>sub</code>, <code>subject_id</code>, <code>role</code>, <code>roles</code>, <code>party_id</code> en toegestane <code>company_ids</code> voor werknemers.</li>
+        <li>De logintoken is een uur geldig; middleware leest de cookie en plaatst de gebruiker op <code>request.state.user</code>.</li>
+      </ul>
+      <br>
+
+      <h3 class="slide__section-title">Toegang per rol</h3>
+      <ul class="slide__bullets">
+        <li><strong>Admin:</strong> Ziet alles en landt op het admin dashboard.</li>
+        <li><strong>Individueel:</strong> Alleen het eigen dashboard (net worth, accounts, holdings, cashflow).</li>
+        <li><strong>Employee:</strong> Krijgt <code>company_ids</code> via employment en <code>CompanyAccessGrant</code> en kan gekoppelde bedrijfsdashboards openen.</li>
+        <li>Login redirect naar de juiste landing; ontbrekende rechten geven een 403.</li>
+      </ul>
+      <br>
+
+      <h3 class="slide__section-title">Dependencies</h3>
+      <ul class="slide__bullets">
+        <li><code>require_admin_user</code>, <code>require_company_access</code> en <code>require_individual_access</code> blokkeren routes zonder recht.</li>
+        <li>Admin overschrijft alle checks; company/individual routes verwachten een matchende <code>party_id</code> of <code>company_id</code> in het token.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Individueel dashboard</h3>
+      <p>Elke individuele gebruiker krijgt een gepersonaliseerd dashboard met hun financiële overzicht.</p>
+      <ul class="slide__bullets">
+        <li><strong>Netto waarde:</strong> Totaal van cash en investment holdings, gecombineerd in één metric.</li>
+        <li><strong>Cash accounts:</strong> Overzicht van checking en savings accounts met hun saldi.</li>
+        <li><strong>Brokerage holdings:</strong> Alle stock holdings met huidige marktwaarde en winst/verlies statistieken.</li>
+        <li><strong>Inkomsten en uitgaven:</strong> Breakdown per periode met categorieën voor uitgaven.</li>
+        <li><strong>Net cashflow:</strong> Het verschil tussen inkomsten en uitgaven voor de geselecteerde periode.</li>
+        <li><strong>Account details:</strong> Gedetailleerde lijst van alle accounts met transactiegeschiedenis.</li>
+      </ul>
+      <br>
+
+      <h3 class="slide__section-title">Bedrijfsdashboard</h3>
+      <p>Gekoppelde gebruikers kunnen ook bedrijfsdashboards bekijken waartoe ze toegang hebben.</p>
+      <ul class="slide__bullets">
+        <li><strong>Bedrijfsmetrics:</strong> Netto waarde, cash positie, en holdings value voor het bedrijf.</li>
+        <li><strong>Payroll overzicht:</strong> Totaal payroll en breakdown per werknemer of afdeling.</li>
+        <li><strong>Inkomsten en uitgaven:</strong> Bedrijfsinkomsten en uitgaven per categorie, met mogelijkheid tot drill-down naar transacties.</li>
+        <li><strong>Net cashflow:</strong> Bedrijfscashflow voor de geselecteerde periode.</li>
+        <li><strong>Transactiegeschiedenis:</strong> Volledige lijst van bedrijfstransacties met filter- en sorteeropties.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="slide__demo" aria-label="Individueel dashboard live voorbeeld">
+    <div class="slide__embed">
+      {% if individual_id %}
+      <iframe
+        src="{{ request.url_for('read_individual_dashboard', user_id=individual_id) }}?embed=1"
+        title="Individueel dashboard demo"
+        loading="lazy"
+        aria-label="Individueel dashboard"
+      ></iframe>
+      {% else %}
+      <div class="slide__callout slide__demo-note is-empty">
+        <p class="slide__callout-title">Geen demo-gebruiker gevonden</p>
+        <p>Controleer seed-data of databaseverbinding; de user_id kon niet worden geladen.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</article>
