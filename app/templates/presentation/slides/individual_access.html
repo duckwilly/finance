@@ -11,7 +11,7 @@
       <h3 class="slide__section-title">Authenticatie en rollen</h3>
       <p>Het platform ondersteunt drie hoofdrollen met verschillende toegangsniveaus:</p>
       <ul class="slide__bullets">
-        <li><strong>Admin gebruikers:</strong> Hebben volledige toegang tot alle dashboards en kunnen alle individuen en bedrijven bekijken. Ze worden na inloggen doorgestuurd naar het admin dashboard.</li>
+        <li><strong>Admins:</strong> Hebben volledige toegang tot alle dashboards en kunnen alle individuen en bedrijven bekijken. Ze worden na inloggen doorgestuurd naar het admin dashboard.</li>
         <li><strong>Individuele gebruikers:</strong> Kunnen alleen hun eigen persoonlijke dashboard bekijken. Ze zien hun netto waarde, accounts, holdings, inkomsten en uitgaven.</li>
         <li><strong>Bedrijfsgebruikers:</strong> Kunnen toegang krijgen tot bedrijfsdashboards waaraan ze gekoppeld zijn via hun werkrelatie. Ze zien zowel hun persoonlijke data als de bedrijfsdata.</li>
       </ul>
@@ -56,3 +56,14 @@
   </div>
 </article>
 
+<br>
+<div class="slide__demo" aria-label="Individueel dashboard live voorbeeld">
+  <div class="slide__embed">
+    <iframe
+      src="{{ request.url_for('read_individual_dashboard', user_id=2) }}?embed=1"
+      title="Individueel dashboard demo"
+      loading="lazy"
+      aria-label="Individueel dashboard"
+    ></iframe>
+  </div>
+</div>

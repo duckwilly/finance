@@ -48,5 +48,18 @@
       </ul>
     </div>
   </div>
+
+
 </article>
 
+<br>
+<div class="slide__demo" aria-label="Admin dashboard live voorbeeld">
+  <div class="slide__embed">
+    <iframe
+      src="{{ request.url_for('read_individual_dashboard', user_id=2) }}?embed=1"
+      title="Admin dashboard demo"
+      loading="lazy"
+      aria-label="Admin dashboard"
+    ></iframe>
+  </div>
+</div>
