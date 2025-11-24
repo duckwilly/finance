@@ -180,13 +180,6 @@ SLIDES: tuple[Slide, ...] = (
         summary="ToolResult → ChartGenerator → Chart.js config → HTTP response → Frontend rendering.",
         order="4.4",
     ),
-    Slide(
-        slug="operational-notes",
-        title="Operations & logging",
-        template="presentation/slides/operations.html",
-        summary="Telemetrie, startup warmups en hoe we het platform monitoren.",
-        order="5",
-    ),
 )
 
 
