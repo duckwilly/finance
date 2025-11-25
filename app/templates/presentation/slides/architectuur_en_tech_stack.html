@@ -3,30 +3,24 @@
     <h2 class="slide__title">Architectuur & tech stack</h2>
   </header>
   <div class="slide__content">
-    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
       <div>
         <h3 class="slide__section-title">Backend</h3>
         <ul class="slide__bullets" style="list-style-type: disc; padding-left: 1.5rem;">
-          <li><strong>FastAPI:</strong> Web framework met async/await</li>
-          <li><strong>SQLAlchemy:</strong> ORM voor database queries</li>
-          <li><strong>Jinja2:</strong> Server-side rendering</li>
-          <li><strong>PyJWT:</strong> Authenticatie</li>
-        </ul>
-      </div>
-
-      <div>
-        <h3 class="slide__section-title">Database</h3>
-        <ul class="slide__bullets" style="list-style-type: disc; padding-left: 1.5rem;">
-          <li><strong>MariaDB:</strong> Relationele database in Docker (3NF end BCNF)</li>
+          <li><strong>FastAPI</strong></li>
+          <li><strong>SQLAlchemy</strong> voor ORMs</li>
+          <li><strong>Jinja2</strong> voor server-side rendering</li>
+          <li><strong>PyJWT</strong> voor authenticatie</li>
+          <li><strong>MariaDB</strong></li>
         </ul>
       </div>
 
       <div>
         <h3 class="slide__section-title">Frontend</h3>
         <ul class="slide__bullets" style="list-style-type: disc; padding-left: 1.5rem;">
-          <li><strong>HTML/CSS:</strong> Semantische HTML, responsive design</li>
-          <li><strong>HTMX:</strong> Interactiviteit zonder complexe JavaScript</li>
-          <li><strong>Chart.js:</strong> Grafieken en visualisaties</li>
+          <li><strong>HTML/CSS</strong></li>
+          <li><strong>HTMX</strong></li>
+          <li><strong>Chart.js</strong></li>
         </ul>
       </div>
     </div>
@@ -35,7 +29,7 @@
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
         <div>
           <h3 class="slide__section-title">HTMX</h3>
-          <p style="font-size: 0.9rem; margin-bottom: 1rem;">We zouden eerst FIXI.js gebruiken, maar HTMX werkt op dezelfde manier. Het idee is dat we geen JavaScript nodig hebben om de interactie te implementeren. We kunnen alles doen met HTML attributen en HTMX zorgt ervoor dat we geen pagina refresh nodig hebben.</p>
+          <p style="font-size: 0.9rem; margin-bottom: 1rem;">Vergelijkbaar met fixi: We gebruiken het om op een leesbare manier, zonder uitgebreide scripts, elementen op een pagina aan te passen.</p>
           <ul class="slide__bullets" style="font-size: 0.9rem;">
             <li><strong>Dashboard panel switches:</strong> Wanneer een user op "Individuals", "Companies", etc. klikt, wordt alleen het panel vervangen zonder dat de hele pagina hoeft te reloaden</li>
           </ul>

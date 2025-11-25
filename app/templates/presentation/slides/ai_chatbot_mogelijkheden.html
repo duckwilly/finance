@@ -3,36 +3,9 @@
     <h2 class="slide__title">AI chatbot</h2>
   </header>
   <div class="slide__content">
-    <div style="margin-bottom: 1.5rem;">
-      <h3 class="slide__section-title">Hoe het werkt</h3>
-      <p>Wanneer een gebruiker een vraag stelt zoals "Toon mijn uitgaven per categorie":</p>
-      <ol class="slide__bullets" style="list-style-type: decimal; padding-left: 1.5rem;">
-        <li><strong>AI model:</strong> Genereert een plan met welke tools/data nodig zijn
-          <ul style="margin-top: 0.25rem; padding-left: 1.25rem; list-style-type: disc;">
-            <li>Ondersteunde LLMs: Claude (Anthropic) en GPT (OpenAI)</li>
-            <li>Bestand: <code>app/ai_chatbot/llm_providers.py</code></li>
-          </ul>
-        </li>
-        <li><strong>Python tools:</strong> Genereren SQL queries en halen data op uit de database
-          <ul style="margin-top: 0.25rem; padding-left: 1.25rem; list-style-type: disc;">
-            <li>Analytics functies zoals <code>expenses_by_category()</code>, <code>leaderboard()</code></li>
-            <li>Bestand: <code>app/ai_chatbot/tools/analytics.py</code></li>
-          </ul>
-        </li>
-        <li><strong>ChartGenerator:</strong> Python code zet de data om in Chart.js configuraties
-          <ul style="margin-top: 0.25rem; padding-left: 1.25rem; list-style-type: disc;">
-            <li>Genereert JSON configuraties voor bar, pie, line, doughnut charts</li>
-            <li>Bestand: <code>app/ai_chatbot/chart_generator.py</code></li>
-          </ul>
-        </li>
-        <li><strong>Frontend:</strong> Chart.js rendert de configuratie direct in de browser</li>
-      </ol>
-    </div>
+    
 
     <div>
-      <h3 class="slide__section-title">Live demo</h3>
-      <p>Probeer de chatbot hieronder uit om te zien hoe het werkt tijdens de presentatie:</p>
-      
       <link rel="stylesheet" href="{{ url_for('static', path='ai_chatbot/chatbot.css') }}" />
       <script src="{{ url_for('static', path='ai_chatbot/chatbot.js') }}" defer></script>
       
@@ -43,11 +16,6 @@
             <div class="chat-panel" style="height: 100%; border: none; border-radius: 0;">
               <div class="chat-panel__header">
                 <div class="chat-panel__header-copy">
-                  <p class="eyebrow">AI copilot</p>
-                  <h2 class="chat-panel__title">Chat-driven insights</h2>
-                  <p class="chat-panel__hint">
-                    Ask for spending breakdowns, ad-hoc KPIs or visual slices of the data.
-                  </p>
                 </div>
               </div>
 

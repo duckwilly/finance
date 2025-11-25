@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html import escape
+from pathlib import Path
 from typing import Iterable
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -14,14 +16,14 @@ from app.core.security import AuthenticatedUser, require_admin_user
 from app.core.templates import templates
 from app.db.session import get_sessionmaker
 from app.models import AppUser, OrgPartyMap, UserPartyMap
-from app.services import AdminService, CompaniesService, IndividualsService
+from app.services import CompaniesService, IndividualsService
 
 LOGGER = get_logger(__name__)
 router = APIRouter(prefix="/presentation", tags=["presentation"])
 SESSION_FACTORY: sessionmaker = get_sessionmaker()
 INDIVIDUALS_SERVICE = IndividualsService()
 COMPANIES_SERVICE = CompaniesService()
-ADMIN_SERVICE = AdminService()
+DASHBOARD_TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "templates" / "dashboard" / "index.html"
 
 
 @dataclass(frozen=True)
@@ -84,18 +86,11 @@ SLIDES: tuple[Slide, ...] = (
         order="2.2",
     ),
     Slide(
-        slug="admin-dashboard-build",
-        title="Admin dashboard: details",
-        template="presentation/slides/admin_dashboard_details.html",
-        summary="De opbouw van het admindashboard",
-        order="2.3",
-    ),
-    Slide(
         slug="show-log",
         title="Logging",
         template="presentation/slides/logging.html",
         summary="Logging voor debuggen en monitoren",
-        order="2.4",
+        order="2.3",
     ),
     Slide(
         slug="ai-chatbot",
@@ -178,18 +173,6 @@ def _load_company_dashboard(company_id: int):
         session.close()
 
 
-def _load_income_chart() -> dict[str, object] | None:
-    session = SESSION_FACTORY()
-    try:
-        charts = ADMIN_SERVICE.get_dashboard_charts(session)
-        return charts.individuals_income.model_dump()
-    except Exception:
-        LOGGER.exception("Failed to load income chart for presentation slide")
-        return None
-    finally:
-        session.close()
-
-
 def _load_demo_targets() -> dict[str, int | None]:
     session = SESSION_FACTORY()
     try:
@@ -216,8 +199,6 @@ def _load_demo_targets() -> dict[str, int | None]:
 def _get_slide_payload(slide: Slide) -> dict[str, object]:
     if slide.slug == "access-control":
         return {"demo_targets": _load_demo_targets()}
-    if slide.slug == "admin-dashboard-build":
-        return {"income_chart": _load_income_chart()}
     if slide.slug == "simulated-data":
         individual_dashboard = _load_individual_dashboard(3)
         company_dashboard = None
