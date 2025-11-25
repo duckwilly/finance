@@ -38,29 +38,8 @@
       
       <div style="margin: 1.5rem 0; border: 1px solid var(--presentation-border); border-radius: 12px; overflow: hidden; background: var(--presentation-surface);">
         <div style="display: grid; grid-template-rows: auto 1fr; gap: 0; min-height: 600px;">
-          <!-- Response panel (shown when response arrives) -->
-          <section id="dashboard-panel" class="details details--ai" data-panel="chatbot" style="display: none; border-bottom: 1px solid var(--presentation-border); max-height: 400px; overflow-y: auto;">
-            <div class="details__panel details__panel--focus">
-              <div class="chatbot-visuals" aria-live="polite">
-                <div class="chart-container" id="chart-container" style="display: none;">
-                  <h3 class="chart-title" id="chart-title"></h3>
-                  <canvas id="chart-canvas"></canvas>
-                </div>
-
-                <div class="table-container" id="table-container" style="display: none;">
-                  <table id="data-table">
-                    <thead id="table-head"></thead>
-                    <tbody id="table-body"></tbody>
-                  </table>
-                </div>
-
-                <div id="chat-visualizations-panel" class="chat-visualizations"></div>
-              </div>
-            </div>
-          </section>
-          
-          <!-- Chatbot interface -->
-          <aside class="workspace__chat" id="dashboard-chat" aria-label="AI assistant" style="position: relative; width: 100%;">
+          <!-- Chatbot interface (top) -->
+          <aside class="workspace__chat" id="dashboard-chat" aria-label="AI assistant" style="position: relative; width: 100%; border-bottom: 1px solid var(--presentation-border);">
             <div class="chat-panel" style="height: 100%; border: none; border-radius: 0;">
               <div class="chat-panel__header">
                 <div class="chat-panel__header-copy">
@@ -77,24 +56,24 @@
                   <div class="chat-messages" id="chat-messages" aria-live="polite">
                     <div class="welcome-message">
                       <p>💬 Ask about your spending, income trends, or any category you want to explore.</p>
-                      <p>Charts and tables will automatically appear above when needed.</p>
+                      <p>Charts and tables will automatically appear below when needed.</p>
                     </div>
                   </div>
 
                   <ul class="chat-quick-actions" aria-label="Suggested prompts">
                     <li>
-                      <button type="button" data-chat-suggestion="Show a bar chart of expenses by category for the last 30 days with x_axis=category and y_axis=total, sorted descending, using EUR.">
-                        Category spend (30d)
+                      <button type="button" data-chat-suggestion="Show a bar chart of expenses by category for user 1 for the last 30 days with x_axis=category and y_axis=total, sorted descending, using EUR.">
+                        User 1: Category spend (30d)
                       </button>
                     </li>
                     <li>
-                      <button type="button" data-chat-suggestion="Compare monthly income vs expenses over the last 6 months as a grouped bar chart with x_axis=month and y_axis=[income_total,expenses], sorted ascending by month.">
-                        Income vs expenses (6m)
+                      <button type="button" data-chat-suggestion="Compare monthly income vs expenses for user 6 over the last 6 months as a grouped bar chart with x_axis=month and y_axis=[income_total,expenses], sorted ascending by month.">
+                        User 6: Income vs expenses (6m)
                       </button>
                     </li>
                     <li>
-                      <button type="button" data-chat-suggestion="Plot an expense trend line for the last 180 days with x_axis=month and y_axis=total, sorted ascending by month.">
-                        Expense trend (180d)
+                      <button type="button" data-chat-suggestion="Plot an expense trend line for user 2 for the last 180 days with x_axis=month and y_axis=total, sorted ascending by month.">
+                        User 2: Expense trend (180d)
                       </button>
                     </li>
                     <li>
@@ -150,6 +129,31 @@
               </div>
             </div>
           </aside>
+          
+          <!-- Response panel (bottom - visualizations) -->
+          <section id="dashboard-panel" class="details details--ai" data-panel="chatbot" style="display: flex; align-items: center; justify-content: center; padding: 1rem; overflow-y: auto; background: var(--presentation-surface-strong);">
+            <div class="details__panel details__panel--focus">
+              <div class="chatbot-visuals" aria-live="polite">
+                <div style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+                  <p>Visualizations will appear here</p>
+                  <p style="font-size: 0.9rem; margin-top: 0.5rem; opacity: 0.7;">Ask a question to see charts and tables</p>
+                </div>
+                <div class="chart-container" id="chart-container" style="display: none;">
+                  <h3 class="chart-title" id="chart-title"></h3>
+                  <canvas id="chart-canvas"></canvas>
+                </div>
+
+                <div class="table-container" id="table-container" style="display: none;">
+                  <table id="data-table">
+                    <thead id="table-head"></thead>
+                    <tbody id="table-body"></tbody>
+                  </table>
+                </div>
+
+                <div id="chat-visualizations-panel" class="chat-visualizations"></div>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
       
@@ -175,9 +179,14 @@
           document.body.addEventListener('htmx:afterSwap', (event) => {
             const panel = document.getElementById('dashboard-panel');
             if (panel && event.detail?.target === panel) {
-              panel.style.display = 'block';
-              // Scroll panel into view for presentation
-              panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              panel.style.display = 'flex';
+              
+              // Hide placeholder text when content arrives
+              const placeholder = panel.querySelector('.chatbot-visuals > div:first-child');
+              if (placeholder && placeholder.textContent.includes('Visualizations will appear here')) {
+                placeholder.style.display = 'none';
+              }
+              
               // Trigger chart resize if needed
               setTimeout(() => {
                 window.dispatchEvent(new Event('resize'));
