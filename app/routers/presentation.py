@@ -98,88 +98,53 @@ SLIDES: tuple[Slide, ...] = (
         order="2.4",
     ),
     Slide(
-        slug="auth",
-        title="Authenticatie en autorisatie",
-        template="presentation/slides/authenticatie_en_autorisatie.html",
-        summary="Aanmeldflow, JWT-cookies en toegang per rol.",
-        order="2.5",
-    ),
-    Slide(
-        slug="features",
-        title="Demo",
-        template="presentation/slides/demo.html",
-        summary="Live demo van de dashboards",
-        order="3",
-    ),
-    Slide(
-        slug="admin-dashboard",
-        title="Admin dashboard",
-        template="presentation/slides/admin_dashboard.html",
-        summary="Navigatie voor zoekbare lijsten van personen, bedrijven en transacties.",
-        order="3.1",
-    ),
-    Slide(
         slug="admin-dashboard-build",
         title="Admin dashboard: details",
         template="presentation/slides/admin_dashboard_details.html",
         summary="De opbouw van het admindashboard",
-        order="3.1.1",
-    ),
-    Slide(
-        slug="company-dashboard",
-        title="Company dashboard",
-        template="presentation/slides/company_dashboard.html",
-        summary="Bedrijfswaarden, cashflow en payroll in één scherm.",
-        order="3.2",
-    ),
-    Slide(
-        slug="individual-dashboard",
-        title="Individual dashboard",
-        template="presentation/slides/individual_dashboard.html",
-        summary="Persoonlijk vermogen, holdings, inkomsten en uitgaven.",
-        order="3.3",
+        order="2.5",
     ),
     Slide(
         slug="show-log",
         title="Logging",
         template="presentation/slides/logging.html",
         summary="Logging voor debuggen en monitoren",
-        order="3.4",
+        order="2.6",
     ),
     Slide(
         slug="ai-chatbot",
         title="AI chatbot mogelijkheden",
         template="presentation/slides/ai_chatbot_mogelijkheden.html",
         summary="Prompt assembly, visuele responses en database-aware tooling.",
-        order="4",
+        order="3",
     ),
     Slide(
         slug="prompt-assembly",
         title="Prompt assembly",
         template="presentation/slides/prompt_assembly.html",
         summary="Hoe prompts worden geconstrueerd voor model calls.",
-        order="4.1",
+        order="3.1",
     ),
     Slide(
         slug="json-response",
         title="JSON responses",
         template="presentation/slides/json_responses.html",
         summary="Gestructureerde outputs die door de chatbot worden geretourneerd, gevalideerd met Pydantic.",
-        order="4.2",
+        order="3.2",
     ),
     Slide(
         slug="db-querying",
         title="Python database querying",
         template="presentation/slides/python_database_querying.html",
         summary="SQLAlchemy ORM queries met automatische toegangscontrole via Tool Registry systeem.",
-        order="4.3",
+        order="3.3",
     ),
     Slide(
         slug="dashboard-charts",
         title="Dashboard grafieken via HTTP",
         template="presentation/slides/dashboard_grafieken_via_http.html",
         summary="ToolResult → ChartGenerator → Chart.js config → HTTP response → Frontend rendering.",
-        order="4.4",
+        order="3.4",
     ),
 )
 
@@ -263,7 +228,7 @@ def _load_demo_targets() -> dict[str, int | None]:
 
 
 def _get_slide_payload(slide: Slide) -> dict[str, object]:
-    if slide.slug in {"admin-dashboard", "company-dashboard", "individual-dashboard", "access-control"}:
+    if slide.slug == "access-control":
         return {"demo_targets": _load_demo_targets()}
     if slide.slug == "admin-dashboard-build":
         return {"income_chart": _load_income_chart()}

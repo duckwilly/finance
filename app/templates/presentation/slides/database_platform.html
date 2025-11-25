@@ -3,10 +3,26 @@
     <h2 class="slide__title">Database platform</h2>
   </header>
   <div class="slide__content slide__grid">
-    <div>
-      <h3 class="slide__section-title">MariaDB op Docker</h3>
-      <p>De database draait in een Docker container voor eenvoudige setup:</p>
-      <pre class="slide__code"><code class="language-yaml">services:
+    <div class="slide__content">
+      <div>
+        <h3 class="slide__section-title">Seed data</h3>
+        <p>Synthetische gebruikersdata wordt als csv gegenereerd met een pythonscript, en echte beursdata wordt ingeladen van yahoo finance:</p>
+        <pre class="slide__code"><code class="language-bash"># Genereer seed data
+python scripts/gen_seed_data.py
+
+# Laad data in database
+python scripts/load_csvs.py</code></pre>
+        <pre class="slide__code"><code class="language-bash">data/seed/
+  ├── parties.csv
+  ├── accounts.csv
+  ├── journal_entries.csv
+  └── holdings.csv</code></pre>
+      </div>
+
+      <div>
+        <h3 class="slide__section-title">MariaDB op Docker</h3>
+        <p>De database draait in een Docker container:</p>
+        <pre class="slide__code"><code class="language-yaml">services:
   db:
     image: mariadb:11
     container_name: finance-mariadb
@@ -18,42 +34,14 @@
       - "3306:3306"
     volumes:
       - db_data:/var/lib/mysql</code></pre>
-      <ul class="slide__bullets">
-        <li><strong>Gecontaineriseerd:</strong> Database draait in een geïsoleerde container</li>
-        <li><strong>Eenvoudige setup:</strong> Eén commando start de database: <code>docker compose up -d</code></li>
-        <li><strong>Persistentie:</strong> Data wordt opgeslagen in een Docker volume</li>
-        <li><strong>Port mapping:</strong> Database is toegankelijk op localhost:3306</li>
-      </ul>
+      </div>
     </div>
 
-    <div>
-      <h3 class="slide__section-title">Database connectie</h3>
-      <p>SQLAlchemy maakt verbinding met de database:</p>
-      <pre class="slide__code"><code class="language-python">def create_engine_from_settings():
-    settings = get_settings()
-    return create_engine(
-        f"mysql+pymysql://{settings.database.user}:"
-        f"{settings.database.password}@"
-        f"{settings.database.host}:"
-        f"{settings.database.port}/"
-        f"{settings.database.name}"
-    )</code></pre>
-      <p>Connection string wordt opgebouwd uit environment variabelen:</p>
-      <pre class="slide__code"><code class="language-bash">DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_NAME=finance
-DB_USER=app
-DB_PASSWORD=apppwd</code></pre>
-      <ul class="slide__bullets">
-        <li><strong>Environment config:</strong> Database credentials in .env bestand</li>
-        <li><strong>Connection pooling:</strong> SQLAlchemy beheert connection pool automatisch</li>
-      </ul>
-    </div>
-
-    <div>
-      <h3 class="slide__section-title">Schema en migraties</h3>
-      <p>Database schema wordt gedefinieerd in SQL:</p>
-      <pre class="slide__code"><code class="language-sql">-- sql/schema.sql
+    <div class="slide__content">
+      <div>
+        <h3 class="slide__section-title">Schema</h3>
+        <p>Database schema wordt gedefinieerd in SQL:</p>
+        <pre class="slide__code"><code class="language-sql">-- sql/schema.sql
 CREATE TABLE parties (
     id INT PRIMARY KEY AUTO_INCREMENT,
     party_type VARCHAR(20) NOT NULL,
@@ -65,33 +53,27 @@ CREATE TABLE accounts (
     party_id INT,
     FOREIGN KEY (party_id) REFERENCES parties(id)
 );</code></pre>
-      <ul class="slide__bullets">
-        <li><strong>SQL schema:</strong> Alle tabellen gedefinieerd in <code>sql/schema.sql</code></li>
-        <li><strong>Schema toepassen:</strong> Bij setup wordt schema automatisch geladen</li>
-        <li><strong>Alembic ready:</strong> Klaar voor versie-gecontroleerde migraties</li>
-      </ul>
-    </div>
+      </div>
 
-    <div>
-      <h3 class="slide__section-title">Seed data</h3>
-      <p>Synthetische data wordt gegenereerd en geladen:</p>
-      <pre class="slide__code"><code class="language-bash"># Genereer seed data
-python scripts/gen_seed_data.py
-
-# Laad data in database
-python scripts/load_csvs.py</code></pre>
-      <p>Data wordt opgeslagen in CSV bestanden:</p>
-      <pre class="slide__code"><code class="language-bash">data/seed/
-  ├── parties.csv
-  ├── accounts.csv
-  ├── journal_entries.csv
-  └── holdings.csv</code></pre>
-      <ul class="slide__bullets">
-        <li><strong>CSV format:</strong> Data in CSV voor eenvoudige import</li>
-        <li><strong>Herbruikbaar:</strong> Seed data kan opnieuw geladen worden</li>
-        <li><strong>Realistische data:</strong> Gebruikt echte stock prijzen en FX rates</li>
-      </ul>
+      <div>
+        <h3 class="slide__section-title">Database connectie</h3>
+        <p>SQLAlchemy maakt verbinding met de database:</p>
+        <pre class="slide__code"><code class="language-python">def create_engine_from_settings():
+    settings = get_settings()
+    return create_engine(
+        f"mysql+pymysql://{settings.database.user}:"
+        f"{settings.database.password}@"
+        f"{settings.database.host}:"
+        f"{settings.database.port}/"
+        f"{settings.database.name}"
+    )</code></pre>
+        <p>Connection string wordt opgebouwd met behulp van een .env:</p>
+        <pre class="slide__code"><code class="language-bash">DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=finance
+DB_USER=app
+DB_PASSWORD=apppwd</code></pre>
+      </div>
     </div>
   </div>
 </article>
-

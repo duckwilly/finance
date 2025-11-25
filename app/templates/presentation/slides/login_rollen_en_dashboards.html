@@ -53,6 +53,30 @@
     </div>
   </div>
 
+  <div class="auth-diagram" aria-label="Schema authenticatie en autorisatie">
+    <div class="auth-diagram__track">
+      <div class="auth-diagram__node">
+        <p class="auth-diagram__title">Login</p>
+        <p class="auth-diagram__body">Form POST → valideer gebruiker</p>
+      </div>
+      <div class="auth-diagram__arrow">→</div>
+      <div class="auth-diagram__node">
+        <p class="auth-diagram__title">JWT cookie</p>
+        <p class="auth-diagram__body">HttpOnly, short-lived, bevat roles + company_ids</p>
+      </div>
+      <div class="auth-diagram__arrow">→</div>
+      <div class="auth-diagram__node">
+        <p class="auth-diagram__title">Dependencies</p>
+        <p class="auth-diagram__body"><code>require_admin_user</code>, <code>require_company_access</code>, <code>require_individual_access</code></p>
+      </div>
+      <div class="auth-diagram__arrow">→</div>
+      <div class="auth-diagram__node">
+        <p class="auth-diagram__title">Scope</p>
+        <p class="auth-diagram__body">Admin: alles • Employee: eigen bedrijf • Individu: eigen dashboards</p>
+      </div>
+    </div>
+  </div>
+
   <div class="slide__demo" aria-label="Individueel dashboard live voorbeeld">
     <div class="slide__embed">
       {% if individual_id %}
