@@ -99,7 +99,7 @@ SLIDES: tuple[Slide, ...] = (
     ),
     Slide(
         slug="ai-chatbot",
-        title="AI chatbot",
+        title="Bonus",
         template="presentation/slides/ai_chatbot_mogelijkheden.html",
         summary="Prompt assembly, visuele responses en database-aware tooling.",
         order="3",

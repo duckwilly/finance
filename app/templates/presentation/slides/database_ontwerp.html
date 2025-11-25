@@ -8,7 +8,7 @@
       <ul class="slide__bullets">
         <li>Financiële data moeten in principe onveranderlijk zijn: we voegen boekingen toe in plaats van saldo's te bewerken, saldo's zijn de som van de boekingen.</li>
         <li>We modelleren personen en bedrijven expliciet gescheiden (<code>individual_profile</code>, <code>company_profile</code>) bovenop één generiek <code>party</code>-model. Natuurlijke personen kunnen inloggen en hun eigen data zien, maar ook de data van hun werkgever.</li>
-        <li>De database is genormaliseerd tot 3NF/BCNF: elk feit staat precies één keer in de database en alle niet-sleutelattributen hangen volledig af van de primaire sleutel, zodat double spend, duplicatie en update-anomalieën worden vermeden.</li>
+        <li>De database is genormaliseerd tot 3NF/BCNF: elk feit staat precies één keer in de database en alle niet-sleutelattributen hangen volledig af van de primaire sleutel, zodat double spending en andere corruptie kan worden vermeden.</li>
       </ul>
       <div class="slide__callout code-shell" aria-label="Voorbeeld 3NF/BCNF">
         <div class="code-block">
@@ -25,7 +25,7 @@ company(id, name, vat_number)</code>
       <h3 class="slide__section-title">Journaalmodel & schaal</h3>
       <ul class="slide__bullets">
         <li>We gebruiken een dubbelboekings-journal (<code>journal_entry</code> + <code>journal_line</code>).</li>
-        <li>Voor elke boeking geldt in SQL: de som van <code>journal_line.amount</code> per <code>entry_id</code> en valuta is altijd nul; posities, cashflow en P&amp;L zijn hier directe afgeleiden van.</li>
+        <li>Voor elke boeking geldt in de database: de som van <code>journal_line.amount</code> per <code>entry_id</code> en valuta is altijd nul; posities, cashflow en P&amp;L zijn hier directe afgeleiden van.</li>
         <li>Alle feiten zijn herleidbaar en opnieuw te berekenen uit het journaal en marktdata; tabellen als <code>cash_flow_fact</code> zijn performance-lagen, niet de bron van waarheid.</li>
         <li>Onze simulatie werkt standaard met ~550 partijen, ~1500 rekeningen, ~100k boekingen op een tijdschaal van 1 jaar. Veel grotere simulaties zijn ook mogelijk.</li>
       </ul>
