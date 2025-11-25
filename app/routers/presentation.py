@@ -108,24 +108,10 @@ SLIDES: tuple[Slide, ...] = (
     ),
     Slide(
         slug="json-response",
-        title="JSON responses",
+        title="LLM output naar Chart.js",
         template="presentation/slides/json_responses.html",
-        summary="Gestructureerde outputs die door de chatbot worden geretourneerd, gevalideerd met Pydantic.",
+        summary="LLM JSON response wordt gevalideerd, opgeschoond en omgezet naar Chart.js configuraties.",
         order="3.2",
-    ),
-    Slide(
-        slug="db-querying",
-        title="Python database querying",
-        template="presentation/slides/python_database_querying.html",
-        summary="SQLAlchemy ORM queries met automatische toegangscontrole via Tool Registry systeem.",
-        order="3.3",
-    ),
-    Slide(
-        slug="dashboard-charts",
-        title="Dashboard grafieken via HTTP",
-        template="presentation/slides/dashboard_grafieken_via_http.html",
-        summary="ToolResult → ChartGenerator → Chart.js config → HTTP response → Frontend rendering.",
-        order="3.4",
     ),
 )
 
