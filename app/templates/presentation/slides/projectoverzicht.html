@@ -1,41 +1,30 @@
 <article class="slide" data-slide-fragment>
   <header class="slide__header">
-    <p class="eyebrow">Overzicht</p>
     <h2 class="slide__title">Projectoverzicht</h2>
   </header>
   <div class="slide__content">
     <div class="slide__section">
-      <h3 class="slide__section-title">Wat is dit platform?</h3>
+      <h3 class="slide__section-title">Wat is dit project?</h3>
       <ul class="slide__bullets">
-        <li>Dit is een volledig functioneel financieel dashboard en backend-systeem dat de klanten van een bank simuleert. Het platform modelleert bedrijven, individuen, aandelen en transacties, en biedt zowel API's als server-side pagina's om financiële data te bekijken, te doorzoeken en te analyseren.</li>
+        <li>Dit is een financieel dashboard dat de klanten van een bank simuleert. We modelleren bedrijven, individuen en hun geld- en aandelentransacties. We hebben een webplatform gebouwd waarin gebruikers hun financiële data kunnen bekijken, doorzoeken en analyseren.</li>
       </ul>
 </div>
 
     <div class="slide__section">
-      <h3 class="slide__section-title">Doelgroep</h3>
+      <h3 class="slide__section-title">Gebruikers</h3>
       <ul class="slide__bullets">
-        <li><strong>Admins:</strong> Kunnen alle views bekijken, lijsten van bedrijven en individuen doorzoeken, en doorklikken naar elke company/individual view. Ze hebben toegang tot een overzicht van alle transacties en stock holdings.</li>
-        <li><strong>Bedrijfseigenaren:</strong> Krijgen een dashboard met overzicht van hun accounts en transacties in een geselecteerde periode. Ze zien netto waarde, cash holdings, inkomsten en uitgaven, en netto cashflow. Ook is er een overzicht van payroll en een breakdown van inkomsten en uitgaven.</li>
-        <li><strong>Individuele rekeninghouders:</strong> Hebben een persoonlijk dashboard met hun netto waarde, cash accounts en brokerage holdings, inkomsten en uitgaven, en netto cashflow. Ze zien een overzicht van hun accounts, een breakdown van inkomsten, brokerage holdings met winst/verlies statistieken, en uitgaven per categorie.</li>
+        <li><strong>Admin:</strong> Kan alle views bekijken, lijsten van bedrijven en individuen doorzoeken, en doorklikken naar elke company/individual view. Heeft toegang tot een overzicht van alle transacties en stock holdings.</li>
+        <li><strong>Bedrijven:</strong> Krijgen een dashboard met overzicht van hun accounts en transacties in een geselecteerde periode. Ze zien hun inkomsten en uitgaven, winst of verlies en payroll.</li>
+        <li><strong>Individuele rekeninghouders:</strong> Hebben een persoonlijk dashboard met hun bankrekeningen, beleggingsrekening en overzicht van hun inkomsten en uitgaven in verschillende categorieën.</li>
       </ul>
     </div>
 
     <div class="slide__section">
       <h3 class="slide__section-title">Scope en functionaliteit</h3>
       <ul class="slide__bullets">
-        <li><strong>Server-rendered dashboards:</strong> Alle dashboards worden server-side gegenereerd met Jinja2 templates voor snelle laadtijden en SEO-vriendelijke pagina's.</li>
-        <li><strong>AI-ondersteunde inzichten:</strong> Een geïntegreerde AI chatbot die natuurlijke taal queries kan verwerken, data kan analyseren, en automatisch grafieken en tabellen kan genereren op basis van financiële data.</li>
-        <li><strong>Drill-down navigatie:</strong> Van overzichten naar gedetailleerde views van bedrijven, individuen, transacties en holdings. Elke entiteit heeft zijn eigen dashboard met relevante metrics.</li>
-        <li><strong>Zoek- en filterfunctionaliteit:</strong> Admins kunnen door alle data zoeken en filteren, met paginering voor schaalbaarheid.</li>
-        <li><strong>Stock holdings analyse:</strong> Overzicht van alle stock holdings van alle clients, inclusief winst/verlies statistieken en leaderboards voor grootste winsten en verliezen.</li>
-      </ul>
-    </div>
-
-    <div class="slide__section">
-      <h3 class="slide__section-title">Architectuur en filosofie</h3>
-      <ul class="slide__bullets">
-        <li><strong>Georganiseerde code:</strong> Berekeningen (zoals netto waarde en cashflow), data opslag, en de gebruikersinterface staan apart, zodat alles gemakkelijk kan worden aangepast.</li>
-        <li><strong>Browser-based:</strong> Alles werkt in de browser zonder externe tools nodig te hebben.</li>
+        <li><strong>Server-rendered dashboards:</strong> Alle dashboards worden server-side gegenereerd met Jinja2 templates. We gebruiken SQLAlchemy ORMs om het dashboard te vullen.</li>
+        <li><strong>Zoek- en filterfunctionaliteit:</strong> Admins kunnen door alle data zoeken en filteren.</li>
+        <li><strong>Dynamische dashboards:</strong> We hebben onze ORMs zo opgezet dat we de dashboards en grafieken op een dynamische manier kunnen opbouwen. Daarover later meer.</li>
         <li><strong>Eenvoudig opzetten:</strong> Het hele project kan in één keer gebouwd worden met <code>make quickstart</code>.</li>
       </ul>
     </div>
