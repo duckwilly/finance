@@ -14,12 +14,13 @@ from app.core.security import AuthenticatedUser, require_admin_user
 from app.core.templates import templates
 from app.db.session import get_sessionmaker
 from app.models import AppUser, OrgPartyMap, UserPartyMap
-from app.services import AdminService, IndividualsService
+from app.services import AdminService, CompaniesService, IndividualsService
 
 LOGGER = get_logger(__name__)
 router = APIRouter(prefix="/presentation", tags=["presentation"])
 SESSION_FACTORY: sessionmaker = get_sessionmaker()
 INDIVIDUALS_SERVICE = IndividualsService()
+COMPANIES_SERVICE = CompaniesService()
 ADMIN_SERVICE = AdminService()
 
 
@@ -215,6 +216,17 @@ def _load_individual_dashboard(user_id: int):
         session.close()
 
 
+def _load_company_dashboard(company_id: int):
+    session = SESSION_FACTORY()
+    try:
+        return COMPANIES_SERVICE.get_dashboard(session, company_id)
+    except Exception:
+        LOGGER.exception("Failed to load company dashboard for slide", extra={"company_id": company_id})
+        return None
+    finally:
+        session.close()
+
+
 def _load_income_chart() -> dict[str, object] | None:
     session = SESSION_FACTORY()
     try:
@@ -256,7 +268,15 @@ def _get_slide_payload(slide: Slide) -> dict[str, object]:
     if slide.slug == "admin-dashboard-build":
         return {"income_chart": _load_income_chart()}
     if slide.slug == "simulated-data":
-        return {"individual_dashboard": _load_individual_dashboard(3)}
+        individual_dashboard = _load_individual_dashboard(3)
+        company_dashboard = None
+        if individual_dashboard and individual_dashboard.employer_id:
+            company_dashboard = _load_company_dashboard(individual_dashboard.employer_id)
+
+        return {
+            "individual_dashboard": individual_dashboard,
+            "company_dashboard": company_dashboard,
+        }
     return {}
 
 
