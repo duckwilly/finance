@@ -1,6 +1,6 @@
 <article class="slide" data-slide-fragment>
   <header class="slide__header">
-    <h2 class="slide__title">AI chatbot mogelijkheden</h2>
+    <h2 class="slide__title">AI chatbot</h2>
   </header>
   <div class="slide__content">
     <div style="margin-bottom: 1.5rem;">
@@ -62,23 +62,23 @@
 
                   <ul class="chat-quick-actions" aria-label="Suggested prompts">
                     <li>
-                      <button type="button" data-chat-suggestion="Show a bar chart of expenses by category for user 1 for the last 30 days with x_axis=category and y_axis=total, sorted descending, using EUR.">
-                        User 1: Category spend (30d)
+                      <button type="button" data-chat-suggestion="As admin, aggregate all parties and chart platform-wide monthly income vs expenses for the last 12 months. Use the monthly_cash_flow_comparison tool with party_id omitted, months=12, x_axis=month, y_axis=[income_total,expenses], sort=asc, currency=EUR, and provide a one-sentence takeaway.">
+                        Platform: income vs expenses (12m)
                       </button>
                     </li>
                     <li>
-                      <button type="button" data-chat-suggestion="Compare monthly income vs expenses for user 6 over the last 6 months as a grouped bar chart with x_axis=month and y_axis=[income_total,expenses], sorted ascending by month.">
-                        User 6: Income vs expenses (6m)
+                      <button type="button" data-chat-suggestion="Create a leaderboard of the top 5 companies by income over the last 90 days. Use leaderboard with metric=income, party_type=company, days=90, limit=5, render a bar chart with x_axis=party_name and y_axis=total sorted desc, and include a table with party_url links for drill-down.">
+                        Companies: top 5 income (90d)
                       </button>
                     </li>
                     <li>
-                      <button type="button" data-chat-suggestion="Plot an expense trend line for user 2 for the last 180 days with x_axis=month and y_axis=total, sorted ascending by month.">
-                        User 2: Expense trend (180d)
+                      <button type="button" data-chat-suggestion="Show the top 5 individuals by net cash flow trend over the last 180 days. Use flex_analytics with metric=net_cash_flow, party_type=individual, limit=5, days=180, chart_type=line, x_axis=month, y_axis=net_cash_flow, stack_by=party_name, sort=asc, and add a short insight.">
+                        Individuals: net cash flow (180d)
                       </button>
                     </li>
                     <li>
-                      <button type="button" data-chat-suggestion="List the top 5 spenders in the last 30 days as a bar chart with x_axis=party_name and y_axis=total, sorted descending.">
-                        Top spenders (30d)
+                      <button type="button" data-chat-suggestion="Visualize which clients hold the largest portfolios right now. Use flex_analytics with metric=holdings_value, party_type=all, limit=8, chart_type=doughnut, x_axis=party_name, y_axis=holdings_value, sort=desc, unit=currency">
+                        Portfolios: biggest holdings
                       </button>
                     </li>
                   </ul>
