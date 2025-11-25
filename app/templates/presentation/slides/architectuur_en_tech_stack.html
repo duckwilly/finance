@@ -2,54 +2,67 @@
   <header class="slide__header">
     <h2 class="slide__title">Architectuur & tech stack</h2>
   </header>
-  <div class="slide__content slide__grid">
-    <div>
-      <h3 class="slide__section-title">Backend stack</h3>
-      <p>Het platform is gebouwd op een moderne Python backend met een duidelijke scheiding van verantwoordelijkheden.</p>
-      <ul class="slide__bullets">
-        <li><strong>FastAPI:</strong> Moderne, snelle web framework op Python 3.11 met automatische API documentatie en async/await support.</li>
-        <li><strong>Routers:</strong> Georganiseerd in aparte modules voor dashboards, authenticatie, individuen, bedrijven en presentaties.</li>
-        <li><strong>SQLAlchemy 2.x:</strong> Moderne ORM voor database interacties met type hints ondersteuning.</li>
-        <li><strong>Pydantic v2:</strong> Data validatie en serialisatie voor request/response modellen.</li>
-        <li><strong>PyJWT:</strong> Authenticatie en autorisatie via JWT tokens voor sessiebeheer.</li>
-        <li><strong>Jinja2:</strong> Template engine voor server-side rendering van alle dashboards.</li>
-      </ul>
+  <div class="slide__content">
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+      <div>
+        <h3 class="slide__section-title">Backend</h3>
+        <ul class="slide__bullets" style="list-style-type: disc; padding-left: 1.5rem;">
+          <li><strong>FastAPI:</strong> Web framework met async/await</li>
+          <li><strong>SQLAlchemy:</strong> ORM voor database queries</li>
+          <li><strong>Jinja2:</strong> Server-side rendering</li>
+          <li><strong>PyJWT:</strong> Authenticatie</li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="slide__section-title">Database</h3>
+        <ul class="slide__bullets" style="list-style-type: disc; padding-left: 1.5rem;">
+          <li><strong>MariaDB:</strong> Relationele database in Docker (3NF end BCNF)</li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="slide__section-title">Frontend</h3>
+        <ul class="slide__bullets" style="list-style-type: disc; padding-left: 1.5rem;">
+          <li><strong>HTML/CSS:</strong> Semantische HTML, responsive design</li>
+          <li><strong>HTMX:</strong> Interactiviteit zonder complexe JavaScript</li>
+          <li><strong>Chart.js:</strong> Grafieken en visualisaties</li>
+        </ul>
+      </div>
     </div>
 
-    <div>
-      <h3 class="slide__section-title">Database en persistentie</h3>
-      <p>De data wordt opgeslagen in een relationele database met ondersteuning voor migraties en seed data.</p>
-      <ul class="slide__bullets">
-        <li><strong>MariaDB:</strong> Relationele database in Docker voor betrouwbare data opslag en complexe queries.</li>
-        <li><strong>Docker Compose:</strong> Gecontaineriseerde database voor eenvoudige setup en consistentie.</li>
-        <li><strong>Alembic:</strong> Database migratie tool voor versie-gecontroleerde schema wijzigingen.</li>
-        <li><strong>Session management:</strong> SQLAlchemy sessions per request via dependency injection met connection pooling.</li>
-        <li><strong>Seed data:</strong> Synthetische data gegenereerd via scripts en geladen via CSV bestanden.</li>
-      </ul>
-    </div>
+    <div style="border-top: 1px solid var(--presentation-border); padding-top: 1.5rem;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+        <div>
+          <h3 class="slide__section-title">HTMX</h3>
+          <p style="font-size: 0.9rem; margin-bottom: 1rem;">We zouden eerst FIXI.js gebruiken, maar HTMX werkt op dezelfde manier. Het idee is dat we geen JavaScript nodig hebben om de interactie te implementeren. We kunnen alles doen met HTML attributen en HTMX zorgt ervoor dat we geen pagina refresh nodig hebben.</p>
+          <ul class="slide__bullets" style="font-size: 0.9rem;">
+            <li><strong>Dashboard panel switches:</strong> Wanneer een user op "Individuals", "Companies", etc. klikt, wordt alleen het panel vervangen zonder dat de hele pagina hoeft te reloaden</li>
+          </ul>
+          <pre class="slide__code" style="font-size: 0.8rem; margin-top: 1rem;"><code class="language-html">&lt;button
+  hx-get="/dashboard/panel/individuals"
+  hx-target="#dashboard-panel"
+  hx-swap="innerHTML"
+&gt;
+  Individuals
+&lt;/button&gt;</code></pre>
+        </div>
 
-    <div>
-      <h3 class="slide__section-title">Frontend stack</h3>
-      <p>De frontend combineert traditionele web technologieën met moderne interactieve elementen.</p>
-      <ul class="slide__bullets">
-        <li><strong>HTML/CSS:</strong> Semantische HTML met custom CSS voor moderne, responsive interface met dark mode support.</li>
-        <li><strong>HTMX:</strong> Interactiviteit zonder complexe JavaScript. Partial page updates voor dashboard panel switches.</li>
-        <li><strong>Chart.js:</strong> Voor grafieken en visualisaties (pie charts, line charts) in de dashboards.</li>
-        <li><strong>Vanilla JavaScript:</strong> Minimale custom JavaScript voor theme switching, filtering en chart rendering.</li>
-        <li><strong>Server-side rendering:</strong> Alle HTML server-side gegenereerd voor snelle laadtijden en goede SEO.</li>
-      </ul>
-    </div>
-
-    <div>
-      <h3 class="slide__section-title">Architectuur patronen</h3>
-      <p>Het platform volgt duidelijke architectuur patronen voor onderhoudbaarheid en schaalbaarheid.</p>
-      <ul class="slide__bullets">
-        <li><strong>Service layer:</strong> Business logica gescheiden van routing en data access. Services encapsuleren berekeningen en aggregatie.</li>
-        <li><strong>Dependency injection:</strong> FastAPI's dependency system voor database sessions, services en authenticatie.</li>
-        <li><strong>Security middleware:</strong> Authenticatie middleware controleert requests en beschermt admin-only routes met JWT validatie.</li>
-        <li><strong>Modulaire structuur:</strong> Code georganiseerd in aparte directories voor routers, models, schemas, services en database.</li>
-        <li><strong>Startup warmup:</strong> Admin dashboard metrics geprecomputeerd bij opstarten voor snelle eerste laadtijden.</li>
-      </ul>
+        <div>
+          <h3 class="slide__section-title">Chart.js</h3>
+          <p style="font-size: 0.9rem; margin-bottom: 1rem;">Chart configuraties worden server-side gegenereerd en via data attributes doorgegeven:</p>
+          <pre class="slide__code" style="font-size: 0.8rem;"><code class="language-html">&lt;div data-chart data-chart-type="pie"
+     data-chart-config='{"labels": [...], 
+                        "values": [...]}'&gt;
+  &lt;canvas&gt;&lt;/canvas&gt;
+&lt;/div&gt;</code></pre>
+          <ul class="slide__bullets" style="margin-top: 1rem; font-size: 0.9rem;">
+            <li><strong>Server-side config:</strong> Data via JSON in HTML data attributes</li>
+            <li><strong>Automatische initialisatie:</strong> Charts worden automatisch gerenderd</li>
+            <li><strong>Theme-aware:</strong> Charts passen kleuren aan bij theme switches</li>
+          </ul>
+        </div>
+      </div>
     </div>
   </div>
 </article>
