@@ -31,216 +31,161 @@
     </div>
 
     <div>
-      <h3 class="slide__section-title">Automatische visualisaties</h3>
-      <p>De Python ChartGenerator maakt Chart.js configuraties van database data. Bewerk de config hieronder en zie direct het resultaat:</p>
+      <h3 class="slide__section-title">Live demo</h3>
+      <p>Probeer de chatbot hieronder uit om te zien hoe het werkt tijdens de presentatie:</p>
       
-      <div style="margin: 1rem 0; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-        <div>
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <label style="font-weight: 600;">Chart.js Config:</label>
-            <button 
-              onclick="renderDemoChart()"
-              style="padding: 0.4rem 0.8rem; background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem;">
-              ▶ Render
-            </button>
-          </div>
-          <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
-            <button onclick="loadTemplate('bar')" style="padding: 0.3rem 0.6rem; background: var(--presentation-surface-strong); border: 1px solid var(--presentation-border); border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Bar Chart</button>
-            <button onclick="loadTemplate('pie')" style="padding: 0.3rem 0.6rem; background: var(--presentation-surface-strong); border: 1px solid var(--presentation-border); border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Pie Chart</button>
-            <button onclick="loadTemplate('line')" style="padding: 0.3rem 0.6rem; background: var(--presentation-surface-strong); border: 1px solid var(--presentation-border); border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Line Chart</button>
-            <button onclick="loadTemplate('doughnut')" style="padding: 0.3rem 0.6rem; background: var(--presentation-surface-strong); border: 1px solid var(--presentation-border); border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Doughnut</button>
-            <button onclick="loadTemplate('radar')" style="padding: 0.3rem 0.6rem; background: var(--presentation-surface-strong); border: 1px solid var(--presentation-border); border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Radar</button>
-          </div>
-          <textarea 
-            id="chart-config-editor"
-            style="width: 100%; min-height: 400px; padding: 0.75rem; border: 1px solid var(--presentation-border); border-radius: 8px; background: #1e1e1e; color: #d4d4d4; font-family: 'Courier New', monospace; font-size: 0.85rem; resize: vertical;"
-            spellcheck="false">{
-  "type": "bar",
-  "data": {
-    "labels": ["Jan", "Feb", "Mar", "Apr"],
-    "datasets": [{
-      "label": "Uitgaven",
-      "data": [1000, 1200, 800, 1500],
-      "backgroundColor": "rgba(95, 106, 252, 0.6)"
-    }]
-  },
-  "options": {
-    "responsive": true,
-    "plugins": {
-      "title": {
-        "display": true,
-        "text": "Uitgaven per maand"
-      }
-    }
-  }
-}</textarea>
-        </div>
-        <div>
-          <label style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Resultaat:</label>
-          <div style="border: 1px solid var(--presentation-border); border-radius: 8px; padding: 1rem; background: var(--presentation-surface-strong); min-height: 400px; display: flex; align-items: center; justify-content: center;">
-            <canvas id="demo-chart-canvas"></canvas>
-          </div>
+      <link rel="stylesheet" href="{{ url_for('static', path='ai_chatbot/chatbot.css') }}" />
+      <script src="{{ url_for('static', path='ai_chatbot/chatbot.js') }}" defer></script>
+      
+      <div style="margin: 1.5rem 0; border: 1px solid var(--presentation-border); border-radius: 12px; overflow: hidden; background: var(--presentation-surface);">
+        <div style="display: grid; grid-template-rows: auto 1fr; gap: 0; min-height: 600px;">
+          <!-- Response panel (shown when response arrives) -->
+          <section id="dashboard-panel" class="details details--ai" data-panel="chatbot" style="display: none; border-bottom: 1px solid var(--presentation-border); max-height: 400px; overflow-y: auto;">
+            <div class="details__panel details__panel--focus">
+              <div class="chatbot-visuals" aria-live="polite">
+                <div class="chart-container" id="chart-container" style="display: none;">
+                  <h3 class="chart-title" id="chart-title"></h3>
+                  <canvas id="chart-canvas"></canvas>
+                </div>
+
+                <div class="table-container" id="table-container" style="display: none;">
+                  <table id="data-table">
+                    <thead id="table-head"></thead>
+                    <tbody id="table-body"></tbody>
+                  </table>
+                </div>
+
+                <div id="chat-visualizations-panel" class="chat-visualizations"></div>
+              </div>
+            </div>
+          </section>
+          
+          <!-- Chatbot interface -->
+          <aside class="workspace__chat" id="dashboard-chat" aria-label="AI assistant" style="position: relative; width: 100%;">
+            <div class="chat-panel" style="height: 100%; border: none; border-radius: 0;">
+              <div class="chat-panel__header">
+                <div class="chat-panel__header-copy">
+                  <p class="eyebrow">AI copilot</p>
+                  <h2 class="chat-panel__title">Chat-driven insights</h2>
+                  <p class="chat-panel__hint">
+                    Ask for spending breakdowns, ad-hoc KPIs or visual slices of the data.
+                  </p>
+                </div>
+              </div>
+
+              <div class="chat-panel__body" id="chat-panel-body">
+                <div class="chat-panel__scroll">
+                  <div class="chat-messages" id="chat-messages" aria-live="polite">
+                    <div class="welcome-message">
+                      <p>💬 Ask about your spending, income trends, or any category you want to explore.</p>
+                      <p>Charts and tables will automatically appear above when needed.</p>
+                    </div>
+                  </div>
+
+                  <ul class="chat-quick-actions" aria-label="Suggested prompts">
+                    <li>
+                      <button type="button" data-chat-suggestion="Show a bar chart of expenses by category for the last 30 days with x_axis=category and y_axis=total, sorted descending, using EUR.">
+                        Category spend (30d)
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" data-chat-suggestion="Compare monthly income vs expenses over the last 6 months as a grouped bar chart with x_axis=month and y_axis=[income_total,expenses], sorted ascending by month.">
+                        Income vs expenses (6m)
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" data-chat-suggestion="Plot an expense trend line for the last 180 days with x_axis=month and y_axis=total, sorted ascending by month.">
+                        Expense trend (180d)
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" data-chat-suggestion="List the top 5 spenders in the last 30 days as a bar chart with x_axis=party_name and y_axis=total, sorted descending.">
+                        Top spenders (30d)
+                      </button>
+                    </li>
+                  </ul>
+
+                  <div id="chat-visualizations" class="chat-visualizations"></div>
+                </div>
+
+                <div class="chat-input-container">
+                  <form
+                    id="chat-form"
+                    data-chatbot-form
+                    hx-post="/chatbot/query/htmx"
+                    hx-target="#dashboard-panel"
+                    hx-swap="innerHTML"
+                    hx-indicator="#loading-indicator"
+                  >
+                    <input type="hidden" name="response_mode" value="visualization" />
+                    <div class="chat-input-row">
+                      <label class="chat-model-label" for="model-select">Model</label>
+                      <select id="model-select" name="model">
+                        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                        <option value="gpt-4o-mini">GPT 4o Mini</option>
+                      </select>
+                    </div>
+                    <div class="chat-input-block">
+                      <textarea
+                        name="question"
+                        id="question-input"
+                        class="chat-input-block__textarea"
+                        placeholder="Ask for dashboards, charts, or tables"
+                        autocomplete="off"
+                        rows="2"
+                        data-min-height="72"
+                        data-max-height="220"
+                        required
+                      ></textarea>
+                      <button type="submit" class="chat-input-block__button" id="send-button">
+                        <span>Send</span>
+                      </button>
+                    </div>
+                    <div class="loading-indicator" id="loading-indicator">
+                      <div class="spinner"></div>
+                      <span>Thinking...</span>
+                    </div>
+                  </form>
+                </div>
+                <div id="chatbot-response-target" style="display: none;"></div>
+              </div>
+            </div>
+          </aside>
         </div>
       </div>
+      
       <script>
-        let demoChartInstance = null;
-        
-        const chartTemplates = {
-          bar: {
-            type: "bar",
-            data: {
-              labels: ["Jan", "Feb", "Mar", "Apr"],
-              datasets: [{
-                label: "Uitgaven",
-                data: [1000, 1200, 800, 1500],
-                backgroundColor: "rgba(95, 106, 252, 0.6)"
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: "Uitgaven per maand"
-                }
-              }
+        // Initialize chatbot when slide is loaded
+        (function() {
+          // Wait for chatbot.js to be available
+          const initChatbot = () => {
+            if (window.initializeChatbot) {
+              window.initializeChatbot();
+            } else {
+              setTimeout(initChatbot, 100);
             }
-          },
-          pie: {
-            type: "pie",
-            data: {
-              labels: ["Huur", "Boodschappen", "Transport", "Entertainment"],
-              datasets: [{
-                data: [800, 400, 200, 100],
-                backgroundColor: [
-                  "rgba(95, 106, 252, 0.8)",
-                  "rgba(96, 165, 250, 0.8)",
-                  "rgba(139, 92, 246, 0.8)",
-                  "rgba(244, 114, 182, 0.8)"
-                ]
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: "Uitgaven per categorie"
-                }
-              }
-            }
-          },
-          line: {
-            type: "line",
-            data: {
-              labels: ["Jan", "Feb", "Mar", "Apr", "Mei"],
-              datasets: [{
-                label: "Inkomsten",
-                data: [2000, 2200, 1800, 2500, 2100],
-                borderColor: "rgba(95, 106, 252, 1)",
-                backgroundColor: "rgba(95, 106, 252, 0.1)",
-                fill: true
-              }, {
-                label: "Uitgaven",
-                data: [1500, 1600, 1400, 1800, 1500],
-                borderColor: "rgba(244, 114, 182, 1)",
-                backgroundColor: "rgba(244, 114, 182, 0.1)",
-                fill: true
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: "Inkomsten vs Uitgaven"
-                }
-              }
-            }
-          },
-          doughnut: {
-            type: "doughnut",
-            data: {
-              labels: ["Cash", "Aandelen", "Obligaties"],
-              datasets: [{
-                data: [50000, 30000, 20000],
-                backgroundColor: [
-                  "rgba(95, 106, 252, 0.8)",
-                  "rgba(96, 165, 250, 0.8)",
-                  "rgba(139, 92, 246, 0.8)"
-                ]
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: "Portfolio verdeling"
-                }
-              }
-            }
-          },
-          radar: {
-            type: "radar",
-            data: {
-              labels: ["Huur", "Boodschappen", "Transport", "Entertainment", "Zorg"],
-              datasets: [{
-                label: "Uitgaven",
-                data: [800, 400, 200, 100, 300],
-                backgroundColor: "rgba(95, 106, 252, 0.2)",
-                borderColor: "rgba(95, 106, 252, 1)"
-              }]
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                title: {
-                  display: true,
-                  text: "Uitgaven overzicht"
-                }
-              }
-            }
+          };
+          
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initChatbot);
+          } else {
+            initChatbot();
           }
-        };
-        
-        function loadTemplate(type) {
-          const editor = document.getElementById('chart-config-editor');
-          if (!editor || !chartTemplates[type]) return;
           
-          editor.value = JSON.stringify(chartTemplates[type], null, 2);
-          renderDemoChart();
-        }
-        
-        function renderDemoChart() {
-          const editor = document.getElementById('chart-config-editor');
-          const canvas = document.getElementById('demo-chart-canvas');
-          
-          if (!editor || !canvas || !window.Chart) return;
-          
-          try {
-            // Parse JSON from editor
-            const config = JSON.parse(editor.value);
-            
-            // Destroy existing chart if it exists
-            if (demoChartInstance) {
-              demoChartInstance.destroy();
+          // Handle HTMX responses to show the panel
+          document.body.addEventListener('htmx:afterSwap', (event) => {
+            const panel = document.getElementById('dashboard-panel');
+            if (panel && event.detail?.target === panel) {
+              panel.style.display = 'block';
+              // Scroll panel into view for presentation
+              panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              // Trigger chart resize if needed
+              setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+              }, 100);
             }
-            
-            // Create new chart
-            demoChartInstance = new Chart(canvas.getContext('2d'), config);
-          } catch (e) {
-            alert('Ongeldige JSON configuratie: ' + e.message);
-            console.error('Error rendering chart:', e);
-          }
-        }
-        
-        // Auto-render on page load
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', renderDemoChart);
-        } else {
-          renderDemoChart();
-        }
+          });
+        })();
       </script>
     </div>
   </div>
