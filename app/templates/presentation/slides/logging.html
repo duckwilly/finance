@@ -4,47 +4,23 @@
   </header>
   <div class="slide__content slide__grid">
     <div>
-      <h3 class="slide__section-title">Rich console logging</h3>
-      <p>Het platform gebruikt Rich voor gekleurde console output:</p>
-      <pre class="slide__code"><code class="language-python">from app.core.logger import get_logger
-
-LOGGER = get_logger(__name__)
-LOGGER.info("Dashboard requested")
-LOGGER.error("Failed", extra={"user_id": 123})</code></pre>
-      <ul class="slide__bullets">
-        <li><strong>Gekleurde output:</strong> Log levels hebben verschillende kleuren (zichtbaar in terminal, niet in code)</li>
-        <li><strong>Structured formatting:</strong> Timestamps, levels en module namen</li>
-        <li><strong>Rich tracebacks:</strong> Stack traces met syntax highlighting</li>
-        <li><strong>Real-time:</strong> Perfect voor live demo's</li>
-      </ul>
-    </div>
-
-    <div>
       <h3 class="slide__section-title">File logging</h3>
-      <p>Logs worden opgeslagen in bestanden met daily rotation:</p>
-      <pre class="slide__code"><code class="language-bash">logs/
+      <p style="margin-bottom: 0.75rem;">Logs worden opgeslagen in bestanden met daily rotation:</p>
+      <pre class="slide__code" style="margin-bottom: 1rem;"><code class="language-bash">logs/
   ├── 2025_11_19.log
   ├── 2025_11_20.log
-  └── 2025_11_23.log</code></pre>
-      <p>Format:</p>
-      <pre class="slide__code"><code class="language-log">2025-11-23 14:30:15 | INFO | 
-  app.routers.dashboard | 
-  Dashboard requested
-
-2025-11-23 14:30:16 | ERROR | 
-  app.services.admin | 
-  user_id=3 Failed</code></pre>
+  └── 2025_11_25.log</code></pre>
       <ul class="slide__bullets">
         <li><strong>Daily rotation:</strong> Nieuw bestand per dag</li>
-        <li><strong>Structured:</strong> Timestamp, level, module, message</li>
+        <li><strong>Structured format:</strong> Timestamp, level, module, message</li>
         <li><strong>Live monitoring:</strong> <code>tail -f logs/*.log</code></li>
       </ul>
     </div>
 
     <div>
       <h3 class="slide__section-title">Context-aware logging</h3>
-      <p>Logs bevatten contextuele metadata:</p>
-      <pre class="slide__code"><code class="language-python">from app.core.logger import log_context
+      <p style="margin-bottom: 0.75rem;">Logs bevatten contextuele metadata:</p>
+      <pre class="slide__code" style="margin-bottom: 1rem;"><code class="language-python">from app.core.logger import log_context
 
 log_context.bind(user_id=123, action="load")
 LOGGER.info("Loading data")
@@ -57,18 +33,12 @@ LOGGER.info("Loading data")
     </div>
 
     <div>
-      <h3 class="slide__section-title">Live demo monitoring</h3>
-      <p>Tijdens een demo logs real-time bekijken:</p>
-      <pre class="slide__code"><code class="language-bash"># Terminal 1
-uvicorn app.main:app --reload
-
-# Terminal 2
-tail -f logs/*.log</code></pre>
-      <p>Voorbeeld output:</p>
-      <pre class="slide__code"><code class="language-log">14:30:15 INFO  Presentation requested
-14:30:16 INFO  Rendering slide overview
-14:30:17 INFO  Dashboard requested
-14:30:18 INFO  user_id=3 Loading dashboard</code></pre>
+      <h3 class="slide__section-title">Voorbeeld log output</h3>
+      <p style="margin-bottom: 0.75rem;">Voorbeeld van log output:</p>
+      <pre class="slide__code" style="margin-bottom: 1rem;"><code class="language-log">2025-11-25 09:57:36 | INFO     | app.routers.auth | User logged in
+2025-11-25 09:57:36 | INFO     | app.routers.dashboard | Dashboard endpoint requested
+2025-11-25 09:57:39 | INFO     | app.routers.presentation | Presentation view requested
+2025-11-25 09:57:42 | INFO     | app.routers.presentation | Rendering presentation slide overview</code></pre>
       <ul class="slide__bullets">
         <li><strong>Live monitoring:</strong> Zie direct wat er gebeurt</li>
         <li><strong>Request tracing:</strong> Volg user journey door logs</li>
