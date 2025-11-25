@@ -670,16 +670,26 @@ def leaderboard(
                 Party.id.label("party_id"),
                 Party.display_name.label("party_name"),
                 Party.party_type.label("party_type"),
+                OrgPartyMap.org_id.label("company_id"),
+                UserPartyMap.user_id.label("user_id"),
                 total_expr,
             )
             .select_from(JournalLine)
             .join(JournalEntry, JournalEntry.id == JournalLine.entry_id)
             .join(Account, Account.id == JournalLine.account_id)
             .join(Party, Party.id == Account.party_id)
+            .outerjoin(OrgPartyMap, OrgPartyMap.party_id == Party.id)
+            .outerjoin(UserPartyMap, UserPartyMap.party_id == Party.id)
             .outerjoin(Category, Category.id == JournalLine.category_id)
             .outerjoin(Section, Section.id == Category.section_id)
             .where(*filters)
-            .group_by(Party.id, Party.display_name, Party.party_type)
+            .group_by(
+                Party.id,
+                Party.display_name,
+                Party.party_type,
+                OrgPartyMap.org_id,
+                UserPartyMap.user_id,
+            )
             .order_by(order_by_clause(total_expr))
             .limit(limit_val)
         )
@@ -699,13 +709,23 @@ def leaderboard(
                 Party.id.label("party_id"),
                 Party.display_name.label("party_name"),
                 Party.party_type.label("party_type"),
+                OrgPartyMap.org_id.label("company_id"),
+                UserPartyMap.user_id.label("user_id"),
                 unrealized_expr,
             )
             .select_from(PositionAgg)
             .join(Account, Account.id == PositionAgg.account_id)
             .join(Party, Party.id == Account.party_id)
+            .outerjoin(OrgPartyMap, OrgPartyMap.party_id == Party.id)
+            .outerjoin(UserPartyMap, UserPartyMap.party_id == Party.id)
             .where(*filters)
-            .group_by(Party.id, Party.display_name, Party.party_type)
+            .group_by(
+                Party.id,
+                Party.display_name,
+                Party.party_type,
+                OrgPartyMap.org_id,
+                UserPartyMap.user_id,
+            )
             .order_by(order_by_clause(unrealized_expr))
             .limit(limit_val)
         )
@@ -720,24 +740,37 @@ def leaderboard(
         if safe_category:
             metric_slug = f"category_{safe_category}"
 
-    def _party_url(party_id: int, party_type: Any) -> str:
+    def _party_url(
+        party_id: int,
+        party_type: Any,
+        company_id: Any = None,
+        user_id: Any = None,
+    ) -> str:
         raw_type = getattr(party_type, "value", party_type) or ""
         type_text = str(raw_type).upper()
         if type_text.startswith("COMPANY"):
-            return f"/corporate/{party_id}"
-        return f"/individuals/{party_id}"
+            return f"/corporate/{company_id or party_id}"
+        return f"/individuals/{user_id or party_id}"
 
-    data = [
-        {
-            "party_name": row.party_name,
-            "party_id": row.party_id,
-            "party_type": getattr(row, "party_type", None),
-            "party_url": _party_url(row.party_id, getattr(row, "party_type", "")),
-            "metric_label": metric_label,
-            "total": _as_float(row.total),
-        }
-        for row in rows
-    ]
+    data = []
+    for row in rows:
+        company_id = getattr(row, "company_id", None)
+        user_id = getattr(row, "user_id", None)
+        data.append(
+            {
+                "party_name": row.party_name,
+                "party_id": row.party_id,
+                "party_type": getattr(row, "party_type", None),
+                "party_url": _party_url(
+                    row.party_id,
+                    getattr(row, "party_type", ""),
+                    company_id,
+                    user_id,
+                ),
+                "metric_label": metric_label,
+                "total": _as_float(row.total),
+            }
+        )
 
     direction_label = "Top" if direction_key == "top" else "Bottom"
     keyword = f"leaderboard_{metric_slug}_{direction_key}"
