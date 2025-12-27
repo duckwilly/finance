@@ -1,3 +1,3 @@
-"""Placeholder package for custom FastAPI middleware."""
+"""Custom FastAPI middleware package."""
 
 __all__ = []

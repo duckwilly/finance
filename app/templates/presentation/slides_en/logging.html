@@ -1,0 +1,49 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <h2 class="slide__title">Logging</h2>
+  </header>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">File logging</h3>
+      <p style="margin-bottom: 0.75rem;">Logs are written to daily rotated files:</p>
+      <pre class="slide__code" style="margin-bottom: 1rem;"><code class="language-bash">logs/
+  |-- 2025_11_19.log
+  |-- 2025_11_20.log
+  \-- 2025_11_25.log</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Daily rotation:</strong> New file per day</li>
+        <li><strong>Structured format:</strong> Timestamp, level, module, message</li>
+        <li><strong>Terminal viewing:</strong> <code>tail -f logs/*.log</code></li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Context-aware logging</h3>
+      <p style="margin-bottom: 0.75rem;">Logs include contextual metadata:</p>
+      <pre class="slide__code" style="margin-bottom: 1rem;"><code class="language-python">from app.core.logger import log_context
+
+log_context.bind(user_id=123, action="load")
+LOGGER.info("Loading data")
+# Output: user_id=123 action=load Loading data</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Metadata:</strong> user_id, request_id, etc. added automatically</li>
+        <li><strong>Traceability:</strong> Find all logs for a single action</li>
+        <li><strong>Debugging:</strong> Full context for investigation</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Example log output</h3>
+      <p style="margin-bottom: 0.75rem;">Sample log output:</p>
+      <pre class="slide__code" style="margin-bottom: 1rem;"><code class="language-log">2025-11-25 09:57:36 | INFO     | app.routers.auth | User logged in
+2025-11-25 09:57:36 | INFO     | app.routers.dashboard | Dashboard endpoint requested
+2025-11-25 09:57:39 | INFO     | app.routers.presentation | Presentation view requested
+2025-11-25 09:57:42 | INFO     | app.routers.presentation | Rendering presentation slide overview</code></pre>
+      <ul class="slide__bullets">
+        <li><strong>Live monitoring:</strong> See what is happening in real time</li>
+        <li><strong>Request tracing:</strong> Follow the user journey via logs</li>
+        <li><strong>Error tracking:</strong> Errors include full context</li>
+      </ul>
+    </div>
+  </div>
+</article>

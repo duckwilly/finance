@@ -1,4 +1,4 @@
-"""Minimal configuration system used by the application scaffold."""
+"""Configuration system for the finance platform."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -45,7 +45,6 @@ class AuthSettings:
     admin_password: str
     demo_user_password: str
     cookie_name: str = "access_token"
-    enabled: bool = True
 
 
 @dataclass(slots=True)
@@ -54,7 +53,6 @@ class Settings:
 
     database: DatabaseSettings
     auth: AuthSettings
-    sqlalchemy_echo: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -72,7 +70,6 @@ class Settings:
             password=_get_env("DB_PASSWORD", "finance"),
             name=_get_env("DB_NAME", "finance"),
         )
-        echo_flag = _get_env("SQLALCHEMY_ECHO", "0")
         auth = AuthSettings(
             secret_key=_get_env("JWT_SECRET_KEY", "change-me"),
             algorithm=_get_env("JWT_ALGORITHM", "HS256"),
@@ -80,12 +77,10 @@ class Settings:
             admin_username=_get_env("ADMIN_USERNAME", "admin"),
             admin_password=_get_env("ADMIN_PASSWORD", "adminpass"),
             demo_user_password=_get_env("DEMO_USER_PASSWORD", "demo"),
-            enabled=_get_env("AUTH_ENABLED", "1") not in {"0", "false", "False"},
         )
         return cls(
             database=db,
             auth=auth,
-            sqlalchemy_echo=echo_flag not in {"0", "false", "False"},
         )
 
 
@@ -101,7 +96,6 @@ def get_settings() -> Settings:
     logger.debug(
         "Settings initialised",
         extra={
-            "sqlalchemy_echo": settings.sqlalchemy_echo,
             "database": {
                 "driver": settings.database.driver,
                 "host": settings.database.host,
@@ -112,7 +106,6 @@ def get_settings() -> Settings:
             "auth": {
                 "admin_username": settings.auth.admin_username,
                 "token_ttl": settings.auth.access_token_expire_minutes,
-                "enabled": settings.auth.enabled,
             },
         },
     )

@@ -1,0 +1,47 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <h2 class="slide__title">LLM output to Chart.js</h2>
+  </header>
+  <div class="slide__content">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+      <div>
+        <h3 class="slide__section-title">LLM returns JSON</h3>
+        <p>The LLM returns a structured JSON response:</p>
+        <pre class="slide__code"><code class="language-json">{
+  "reply": "Expenses by category",
+  "visualizations": [{
+    "chart_type": "pie",
+    "x_axis": "category",
+    "y_axis": "total"
+  }]
+}</code></pre>
+        <ul class="slide__bullets">
+          <li><strong>JSON validation:</strong> Pydantic validates the response</li>
+          <li><strong>Cleanup:</strong> Code fences and extra text are removed</li>
+          <li><strong>Structured:</strong> Same format every time, easy to parse</li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="slide__section-title">Convert to Chart.js</h3>
+        <p>The JSON is converted into a Chart.js config:</p>
+        <pre class="slide__code"><code class="language-python"># Fetch data via tools
+data = expenses_by_category(days=30)
+
+# Generate Chart.js config
+chart_config = {
+  "type": "pie",
+  "data": {
+    "labels": ["Food", "Transport", ...],
+    "datasets": [{"data": [100, 50, ...]}]
+  }
+}</code></pre>
+        <ul class="slide__bullets">
+          <li><strong>Data fetching:</strong> Python tools query real data</li>
+          <li><strong>Config generation:</strong> ChartGenerator builds Chart.js config</li>
+          <li><strong>Frontend:</strong> Chart.js renders directly in the browser</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</article>

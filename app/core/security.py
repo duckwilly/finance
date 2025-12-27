@@ -66,18 +66,6 @@ class SecurityProvider:
     def demo_user_password(self) -> str:
         return self._settings.demo_user_password
 
-    @property
-    def is_enabled(self) -> bool:
-        return self._settings.enabled
-
-    def default_admin_user(self) -> AuthenticatedUser:
-        return AuthenticatedUser(
-            username=self._settings.admin_username,
-            role="admin",
-            roles=("ADMIN",),
-            company_ids=(),
-        )
-
     def authenticate(self, username: str, password: str) -> AuthenticatedUser | None:
         """Validate the supplied credentials and return an ``AuthenticatedUser``."""
 
@@ -291,9 +279,6 @@ def get_authenticated_user(request: Request) -> AuthenticatedUser:
     """Retrieve the authenticated user from the request context."""
 
     security = get_security_provider()
-    if not security.is_enabled:
-        return security.default_admin_user()
-
     user = getattr(request.state, "user", None)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Login required")

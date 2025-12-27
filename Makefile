@@ -1,4 +1,4 @@
-.PHONY: quickstart quickstart-small quickstart-medium quickstart-large quickstart-ci start start-prod venv deps db-up db-schema seed seed-reproducible load smoke clear-db clear-seed
+.PHONY: quickstart quickstart-small quickstart-medium quickstart-large start start-prod venv deps db-up db-schema seed seed-reproducible load smoke clear-db clear-seed
 
 quickstart:
 	./scripts/quickstart.sh
@@ -11,9 +11,6 @@ quickstart-medium:
 
 quickstart-large:
 	./scripts/quickstart.sh --size large
-
-quickstart-ci:
-	./scripts/quickstart.sh --size small --no-server
 
 start:
 	@if [ ! -d .venv ]; then echo "Virtual environment not found. Run 'make venv' first."; exit 1; fi

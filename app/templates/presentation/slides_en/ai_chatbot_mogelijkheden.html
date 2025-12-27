@@ -1,0 +1,168 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <h2 class="slide__title">AI chatbot</h2>
+  </header>
+  <div class="slide__content">
+    
+
+    <div>
+      <link rel="stylesheet" href="{{ url_for('static', path='ai_chatbot/chatbot.css') }}" />
+      <script src="{{ url_for('static', path='ai_chatbot/chatbot.js') }}" defer></script>
+      
+      <div style="margin: 1.5rem 0; border: 1px solid var(--presentation-border); border-radius: 12px; overflow: hidden; background: var(--presentation-surface);">
+        <div style="display: grid; grid-template-rows: auto 1fr; gap: 0; min-height: 600px;">
+          <!-- Chatbot interface (top) -->
+          <aside class="workspace__chat" id="dashboard-chat" aria-label="AI assistant" style="position: relative; width: 100%; border-bottom: 1px solid var(--presentation-border);">
+            <div class="chat-panel" style="height: 100%; border: none; border-radius: 0;">
+              <div class="chat-panel__header">
+                <div class="chat-panel__header-copy">
+                </div>
+              </div>
+
+              <div class="chat-panel__body" id="chat-panel-body">
+                <div class="chat-panel__scroll">
+                  <div class="chat-messages" id="chat-messages" aria-live="polite">
+                    <div class="welcome-message">
+                      <p>Chat: Ask about your spending, income trends, or any category you want to explore.</p>
+                      <p>Charts and tables will automatically appear below when needed.</p>
+                    </div>
+                  </div>
+
+                  <ul class="chat-quick-actions" aria-label="Suggested prompts">
+                    <li>
+                      <button type="button" data-chat-suggestion="As admin, aggregate all parties and chart platform-wide monthly income vs expenses for the last 12 months. Use the monthly_cash_flow_comparison tool with party_id omitted, months=12, x_axis=month, y_axis=[income_total,expenses], sort=asc, currency=EUR, and provide a one-sentence takeaway.">
+                        Platform: income vs expenses (12m)
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" data-chat-suggestion="Create a leaderboard of the top 5 companies by income over the last 90 days. Use leaderboard with metric=income, party_type=company, days=90, limit=5, render a bar chart with x_axis=party_name and y_axis=total sorted desc, and include a table with party_url links for drill-down.">
+                        Companies: top 5 income (90d)
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" data-chat-suggestion="Show the top 5 individuals by net cash flow trend over the last 180 days. Use flex_analytics with metric=net_cash_flow, party_type=individual, limit=5, days=180, chart_type=line, x_axis=month, y_axis=net_cash_flow, stack_by=party_name, sort=asc, and add a short insight.">
+                        Individuals: net cash flow (180d)
+                      </button>
+                    </li>
+                    <li>
+                      <button type="button" data-chat-suggestion="Visualize which clients hold the largest portfolios right now. Use flex_analytics with metric=holdings_value, party_type=all, limit=8, chart_type=doughnut, x_axis=party_name, y_axis=holdings_value, sort=desc, unit=currency">
+                        Portfolios: biggest holdings
+                      </button>
+                    </li>
+                  </ul>
+
+                  <div id="chat-visualizations" class="chat-visualizations"></div>
+                </div>
+
+                <div class="chat-input-container">
+                  <form
+                    id="chat-form"
+                    data-chatbot-form
+                    hx-post="/chatbot/query/htmx"
+                    hx-target="#dashboard-panel"
+                    hx-swap="innerHTML"
+                    hx-indicator="#loading-indicator"
+                  >
+                    <input type="hidden" name="response_mode" value="visualization" />
+                    <div class="chat-input-row">
+                      <label class="chat-model-label" for="model-select">Model</label>
+                      <select id="model-select" name="model">
+                        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                        <option value="gpt-4o-mini">GPT 4o Mini</option>
+                      </select>
+                    </div>
+                    <div class="chat-input-block">
+                      <textarea
+                        name="question"
+                        id="question-input"
+                        class="chat-input-block__textarea"
+                        placeholder="Ask for dashboards, charts, or tables"
+                        autocomplete="off"
+                        rows="2"
+                        data-min-height="72"
+                        data-max-height="220"
+                        required
+                      ></textarea>
+                      <button type="submit" class="chat-input-block__button" id="send-button">
+                        <span>Send</span>
+                      </button>
+                    </div>
+                    <div class="loading-indicator" id="loading-indicator">
+                      <div class="spinner"></div>
+                      <span>Thinking...</span>
+                    </div>
+                  </form>
+                </div>
+                <div id="chatbot-response-target" style="display: none;"></div>
+              </div>
+            </div>
+          </aside>
+          
+          <!-- Response panel (bottom - visualizations) -->
+          <section id="dashboard-panel" class="details details--ai" data-panel="chatbot" style="display: flex; align-items: center; justify-content: center; padding: 1rem; overflow-y: auto; background: var(--presentation-surface-strong);">
+            <div class="details__panel details__panel--focus">
+              <div class="chatbot-visuals" aria-live="polite">
+                <div style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+                  <p>Visualizations will appear here</p>
+                  <p style="font-size: 0.9rem; margin-top: 0.5rem; opacity: 0.7;">Ask a question to see charts and tables</p>
+                </div>
+                <div class="chart-container" id="chart-container" style="display: none;">
+                  <h3 class="chart-title" id="chart-title"></h3>
+                  <canvas id="chart-canvas"></canvas>
+                </div>
+
+                <div class="table-container" id="table-container" style="display: none;">
+                  <table id="data-table">
+                    <thead id="table-head"></thead>
+                    <tbody id="table-body"></tbody>
+                  </table>
+                </div>
+
+                <div id="chat-visualizations-panel" class="chat-visualizations"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+      
+      <script>
+        // Initialize chatbot when slide is loaded
+        (function() {
+          // Wait for chatbot.js to be available
+          const initChatbot = () => {
+            if (window.initializeChatbot) {
+              window.initializeChatbot();
+            } else {
+              setTimeout(initChatbot, 100);
+            }
+          };
+          
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initChatbot);
+          } else {
+            initChatbot();
+          }
+          
+          // Handle HTMX responses to show the panel
+          document.body.addEventListener('htmx:afterSwap', (event) => {
+            const panel = document.getElementById('dashboard-panel');
+            if (panel && event.detail?.target === panel) {
+              panel.style.display = 'flex';
+              
+              // Hide placeholder text when content arrives
+              const placeholder = panel.querySelector('.chatbot-visuals > div:first-child');
+              if (placeholder && placeholder.textContent.includes('Visualizations will appear here')) {
+                placeholder.style.display = 'none';
+              }
+              
+              // Trigger chart resize if needed
+              setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+              }, 100);
+            }
+          });
+        })();
+      </script>
+    </div>
+  </div>
+</article>

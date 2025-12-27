@@ -48,7 +48,7 @@ class ChatbotQueryResponse(BaseModel):
     visualizations: Optional[List[dict]] = None
 
 
-# Dependency injection placeholders (to be configured by integrating app)
+# Dependency injection defaults (configured by the integrating app)
 _get_db_session = None
 _get_current_user = None
 _chatbot_instance = None
@@ -58,7 +58,6 @@ def configure_dependencies(
     get_db: callable,
     get_user: callable,
     database_schema: Optional[str] = None,
-    enable_sql_fallback: bool = False,
 ):
     """
     Configure dependencies for the chatbot router
@@ -67,7 +66,6 @@ def configure_dependencies(
         get_db: Dependency function that yields database session
         get_user: Dependency function that returns current user context
         database_schema: Optional custom database schema description
-        enable_sql_fallback: Gate legacy SQL generation when tool coverage is missing
     """
     global _get_db_session, _get_current_user, _chatbot_instance
 
@@ -75,7 +73,6 @@ def configure_dependencies(
     _get_current_user = get_user
     _chatbot_instance = FinancialChatbot(
         database_schema=database_schema,
-        enable_sql_fallback=enable_sql_fallback,
     )
 
 

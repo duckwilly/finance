@@ -42,7 +42,7 @@ def conn():
     target = f"{DB_CFG['user']}@{DB_CFG['host']}:{DB_CFG['port']}/{DB_CFG['database']}"
     logger.debug("Connecting to %s", target)
     c = pymysql.connect(**DB_CFG)
-    logger.info("Connected to %s", target)
+    logger.debug("Connected to %s", target)
     try:
         yield c
         c.commit()

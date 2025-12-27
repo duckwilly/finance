@@ -1,0 +1,155 @@
+{% set individual_dashboard = slide_payload.individual_dashboard %}
+{% set company_dashboard = slide_payload.company_dashboard %}
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <h2 class="slide__title">Simulated bank data</h2>
+  </header>
+  <div class="slide__content">
+    <div class="demo-panel">
+      {% if individual_dashboard %}
+      <div class="demo-panel__header">
+        <div>
+          <a class="demo-panel__name" href="{{ request.url_for('read_individual_dashboard', user_id=individual_dashboard.profile.id) }}">{{ individual_dashboard.profile.name }}</a>
+          <p class="demo-panel__meta">{{ individual_dashboard.profile.email }} - {{ individual_dashboard.period_label }}</p>
+        </div>
+        {% if individual_dashboard.employer_name %}
+        <div class="demo-panel__badge">{{ individual_dashboard.employer_name }}</div>
+        {% endif %}
+      </div>
+      <dl class="demo-metrics">
+        <div>
+          <dt>Net worth</dt>
+          <dd>{{ humanize_currency(individual_dashboard.summary.net_worth, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Cash</dt>
+          <dd>{{ humanize_currency(individual_dashboard.summary.cash_balance, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Holdings</dt>
+          <dd>{{ humanize_currency(individual_dashboard.summary.holdings_value, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Income</dt>
+          <dd>{{ humanize_currency(individual_dashboard.summary.period_income, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Expenses</dt>
+          <dd>{{ humanize_currency(individual_dashboard.summary.period_expenses, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Net cash flow</dt>
+          <dd>{{ humanize_currency(individual_dashboard.summary.net_cash_flow, decimals=2) }}</dd>
+        </div>
+      </dl>
+
+      <div class="demo-split">
+        <div>
+          <p class="demo-split__title">Accounts</p>
+          <ul class="demo-list">
+            {% for account in individual_dashboard.accounts[:3] %}
+            <li>
+              <span>{{ account.name or account.type }}</span>
+              <span>{{ humanize_currency(account.balance, decimals=2) }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        <div>
+          <p class="demo-split__title">Top holdings</p>
+          <ul class="demo-list">
+            {% for holding in individual_dashboard.holdings[:3] %}
+            <li>
+              <span>{{ holding.instrument_symbol }}</span>
+              <span>{{ humanize_currency(holding.market_value, decimals=2) }}</span>
+            </li>
+            {% endfor %}
+            {% if not individual_dashboard.holdings %}
+            <li class="demo-list__empty">No holdings on file</li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+      {% else %}
+      <p class="demo-panel__empty">Could not load user 3. Check database connectivity and seed data.</p>
+      {% endif %}
+    </div>
+
+    <div class="demo-panel">
+      {% if company_dashboard %}
+      <div class="demo-panel__header">
+        <div>
+          <a class="demo-panel__name" href="{{ request.url_for('read_company_dashboard', company_id=company_dashboard.profile.id) }}">{{ company_dashboard.profile.name }}</a>
+          <p class="demo-panel__meta">Employer of {{ individual_dashboard.profile.name if individual_dashboard else 'the demo user' }} - {{ company_dashboard.period_label }}</p>
+        </div>
+        <div class="demo-panel__badge">{{ company_dashboard.summary.employee_count }} employees</div>
+      </div>
+      <dl class="demo-metrics">
+        <div>
+          <dt>Account balance</dt>
+          <dd>{{ humanize_currency(company_dashboard.summary.net_worth, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Cash</dt>
+          <dd>{{ humanize_currency(company_dashboard.summary.cash_balance, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Holdings</dt>
+          <dd>{{ humanize_currency(company_dashboard.summary.holdings_value, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Income</dt>
+          <dd>{{ humanize_currency(company_dashboard.summary.period_income, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Expenses</dt>
+          <dd>{{ humanize_currency(company_dashboard.summary.period_expenses, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Net cash flow</dt>
+          <dd>{{ humanize_currency(company_dashboard.summary.net_cash_flow, decimals=2) }}</dd>
+        </div>
+        <div>
+          <dt>Payroll p.m.</dt>
+          <dd>{{ humanize_currency(company_dashboard.summary.monthly_salary_cost, decimals=2) }}</dd>
+        </div>
+      </dl>
+
+      <div class="demo-split">
+        <div>
+          <p class="demo-split__title">Accounts</p>
+          <ul class="demo-list">
+            {% for account in company_dashboard.accounts[:3] %}
+            <li>
+              <span>{{ account.name or account.type }}</span>
+              <span>{{ humanize_currency(account.balance, decimals=2) }}</span>
+            </li>
+            {% endfor %}
+            {% if not company_dashboard.accounts %}
+            <li class="demo-list__empty">No accounts loaded</li>
+            {% endif %}
+          </ul>
+        </div>
+        <div>
+          <p class="demo-split__title">Payroll</p>
+          <ul class="demo-list">
+            {% for payroll in company_dashboard.payroll[:3] %}
+            <li>
+              <span>{{ payroll.name }}</span>
+              <span>{{ humanize_currency(payroll.salary_amount, decimals=2) }}</span>
+            </li>
+            {% endfor %}
+            {% if not company_dashboard.payroll %}
+            <li class="demo-list__empty">No payroll data</li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+      {% else %}
+      <p class="demo-panel__empty">
+        Could not load employer data{% if individual_dashboard and individual_dashboard.employer_name %} for {{ individual_dashboard.employer_name }}{% endif %}. Check database connectivity and seed data.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+</article>

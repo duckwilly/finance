@@ -11,8 +11,8 @@ _UNITS = [
 ]
 
 def humanize_number(
-    value: int | float | Decimal, 
-    short: bool = False, 
+    value: int | float | Decimal,
+    short: bool = False,
     decimals: int = 1
 ) -> str:
     """Format a number with human-readable units.
@@ -26,22 +26,24 @@ def humanize_number(
     sign = "-" if d < 0 else ""
     d = abs(d)
 
+    def _format_plain_number() -> str:
+        if d == d.to_integral():
+            whole = format(d, "f")
+            if "." in whole:
+                whole = whole.rstrip("0").rstrip(".") or "0"
+            return f"{sign}{whole}"
+        return f"{sign}{d:.{decimals}f}"
+
+    if d < Decimal("1e4"):
+        return _format_plain_number()
+
     for threshold, long_name, short_name in _UNITS:
         if d >= threshold:
             if short:
                 return f"{sign}{(d / threshold):.{decimals}f}{short_name}"
-            else:
-                return f"{sign}{(d / threshold):.{decimals}f} {long_name}"
-    
-    # For numbers less than 1000, show appropriate decimals
-    if d == d.to_integral():
-        # format as fixed-point to avoid scientific notation for whole numbers
-        whole = format(d, "f")
-        if "." in whole:
-            whole = whole.rstrip("0").rstrip(".") or "0"
-        return f"{sign}{whole}"
-    else:
-        return f"{sign}{d:.{decimals}f}"
+            return f"{sign}{(d / threshold):.{decimals}f} {long_name}"
+
+    return _format_plain_number()
     
 def humanize_currency(
     value: int | float | Decimal, 

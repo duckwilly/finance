@@ -1,0 +1,110 @@
+{% set toggle_lang = 'en' if lang == 'nl' else 'nl' %}
+{% set is_english = lang == 'en' %}
+<div
+  id="presentation-shell"
+  data-presentation-root
+  data-slides='{{ slides_data | tojson }}'
+  data-active-slide="{{ active_slide.slug }}"
+  data-slide-endpoint-template="{{ request.url_for('render_slide', slug='__SLUG__') }}?lang={{ lang }}"
+>
+  <header class="page__header presentation__header">
+    <div class="page__headline">
+      <p class="eyebrow">Finance platform</p>
+      <h1 class="page__title">{{ "Presentation" if is_english else "Presentatie" }}</h1>
+    </div>
+    <div class="page__meta">
+      <div class="badge">{{ "Presentation deck" if is_english else "Presentatie deck" }}</div>
+      <a class="chat-drawer-toggle" href="{{ request.url_for('read_dashboard') }}">
+        <span class="chat-drawer-toggle__icon">🏠</span>
+        <span class="chat-drawer-toggle__copy">
+          <span class="chat-drawer-toggle__title">{{ "Return to dashboard" if is_english else "Terug naar dashboard" }}</span>
+        </span>
+      </a>
+      <button
+        type="button"
+        class="chat-drawer-toggle"
+        aria-label="{{ 'Switch language to Dutch' if is_english else 'Switch language to English' }}"
+        hx-get="{{ request.url_for('presentation_home') }}?lang={{ toggle_lang }}"
+        hx-vals='js:{slide: document.querySelector("[data-presentation-root]").dataset.activeSlide}'
+        hx-target="#presentation-shell"
+        hx-swap="outerHTML"
+        hx-push-url="true"
+      >
+        <span class="chat-drawer-toggle__icon">🌐</span>
+        <span class="chat-drawer-toggle__copy">
+          <span class="chat-drawer-toggle__title">NL/EN</span>
+        </span>
+      </button>
+      <a class="logout-link" href="{{ request.url_for('logout') }}">Log out</a>
+    </div>
+  </header>
+
+  <div class="presentation__layout">
+    <button
+      type="button"
+      class="presentation__nav-toggle"
+      data-nav-toggle
+      data-label-open="{{ 'Show navigation' if is_english else 'Navigatie tonen' }}"
+      data-label-closed="{{ 'Hide navigation' if is_english else 'Navigatie verbergen' }}"
+      aria-expanded="true"
+      aria-controls="presentation-nav"
+      aria-label="{{ 'Toggle navigation' if is_english else 'Navigatie tonen of verbergen' }}"
+      title="{{ 'Hide navigation' if is_english else 'Navigatie verbergen' }}"
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+
+    <aside class="presentation__nav" id="presentation-nav" data-slide-nav>
+      <div class="presentation__nav-header">
+        <div>
+          <p class="eyebrow">{{ "Navigation" if is_english else "Navigatie" }}</p>
+          <h2 class="presentation__nav-title">{{ "Topics" if is_english else "Onderwerpen" }}</h2>
+        </div>
+      </div>
+      <ol class="presentation__nav-list">
+        {% for slide in slides %}
+        {% set order = slide.order or '%02d' % loop.index %}
+        {% set section = order.split('.')[0] %}
+        {% set is_sub = '.' in order %}
+        <li data-section="{{ section }}" data-is-sub="{{ 'true' if is_sub else 'false' }}">
+          <button
+            type="button"
+            class="presentation__nav-link"
+            data-slide="{{ slide.slug }}"
+            data-order="{{ order }}"
+            data-root="{{ section }}"
+            data-is-sub="{{ 'true' if is_sub else 'false' }}"
+            hx-get="{{ request.url_for('render_slide', slug=slide.slug) }}?lang={{ lang }}"
+            hx-target="#slide-stage"
+            hx-swap="innerHTML transition:true"
+          >
+            <span class="presentation__nav-label">{{ order }}</span>
+            <span class="presentation__nav-body">
+              <span class="presentation__nav-title-text">{{ slide.title }}</span>
+            </span>
+          </button>
+        </li>
+        {% endfor %}
+      </ol>
+    </aside>
+
+    <section class="presentation__stage" aria-live="polite">
+      <div class="presentation__slide-stage" id="slide-stage" hx-swap="innerHTML transition:true">
+        {% include active_slide.template %}
+      </div>
+
+      <div class="presentation__controls" aria-label="Slide controls">
+        <div class="presentation__progress" data-progress-label>
+          {{ '%02d' % (active_slide_index or 1) }} / {{ '%02d' % slides|length }} — {{ active_slide.title }}
+        </div>
+        <div class="presentation__control-buttons">
+          <button type="button" class="presentation__arrow" data-prev aria-label="Previous slide">←</button>
+          <button type="button" class="presentation__arrow" data-next aria-label="Next slide">→</button>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

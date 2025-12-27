@@ -1,0 +1,34 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <h2 class="slide__title">Prompt assembly</h2>
+  </header>
+  <div class="slide__content">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+      <div>
+        <h3 class="slide__section-title">How does it work?</h3>
+        <p>The prompt is built dynamically with context:</p>
+        <ul class="slide__bullets">
+          <li><strong>User context:</strong> Role and user ID</li>
+          <li><strong>Page context:</strong> Current page for relevant visualizations</li>
+          <li><strong>Database schema:</strong> Full database structure</li>
+          <li><strong>Available tools:</strong> List of visualization keywords</li>
+          <li><strong>Response schema:</strong> Exact JSON format expected</li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="slide__section-title">Prompt ingredients</h3>
+        <p>The prompt includes the following information:</p>
+        <ul class="slide__bullets">
+          <li><strong>APP_HEADER:</strong> Core role of the AI assistant</li>
+          <li><strong>Current page:</strong> Current page context</li>
+          <li><strong>Current user:</strong> Role, person_id, company_id, username</li>
+          <li><strong>Database schema:</strong> Full database structure</li>
+          <li><strong>Allowed visualizations:</strong> List of available keywords</li>
+          <li><strong>Chart rules:</strong> Rules for chart types and fields</li>
+          <li><strong>Response contract:</strong> Exact JSON format schema</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</article>

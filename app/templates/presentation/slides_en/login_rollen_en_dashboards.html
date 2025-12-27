@@ -1,0 +1,97 @@
+{% set demo_targets = slide_payload.get('demo_targets', {}) %}
+{% set individual_id = demo_targets.get('individual_user_id') if demo_targets else None %}
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <h2 class="slide__title">Login, roles, and dashboards</h2>
+  </header>
+
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Login flow (JWT cookies)</h3>
+      <ul class="slide__bullets">
+        <li>The login form issues a JWT in an HttpOnly cookie; nothing in localStorage.</li>
+        <li>Claims: <code>sub</code>, <code>subject_id</code>, <code>role</code>, <code>roles</code>, <code>party_id</code>, and allowed <code>company_ids</code> for employees.</li>
+        <li>The token is valid for an hour; middleware reads the cookie and sets <code>request.state.user</code>.</li>
+      </ul>
+      <br>
+
+      <h3 class="slide__section-title">Access by role</h3>
+      <ul class="slide__bullets">
+        <li><strong>Admin:</strong> Sees everything and lands on the admin dashboard.</li>
+        <li><strong>Individual:</strong> Only their own dashboard (net worth, accounts, holdings, cash flow).</li>
+        <li><strong>Employee:</strong> Gets <code>company_ids</code> via employment and <code>CompanyAccessGrant</code> and can open linked company dashboards.</li>
+        <li>Login redirects to the correct landing page; missing rights return a 403.</li>
+      </ul>
+      <br>
+
+      <h3 class="slide__section-title">Dependencies</h3>
+      <ul class="slide__bullets">
+        <li><code>require_admin_user</code>, <code>require_company_access</code>, and <code>require_individual_access</code> guard routes.</li>
+        <li>Admin overrides all checks; company/individual routes expect matching <code>party_id</code> or <code>company_id</code> in the token.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Individual dashboard</h3>
+      <p>Each individual gets a personalized dashboard with:</p>
+      <ul class="slide__bullets">
+        <li><strong>Net worth</strong></li>
+        <li><strong>Accounts</strong></li>
+        <li><strong>Stock portfolio</strong></li>
+        <li><strong>Income and expenses</strong></li>
+      </ul>
+      <br>
+
+      <h3 class="slide__section-title">Company dashboard</h3>
+      <p>Logged-in users can also access their employer dashboard with:</p>
+      <ul class="slide__bullets">
+        <li><strong>Account balance</strong></li>
+        <li><strong>Payroll overview</strong></li>
+        <li><strong>Income and expenses</strong></li>
+        <li><strong>Profit</strong></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="auth-diagram" aria-label="Authentication and authorization diagram">
+    <div class="auth-diagram__track">
+      <div class="auth-diagram__node">
+        <p class="auth-diagram__title">Login</p>
+        <p class="auth-diagram__body">Form POST -> validate user</p>
+      </div>
+      <div class="auth-diagram__arrow">-></div>
+      <div class="auth-diagram__node">
+        <p class="auth-diagram__title">JWT cookie</p>
+        <p class="auth-diagram__body">HttpOnly, short-lived, contains roles + company_ids</p>
+      </div>
+      <div class="auth-diagram__arrow">-></div>
+      <div class="auth-diagram__node">
+        <p class="auth-diagram__title">Dependencies</p>
+        <p class="auth-diagram__body"><code>require_admin_user</code>, <code>require_company_access</code>, <code>require_individual_access</code></p>
+      </div>
+      <div class="auth-diagram__arrow">-></div>
+      <div class="auth-diagram__node">
+        <p class="auth-diagram__title">Scope</p>
+        <p class="auth-diagram__body">Admin: everything - Employee: own company - Individual: own dashboards</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide__demo" aria-label="Individual dashboard live example">
+    <div class="slide__embed">
+      {% if individual_id %}
+      <iframe
+        src="{{ request.url_for('read_individual_dashboard', user_id=individual_id) }}?embed=1"
+        title="Individual dashboard demo"
+        loading="lazy"
+        aria-label="Individual dashboard"
+      ></iframe>
+      {% else %}
+      <div class="slide__callout slide__demo-note is-empty">
+        <p class="slide__callout-title">No demo user found</p>
+        <p>Check seed data or database connectivity; the user_id could not be loaded.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</article>

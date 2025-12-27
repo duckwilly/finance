@@ -204,7 +204,6 @@ chatbot_config.chart_color_palette = [
     "#D04A02",
     "#F0AB9E"
 ]
-chatbot_config.enable_quick_templates = True
 chatbot_config.max_conversation_history = 6
 
 # Optional: Customize LLM configuration

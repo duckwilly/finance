@@ -30,27 +30,12 @@ step() {
 # Default values
 START_SERVER="${QUICKSTART_START_SERVER:-1}"
 SIMULATION_SIZE="medium"
-SIMULATION_MONTHS=""
-INDIVIDUALS=""
-COMPANIES=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
     --size)
       SIMULATION_SIZE="$2"
-      shift 2
-      ;;
-    --months)
-      SIMULATION_MONTHS="$2"
-      shift 2
-      ;;
-    --individuals)
-      INDIVIDUALS="$2"
-      shift 2
-      ;;
-    --companies)
-      COMPANIES="$2"
       shift 2
       ;;
     --no-server)
@@ -62,9 +47,6 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "Options:"
       echo "  --size SIZE          Simulation size preset: small, medium, large (default: medium)"
-      echo "  --months MONTHS      Number of months to simulate (overrides preset)"
-      echo "  --individuals NUM    Number of individuals (overrides preset)"
-      echo "  --companies NUM      Number of companies (overrides preset)"
       echo "  --no-server          Don't start the FastAPI server"
       echo "  --help               Show this help message"
       echo ""
@@ -105,10 +87,10 @@ case "$SIMULATION_SIZE" in
     ;;
 esac
 
-# Use provided values or defaults
-FINAL_INDIVIDUALS="${INDIVIDUALS:-$DEFAULT_INDIVIDUALS}"
-FINAL_COMPANIES="${COMPANIES:-$DEFAULT_COMPANIES}"
-FINAL_MONTHS="${SIMULATION_MONTHS:-$DEFAULT_MONTHS}"
+# Use preset values
+FINAL_INDIVIDUALS="${DEFAULT_INDIVIDUALS}"
+FINAL_COMPANIES="${DEFAULT_COMPANIES}"
+FINAL_MONTHS="${DEFAULT_MONTHS}"
 
 echo "Simulation configuration:"
 echo "  Size preset: $SIMULATION_SIZE"

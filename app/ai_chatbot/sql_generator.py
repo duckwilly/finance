@@ -634,9 +634,6 @@ class QuickTemplateManager:
         Returns:
             Template dict with 'sql' and 'explanation' or None
         """
-        if not chatbot_config.enable_quick_templates:
-            return None
-
         question_lower = question.lower()
 
         for template_name, template_data in self.templates.items():

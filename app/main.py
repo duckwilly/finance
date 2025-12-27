@@ -41,11 +41,10 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Finance Platform", version="0.1.0")
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
     security_provider = get_security_provider()
-    if security_provider.is_enabled:
-        app.add_middleware(
-            AuthMiddleware,
-            security_provider=security_provider,
-        )
+    app.add_middleware(
+        AuthMiddleware,
+        security_provider=security_provider,
+    )
     app.include_router(auth_router)
     app.include_router(dashboard_router)
     app.include_router(individuals_router)

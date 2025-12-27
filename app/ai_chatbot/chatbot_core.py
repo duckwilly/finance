@@ -239,7 +239,7 @@ class ToolRegistry:
 class FinancialChatbot:
     """Main chatbot class for financial queries"""
 
-    def __init__(self, database_schema: Optional[str] = None, enable_sql_fallback: bool = False):
+    def __init__(self, database_schema: Optional[str] = None):
         """
         Initialize chatbot
 
@@ -250,7 +250,6 @@ class FinancialChatbot:
         self.chart_generator = ChartGenerator()
         self.template_manager = QuickTemplateManager()
         self.tool_registry = ToolRegistry()
-        self.enable_sql_fallback = enable_sql_fallback
         self.prompt_builder = PromptBuilder(
             self.sql_generator.database_schema,
             self.tool_registry.describe_keywords(),
@@ -376,17 +375,6 @@ class FinancialChatbot:
             sum(1 for r in tool_results if r.has_data),
         )
         visualizations = self._render_tool_results(tool_results)
-
-        if not visualizations and self.enable_sql_fallback:
-            logger.info("Tool results empty; falling back to legacy SQL path (deprecated)")
-            visualizations = await self._fallback_visualizations(
-                question,
-                provider_name,
-                user_context,
-                db_session,
-                conversation_history,
-                financial_summary,
-            )
 
         error_notes = [viz["chart_error"] for viz in visualizations if viz.get("chart_error")]
 
@@ -869,55 +857,6 @@ Top Expense Categories:
             rendered.append(payload)
 
         return rendered
-
-    async def _fallback_visualizations(
-        self,
-        question: str,
-        provider_name: str,
-        user_context: Dict[str, Any],
-        db_session: Session,
-        conversation_history: Optional[List[Dict[str, str]]],
-        financial_summary: Optional[str],
-    ) -> List[Dict[str, Any]]:
-        """Use legacy template/SQL generation when the plan is empty."""
-
-        template = self.template_manager.render_template(question, user_context)
-
-        if template:
-            sql_query = template["sql"]
-            explanation = template["explanation"]
-            template_params = template.get("params") or {}
-        else:
-            sql_result = await self.sql_generator.generate_sql(
-                question=question,
-                provider_name=provider_name,
-                user_context=user_context,
-                financial_summary=financial_summary,
-                conversation_history=conversation_history,
-            )
-            sql_query = sql_result["sql"]
-            explanation = sql_result["explanation"]
-            template_params = {}
-
-        sql_query = self.sql_generator.enforce_scope_constraints(sql_query, user_context)
-        logger.info(f"Executing SQL fallback: {sql_query}")
-        results = self.sql_generator.execute_sql(sql_query, db_session, template_params)
-
-        if not results:
-            return []
-
-        payload = self._build_visualization_payload(
-            results,
-            explanation,
-            sql_query,
-            None,
-        )
-
-        if not payload:
-            return []
-
-        payload["keyword"] = template.get("name") if template else "generated_sql"
-        return [payload]
 
     def _build_visualization_payload(
         self,

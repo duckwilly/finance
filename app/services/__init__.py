@@ -1,4 +1,4 @@
-"""Service layer placeholders."""
+"""Service layer entrypoints for domain logic."""
 
 from .companies_service import CompaniesService
 from .individuals_service import IndividualsService

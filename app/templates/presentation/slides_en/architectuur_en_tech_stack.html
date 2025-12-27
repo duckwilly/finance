@@ -1,0 +1,62 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <h2 class="slide__title">Architecture & tech stack</h2>
+  </header>
+  <div class="slide__content">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+      <div>
+        <h3 class="slide__section-title">Backend</h3>
+        <ul class="slide__bullets" style="list-style-type: disc; padding-left: 1.5rem;">
+          <li><strong>FastAPI</strong></li>
+          <li><strong>SQLAlchemy</strong> for ORM</li>
+          <li><strong>Jinja2</strong> for server-side rendering</li>
+          <li><strong>PyJWT</strong> for authentication</li>
+          <li><strong>MariaDB</strong></li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="slide__section-title">Frontend</h3>
+        <ul class="slide__bullets" style="list-style-type: disc; padding-left: 1.5rem;">
+          <li><strong>HTML/CSS</strong></li>
+          <li><strong>HTMX</strong></li>
+          <li><strong>Chart.js</strong></li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="border-top: 1px solid var(--presentation-border); padding-top: 1.5rem;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+        <div>
+          <h3 class="slide__section-title">HTMX</h3>
+          <p style="font-size: 0.9rem; margin-bottom: 1rem;">We use HTMX to update parts of a page without heavy client-side scripts.</p>
+          <ul class="slide__bullets" style="font-size: 0.9rem;">
+            <li><strong>Dashboard panel switches:</strong> Clicking "Individuals", "Companies", etc. swaps only the panel instead of reloading the page.</li>
+          </ul>
+          <pre class="slide__code" style="font-size: 0.8rem; margin-top: 1rem;"><code class="language-html">&lt;button
+  hx-get="/dashboard/panel/individuals"
+  hx-target="#dashboard-panel"
+  hx-swap="innerHTML"
+&gt;
+  Individuals
+&lt;/button&gt;</code></pre>
+        </div>
+
+        <div>
+          <h3 class="slide__section-title">Chart.js</h3>
+          <p style="font-size: 0.9rem; margin-bottom: 1rem;">Chart configurations are generated server-side and passed via data attributes:</p>
+          <pre class="slide__code" style="font-size: 0.8rem;"><code class="language-html">&lt;div data-chart data-chart-type="pie"
+     data-chart-config='{"labels": [...], 
+                        "values": [...]}'&gt;
+  &lt;canvas&gt;&lt;/canvas&gt;
+&lt;/div&gt;</code></pre>
+          <ul class="slide__bullets" style="margin-top: 1rem; font-size: 0.9rem;">
+            <li><strong>Server-side config:</strong> Data via JSON in HTML data attributes</li>
+            <li><strong>Auto initialization:</strong> Charts render automatically</li>
+            <li><strong>Theme-aware:</strong> Charts adapt colors on theme switches</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</article>

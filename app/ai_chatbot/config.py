@@ -49,16 +49,6 @@ class ChatbotConfig(BaseModel):
         "CREATE", "TRUNCATE", "EXEC", "EXECUTE"
     ]
 
-    # Quick template settings
-    enable_quick_templates: bool = True
-    quick_template_keywords: dict = {
-        "expenses_by_category": ["expenses by category", "spending by category"],
-        "income_by_category": ["income by category", "revenue by category"],
-        "monthly_comparison": ["monthly income vs expenses", "income vs expenses monthly"],
-        "yearly_comparison": ["yearly income vs expenses", "income vs expenses yearly"],
-    }
-
-
 # Global config instances
 llm_config = LLMProviderConfig()
 chatbot_config = ChatbotConfig()

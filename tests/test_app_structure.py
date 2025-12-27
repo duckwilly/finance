@@ -17,7 +17,6 @@ def test_get_settings_uses_default_configuration(monkeypatch) -> None:
     monkeypatch.delenv("DB_USER", raising=False)
     monkeypatch.delenv("DB_PASSWORD", raising=False)
     monkeypatch.delenv("DB_NAME", raising=False)
-    monkeypatch.delenv("SQLALCHEMY_ECHO", raising=False)
 
     settings = get_settings()
 
@@ -26,4 +25,3 @@ def test_get_settings_uses_default_configuration(monkeypatch) -> None:
     assert settings.database.user == "finance"
     assert settings.database.password == "finance"
     assert settings.database.name == "finance"
-    assert settings.sqlalchemy_echo is False

@@ -1,0 +1,47 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <h2 class="slide__title">Database design</h2>
+  </header>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Nature of financial data</h3>
+      <ul class="slide__bullets">
+        <li>Financial data should be immutable: we add ledger entries instead of editing balances; balances are the sum of entries.</li>
+        <li>We model people and companies separately (<code>individual_profile</code>, <code>company_profile</code>) on top of a generic <code>party</code> model. Individuals can log in to see their data and also access their employer's data.</li>
+        <li>The database is normalized to 3NF/BCNF: each fact is stored once and all non-key attributes fully depend on the primary key, preventing double spending and corruption.</li>
+      </ul>
+      <div class="slide__callout code-shell" aria-label="Example 3NF/BCNF">
+        <div class="code-block">
+          <code>-- Not normalized: company name stored on every account
+account(id, iban, company_name, company_vat)
+
+-- 3NF/BCNF: split account and company
+account(id, iban, company_id)
+company(id, name, vat_number)</code>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h3 class="slide__section-title">Journal model & scale</h3>
+      <ul class="slide__bullets">
+        <li>We use a double-entry journal (<code>journal_entry</code> + <code>journal_line</code>).</li>
+        <li>For each entry: the sum of <code>journal_line.amount</code> per <code>entry_id</code> and currency is always zero; positions, cash flow, and P&amp;L are derived from it.</li>
+        <li>All facts are traceable and recomputable from the journal and market data; tables like <code>cash_flow_fact</code> are performance layers, not sources of truth.</li>
+        <li>Our default simulation uses ~550 parties, ~1,500 accounts, and ~100k entries over a one-year span. Larger simulations are also possible.</li>
+      </ul>
+    <div class="slide__callout code-shell" aria-label="Journal model example">
+    <div class="code-block">
+      <code>INSERT INTO journal_entry (id, entry_code, txn_date, description)
+VALUES (1001, 'PAYROLL-APR-ACME', '2025-04-25', 'April salary - ACME BV');
+
+INSERT INTO journal_line (entry_id, account_id, amount, currency_code, line_memo)
+VALUES
+  (1001, 2001, -2500.00, 'EUR', 'Salary from company account'),
+  (1001, 3001,  2500.00, 'EUR', 'Net salary to employee');
+
+-- For each entry:
+--   SUM(amount) PER (entry_id, currency_code) = 0</code>
+    </div>
+  </div>
+</div>
+</article>

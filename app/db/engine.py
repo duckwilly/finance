@@ -24,7 +24,6 @@ def create_sync_engine(url: str | None = None, **kwargs) -> Engine:
     resolved_url = url or settings.database.sqlalchemy_url
 
     options = dict(kwargs)
-    options.setdefault("echo", settings.sqlalchemy_echo)
 
     LOGGER.debug(
         "Creating SQLAlchemy engine",

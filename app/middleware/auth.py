@@ -47,9 +47,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        if not self._security_provider.is_enabled:
-            return await call_next(request)
-
         token = request.cookies.get(self._security_provider.cookie_name)
         user: AuthenticatedUser | None = None
         invalid_token = False

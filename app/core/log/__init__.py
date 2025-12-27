@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from datetime import datetime, date
 from logging.handlers import QueueHandler, QueueListener
@@ -35,12 +34,12 @@ __all__ = [
 class LoggingConfig:
     """Runtime configuration for the logging subsystem."""
 
-    app_name: str = os.getenv("APP_NAME", "finance")
-    level: str | int = os.getenv("APP_LOG_LEVEL", "INFO")
-    log_dir: Optional[Path] = Path(os.getenv("APP_LOG_DIR", "logs"))
-    console: bool = os.getenv("APP_LOG_CONSOLE", "1") != "0"
-    rich_tracebacks: bool = os.getenv("APP_LOG_TRACEBACKS", "1") != "0"
-    queue: bool = os.getenv("APP_LOG_QUEUE", "1") != "0"
+    app_name: str = "finance"
+    level: str | int = "INFO"
+    log_dir: Optional[Path] = Path("logs")
+    console: bool = True
+    rich_tracebacks: bool = True
+    queue: bool = True
 
 
 _config_lock = RLock()

@@ -1,0 +1,31 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <h2 class="slide__title">Project overview</h2>
+  </header>
+  <div class="slide__content">
+    <div class="slide__section">
+      <ul class="slide__bullets">
+        <li>This is a financial dashboard that simulates a bank's clients. We model companies, individuals, and their cash and stock transactions. We built a web platform where users can view, search, and analyze their financial data.</li>
+      </ul>
+    </div>
+
+    <div class="slide__section">
+      <h3 class="slide__section-title">Users</h3>
+      <ul class="slide__bullets">
+        <li><strong>Admin:</strong> Can browse all views, search lists of companies and individuals, and drill into every company/individual dashboard. Has access to a global view of transactions and stock holdings.</li>
+        <li><strong>Companies:</strong> Get a dashboard with an overview of accounts and transactions for a selected period. They see income, expenses, profit/loss, and payroll.</li>
+        <li><strong>Individual account holders:</strong> Get a personal dashboard with bank accounts, brokerage holdings, and an overview of income and expenses by category.</li>
+      </ul>
+    </div>
+
+    <div class="slide__section">
+      <h3 class="slide__section-title">Scope and functionality</h3>
+      <ul class="slide__bullets">
+        <li><strong>Server-rendered dashboards:</strong> All dashboards are rendered server-side with Jinja2 templates. We use SQLAlchemy ORM queries to populate them.</li>
+        <li><strong>Search and filtering:</strong> Admins can search and filter across all data.</li>
+        <li><strong>Dynamic dashboards:</strong> The ORM layer is structured so dashboards and charts can be built dynamically. More on this later.</li>
+        <li><strong>Easy setup:</strong> The entire project can be built in one go with <code>make quickstart</code>.</li>
+      </ul>
+    </div>
+  </div>
+</article>

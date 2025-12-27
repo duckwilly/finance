@@ -24,7 +24,7 @@ def create_engine_from_settings() -> Engine:
             "name": settings.database.name,
         },
     )
-    return create_engine(settings.database.sqlalchemy_url, future=True, echo=settings.sqlalchemy_echo)
+    return create_engine(settings.database.sqlalchemy_url, future=True)
 
 
 def get_session_factory() -> sessionmaker:

@@ -1,0 +1,48 @@
+<article class="slide" data-slide-fragment>
+  <header class="slide__header">
+    <h2 class="slide__title">Admin browse and search</h2>
+  </header>
+  <div class="slide__content slide__grid">
+    <div>
+      <h3 class="slide__section-title">Dashboard overview</h3>
+      <p>The admin dashboard aggregates data across all individuals, companies, and their transactions.</p>
+      <ul class="slide__bullets">
+        <li><strong>Four main views:</strong> Individuals, Companies, Transactions, and Assets under management.</li>
+        <li>Clicking a card loads the corresponding view.</li>
+      </ul>
+      <br>
+      <h3 class="slide__section-title">Search and filtering</h3>
+      <p>Each list in the admin dashboard supports search and sorting. Admins can query in realtime and sort columns.</p>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Views for individuals and companies</h3>
+      <p>Overviews of all individuals and companies in the platform, with links into each dashboard.</p>
+      <ul class="slide__bullets">
+        <li><strong>Individuals:</strong> Name, job title, employer, monthly income, account balances, and brokerage assets.</li>
+        <li><strong>Companies:</strong> Company name, employee count, profit margin, and other metrics.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h3 class="slide__section-title">Transactions and holdings</h3>
+      <p>Admins can also browse transactions and stock holdings.</p>
+      <ul class="slide__bullets">
+        <li><strong>Transactions overview:</strong> List of recent transactions.</li>
+        <li><strong>Stock holdings:</strong> Overview of all investment portfolios with real market price data.</li>
+      </ul>
+    </div>
+  </div>
+</article>
+
+<br>
+<div class="slide__demo" aria-label="Admin dashboard live example">
+  <div class="slide__embed">
+    <iframe
+      src="{{ request.url_for('read_dashboard') }}?embed=1"
+      title="Admin dashboard demo"
+      loading="lazy"
+      aria-label="Admin dashboard"
+    ></iframe>
+  </div>
+</div>
