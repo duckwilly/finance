@@ -64,23 +64,6 @@ Credentials are configurable in `.env` (see `.env.example`).
 ![Company dashboard](docs/screenshots/company-dashboard.png)
 ![Presentation](docs/screenshots/presentation.png)
 
-## Performance Benchmarks
-- Hardware: MacBook Air M4
-- Python: 3.14.0
-- MariaDB: 11.8.3
-
-Large preset results (cached market data):
-- Dataset: 2000 individuals, 200 companies, 24 months
-- Seed data size: 188.0 MB
-- Journal entries: 814,809 rows
-- Journal lines: 1,629,618 rows
-- Trades: 16,755 rows
-- Price quotes: 7,542 rows
-- Generate seed data: 10.14s
-- Load CSVs into MariaDB: 38.35s
-- Pipeline total (generate + load): 48.49s
-- Full rerun total (includes DB clear): 76.31s
-
 ## Project Structure
 ```
 app/
