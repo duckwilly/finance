@@ -42,6 +42,9 @@ logged in and viewing the admin dashboard.
 ## Quickstart
 ```bash
 make quickstart
+```
+or
+```bash
 make quickstart-large
 make quickstart-small
 ```
@@ -55,11 +58,11 @@ Credentials are configurable in `.env` (see `.env.example`).
 - Demo user password: `demo` (username varies, e.g. `u1`)
 
 ## Screenshots
-![Individual dashboard](docs/screenshots/individual-dashboard.png)
-![Company dashboard](docs/screenshots/company-dashboard.png)
 ![Admin dashboard](docs/screenshots/admin-dashboard.png)
 ![AI chatbot insights](docs/screenshots/chatbot.png)
-![Presentation walkthrough](docs/screenshots/presentation.png)
+![Individual dashboard](docs/screenshots/individual-dashboard.png)
+![Company dashboard](docs/screenshots/company-dashboard.png)
+![Presentation](docs/screenshots/presentation.png)
 
 ## Performance Benchmarks
 - Hardware: MacBook Air M4
