@@ -39,23 +39,11 @@ logged in and viewing the admin dashboard.
 - **Service layer**: domain logic lives in `app/services/` to keep routing thin.
 - **Dashboards**: server-rendered templates plus HTMX for fast, targeted updates.
 
-```mermaid
-flowchart LR
-  A[Seed Data + Market Prices] --> B[MariaDB]
-  B --> C[FastAPI Services]
-  C --> D[Server-Rendered Dashboards]
-  C --> E[HTMX Updates]
-  C --> F[AI Chatbot]
-```
-
 ## Quickstart
 ```bash
 make quickstart
-```
-
-Common options:
-```bash
 make quickstart-large
+make quickstart-small
 ```
 
 More options are in `QUICKSTART_OPTIONS.md`.
@@ -74,7 +62,6 @@ Credentials are configurable in `.env` (see `.env.example`).
 ![Presentation walkthrough](docs/screenshots/presentation.png)
 
 ## Performance Benchmarks
-Benchmarks captured on a base MacBook Air M4 with cached market data:
 - Hardware: MacBook Air M4
 - Python: 3.14.0
 - MariaDB: 11.8.3
@@ -90,11 +77,6 @@ Large preset results (cached market data):
 - Load CSVs into MariaDB: 38.35s
 - Pipeline total (generate + load): 48.49s
 - Full rerun total (includes DB clear): 76.31s
-
-## Testing
-```bash
-pytest
-```
 
 ## Project Structure
 ```
