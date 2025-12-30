@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from app.core.logger import get_logger
+from app.core.paths import cookie_path, with_root_path
 from app.core.security import (
     AuthenticatedUser,
     SecurityProvider,
@@ -62,7 +63,8 @@ async def login_form(request: Request) -> HTMLResponse:
     user: AuthenticatedUser | None = getattr(request.state, "user", None)
     if user is not None:
         LOGGER.debug("User already authenticated", extra={"username": user.username})
-        return RedirectResponse(default_destination(user), status_code=303)
+        redirect_to = with_root_path(request, default_destination(user))
+        return RedirectResponse(redirect_to, status_code=303)
 
     next_path = _safe_next_path(request.query_params.get("next"))
     security = get_security()
@@ -110,6 +112,7 @@ async def login_submit(
 
     token = security.create_access_token(user)
     redirect_to = _safe_next_path(next_path) or default_destination(user)
+    redirect_to = with_root_path(request, redirect_to)
     response = RedirectResponse(redirect_to, status_code=303)
     response.set_cookie(
         security.cookie_name,
@@ -117,17 +120,21 @@ async def login_submit(
         max_age=security.token_ttl_seconds,
         httponly=True,
         samesite="lax",
+        path=cookie_path(request),
     )
     LOGGER.info("User logged in", extra={"username": user.username, "role": user.role})
     return response
 
 
 @router.get("/logout", include_in_schema=False)
-async def logout(security: SecurityProvider = Depends(get_security)) -> Response:
+async def logout(
+    request: Request,
+    security: SecurityProvider = Depends(get_security),
+) -> Response:
     """Clear the access token and redirect to the login page."""
 
-    response = RedirectResponse("/login", status_code=303)
-    response.delete_cookie(security.cookie_name)
+    response = RedirectResponse(with_root_path(request, "/login"), status_code=303)
+    response.delete_cookie(security.cookie_name, path=cookie_path(request))
     return response
 
 

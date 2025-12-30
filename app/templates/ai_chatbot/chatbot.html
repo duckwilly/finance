@@ -12,7 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
     <!-- CSS -->
-    <link rel="stylesheet" href="/static/ai_chatbot/chatbot.css">
+    <link rel="stylesheet" href="{{ url_for('static', path='ai_chatbot/chatbot.css') }}">
 </head>
 <body>
     <div class="chatbot-container">
@@ -76,7 +76,7 @@
         <div class="chat-input-container">
             <form id="chat-form"
                   data-chatbot-form
-                  hx-post="/chatbot/query/htmx"
+                  hx-post="{{ request.scope.get('root_path', '') }}/chatbot/query/htmx"
                   hx-target="#chat-messages"
                   hx-swap="beforeend"
                   hx-indicator="#loading-indicator">
@@ -114,7 +114,7 @@
         <div id="response-target" style="display: none;"></div>
     </div>
 
-    <script src="/static/js/theme-switcher.js"></script>
-    <script src="/static/ai_chatbot/chatbot.js"></script>
+    <script src="{{ url_for('static', path='js/theme-switcher.js') }}"></script>
+    <script src="{{ url_for('static', path='ai_chatbot/chatbot.js') }}"></script>
 </body>
 </html>
