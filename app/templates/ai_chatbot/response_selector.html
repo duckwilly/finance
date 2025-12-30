@@ -17,6 +17,8 @@
 
 <script>
 (function() {
+    const rootPath = "{{ request.scope.get('root_path', '') }}";
+
     // Auto-scroll to show selector
     const chatMessages = document.getElementById('chat-messages');
     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -51,8 +53,8 @@
             formData.append('model', model);
             formData.append('response_mode', responseMode);
 
-            console.log('Sending request to /chatbot/query/htmx...');
-            fetch('/chatbot/query/htmx', {
+            console.log(`Sending request to ${rootPath}/chatbot/query/htmx...`);
+            fetch(`${rootPath}/chatbot/query/htmx`, {
                 method: 'POST',
                 body: formData
             })

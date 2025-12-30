@@ -23,7 +23,7 @@
         <li><strong>List filtering:</strong> Zoekresultaten worden ook dynamisch geüpdatet</li>
       </ul>
       <pre class="slide__code" style="font-size: 0.8rem; margin-top: 1rem;"><code class="language-html">&lt;button
-  hx-get="/dashboard/panel/individuals"
+  hx-get="{{ request.scope.get('root_path', '') }}/dashboard/panel/individuals"
   hx-target="#dashboard-panel"
   hx-swap="innerHTML"
 &gt;

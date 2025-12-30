@@ -7,6 +7,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.core import get_logger
+from app.core.paths import with_root_path
 from app.core.security import get_security_provider
 from app.middleware.auth import AuthMiddleware
 from app.routers import (
@@ -88,7 +89,7 @@ def create_app() -> FastAPI:
         destination = "/dashboard/"
         if user is not None:
             destination = default_destination(user)
-        return RedirectResponse(url=destination)
+        return RedirectResponse(url=with_root_path(request, destination))
 
     LOGGER.info("FastAPI application initialised")
     return app

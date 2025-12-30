@@ -54,7 +54,7 @@
     <div class="chat-widget-input">
         <form id="widget-chat-form"
               data-chatbot-form
-              hx-post="/chatbot/query/htmx"
+              hx-post="{{ request.scope.get('root_path', '') }}/chatbot/query/htmx"
               hx-target="#widget-response-target"
               hx-swap="afterbegin"
               hx-indicator="#widget-loading">

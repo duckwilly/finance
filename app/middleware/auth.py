@@ -9,6 +9,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
 from app.core.logger import get_logger
+from app.core.paths import cookie_path, with_root_path
 from app.core.security import AuthenticationError, AuthenticatedUser, SecurityProvider
 
 LOGGER = get_logger(__name__)
@@ -59,19 +60,33 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 invalid_token = True
 
         request.state.user = user
-        path = request.url.path
+        # Strip root_path prefix if present (when running behind a proxy).
+        raw_path = request.scope.get("path", request.url.path)
+        root_path = request.scope.get("root_path", "")
+        if root_path and raw_path.startswith(root_path):
+            path = raw_path[len(root_path):] or "/"
+        else:
+            path = raw_path
 
         if self._is_exempt(path):
             if invalid_token:
-                response = RedirectResponse(self._login_path, status_code=303)
-                response.delete_cookie(self._security_provider.cookie_name)
+                login_url = with_root_path(request, self._login_path)
+                response = RedirectResponse(login_url, status_code=303)
+                response.delete_cookie(
+                    self._security_provider.cookie_name,
+                    path=cookie_path(request),
+                )
                 return response
             return await call_next(request)
 
         if user is None:
-            response = RedirectResponse(self._login_path, status_code=303)
+            login_url = with_root_path(request, self._login_path)
+            response = RedirectResponse(login_url, status_code=303)
             if token:
-                response.delete_cookie(self._security_provider.cookie_name)
+                response.delete_cookie(
+                    self._security_provider.cookie_name,
+                    path=cookie_path(request),
+                )
             return response
 
         return await call_next(request)

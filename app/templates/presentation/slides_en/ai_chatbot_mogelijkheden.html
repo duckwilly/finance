@@ -58,7 +58,7 @@
                   <form
                     id="chat-form"
                     data-chatbot-form
-                    hx-post="/chatbot/query/htmx"
+                    hx-post="{{ request.scope.get('root_path', '') }}/chatbot/query/htmx"
                     hx-target="#dashboard-panel"
                     hx-swap="innerHTML"
                     hx-indicator="#loading-indicator"
