@@ -59,7 +59,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 invalid_token = True
 
         request.state.user = user
-        path = request.url.path
+        # Strip root_path prefix if present (when running behind a proxy)
+        raw_path = request.scope["path"]
+        root_path = request.scope.get("root_path", "")
+        if root_path and raw_path.startswith(root_path):
+            path = raw_path[len(root_path):] or "/"
+        else:
+            path = raw_path
 
         if self._is_exempt(path):
             if invalid_token:
