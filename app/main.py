@@ -10,6 +10,7 @@ from app.core import get_logger
 from app.core.paths import with_root_path
 from app.core.security import get_security_provider
 from app.middleware.auth import AuthMiddleware
+from app.middleware.forwarded_prefix import ForwardedPrefixMiddleware
 from app.routers import (
     auth_router,
     corporate_router,
@@ -46,6 +47,7 @@ def create_app() -> FastAPI:
         AuthMiddleware,
         security_provider=security_provider,
     )
+    app.add_middleware(ForwardedPrefixMiddleware)
     app.include_router(auth_router)
     app.include_router(dashboard_router)
     app.include_router(individuals_router)

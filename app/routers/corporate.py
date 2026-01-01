@@ -184,6 +184,7 @@ def _company_panel_payload(
     dashboard: CompanyDashboard,
     *,
     include_links: bool = False,
+    request: Request | None = None,
 ) -> tuple[
     SimpleNamespace,
     PieChartData | LineChartData,
@@ -282,7 +283,9 @@ def _company_panel_payload(
             chart_pairs.append(("Others", float(others_total)))
 
         for entry in payroll_entries:
-            links = {"employee": f"/individuals/{entry.user_id}"} if include_links else None
+            links = None
+            if include_links and request is not None:
+                links = {"employee": str(request.url_for("read_individual_dashboard", user_id=entry.user_id))}
             rows.append(
                 ListViewRow(
                     key=str(entry.user_id),
@@ -337,6 +340,7 @@ async def read_company_dashboard(
         "income",
         dashboard,
         include_links=is_admin,
+        request=request,
     )
 
     cards = [
@@ -416,6 +420,7 @@ async def render_company_panel(
         panel_name,
         dashboard,
         include_links=is_admin,
+        request=request,
     )
 
     return templates.TemplateResponse(

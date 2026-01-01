@@ -14,10 +14,44 @@ from app.core.security import AuthenticatedUser, require_admin_user
 from app.core.templates import templates
 from app.db.session import get_sessionmaker
 from app.routers.dashboard_views import HTMX_SHELL_CONFIG, render_dashboard_template
-from app.schemas.admin import DashboardCharts, LineChartData, ListView, PieChartData
+from app.schemas.admin import DashboardCharts, LineChartData, ListView, ListViewRow, PieChartData
 from app.services import AdminService
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+def _prefix_list_view_links(view: ListView, root_path: str) -> ListView:
+    """Prefix all links in ListView rows with the root_path for proxy support."""
+    if not root_path:
+        return view
+
+    prefixed_rows = []
+    for row in view.rows:
+        if row.links:
+            prefixed_links = {
+                key: f"{root_path}{url}" if url.startswith("/") else url
+                for key, url in row.links.items()
+            }
+            prefixed_rows.append(
+                ListViewRow(
+                    key=row.key,
+                    values=row.values,
+                    search_text=row.search_text,
+                    links=prefixed_links,
+                )
+            )
+        else:
+            prefixed_rows.append(row)
+
+    return ListView(
+        title=view.title,
+        columns=view.columns,
+        rows=prefixed_rows,
+        search_placeholder=view.search_placeholder,
+        empty_message=view.empty_message,
+    )
+
+
 SESSION_FACTORY: sessionmaker = get_sessionmaker()
 LOGGER = get_logger(__name__)
 
@@ -96,6 +130,7 @@ def _panel_payload(
     panel_name: str,
     admin_service: AdminService,
     session: Session,
+    request: Request | None = None,
 ) -> tuple[PanelConfig, PieChartData | LineChartData, ListView]:
     config = PANEL_CONFIGS.get(panel_name)
     if config is None:
@@ -112,6 +147,10 @@ def _panel_payload(
     view = list_getter(session)
     chart = _resolve_chart(admin_service, session, config.chart_attr)
 
+    if request is not None:
+        root_path = request.scope.get("root_path", "")
+        view = _prefix_list_view_links(view, root_path)
+
     return config, chart, view
 
 
@@ -123,7 +162,7 @@ def _render_panel(
     session: Session,
     list_htmx_config: dict[str, object] | None = None,
 ) -> HTMLResponse:
-    config, chart, view = _panel_payload(panel_name, admin_service, session)
+    config, chart, view = _panel_payload(panel_name, admin_service, session, request)
 
     return templates.TemplateResponse(
         request=request,
@@ -155,6 +194,7 @@ async def read_dashboard(
         panel_name="individuals",
         admin_service=admin_service,
         session=session,
+        request=request,
     )
     cards = [
         {
