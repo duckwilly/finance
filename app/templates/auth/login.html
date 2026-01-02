@@ -9,52 +9,95 @@
     <script src="{{ url_for('static', path='js/theme-switcher.js') }}" defer></script>
   </head>
   <body>
+    <a href="/" class="back-link">mpop.dev</a>
     <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
       <span class="theme-toggle__icon">🌙</span>
       <span class="theme-toggle__label">Dark mode</span>
     </button>
-    <main class="card" role="main">
-      <h1>Sign in</h1>
-      <p>
-        Use the demo credentials to explore the admin, individual, or company
-        dashboards. Every user receives a tailored landing page right after
-        logging in.
-      </p>
-      {% if error %}
-      <div class="error" role="alert">{{ error }}</div>
-      {% endif %}
-      <form method="post" action="{{ request.url_for('login_submit') }}">
-        <input type="hidden" name="next" value="{{ next }}" />
-        <div class="field">
-          <label for="username">Username</label>
-          <input
-            id="username"
-            name="username"
-            type="text"
-            autocomplete="username"
-            required
-            autofocus
-            value="{{ username }}"
-          />
+    <div class="login-container">
+      <main class="card" role="main">
+        <h1>Sign in</h1>
+        <p>
+          Use the demo credentials to explore the admin, individual, or company
+          dashboards. Every user receives a tailored landing page right after
+          logging in.
+        </p>
+        {% if error %}
+        <div class="error" role="alert">{{ error }}</div>
+        {% endif %}
+        <form method="post" action="{{ request.url_for('login_submit') }}">
+          <input type="hidden" name="next" value="{{ next }}" />
+          <div class="field">
+            <label for="username">Username</label>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              autocomplete="username"
+              required
+              autofocus
+              value="{{ username }}"
+            />
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+            />
+          </div>
+          <div class="actions">
+            <button type="submit">Log in</button>
+          </div>
+        </form>
+        <aside class="note">
+          <p><strong>Admin:</strong> <code>{{ admin_username }}</code></p>
+          <p><strong>Individuals:</strong> <code>u1</code> through <code>u{{ individual_count }}</code></p>
+          <p><strong>Password:</strong> <code>{{ demo_password }}</code> (all accounts)</p>
+        </aside>
+      </main>
+      <aside class="showcase">
+        <h2>About This Demo</h2>
+        <p class="showcase__intro">
+          A financial dashboard simulating a bank's clients. We model companies, individuals, and their cash and stock transactions with a full web platform to view, search, and analyze financial data.
+        </p>
+        <div class="showcase__section">
+          <h3>Data Scale</h3>
+          <ul>
+            <li><strong>{{ individual_count }}</strong> individuals with bank accounts and brokerage holdings</li>
+            <li><strong>{{ company_count }}</strong> companies with employees and payroll</li>
+            <li><strong>24 months</strong> of transactions, income, and expenses</li>
+            <li>Real stock prices fetched from Yahoo Finance</li>
+          </ul>
         </div>
-        <div class="field">
-          <label for="password">Password</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autocomplete="current-password"
-            required
-          />
+        <div class="showcase__section">
+          <h3>Technical Stack</h3>
+          <div class="showcase__tags">
+            <span class="tag">FastAPI</span>
+            <span class="tag">HTMX</span>
+            <span class="tag">SQLAlchemy</span>
+            <span class="tag">MariaDB</span>
+            <span class="tag">Chart.js</span>
+            <span class="tag">Jinja2</span>
+          </div>
         </div>
-        <div class="actions">
-          <button type="submit">Log in</button>
+        <div class="showcase__section">
+          <h3>Key Features</h3>
+          <ul>
+            <li>Server-rendered dashboards tailored by role</li>
+            <li>Admin can browse and search all data</li>
+            <li>Interactive charts with period filtering</li>
+            <li>Double-entry ledger accounting model</li>
+          </ul>
         </div>
-      </form>
-      <aside class="note">
-        <p><strong>Admin:</strong> {{ admin_username }}</p>
-        <p><strong>Individuals:</strong> usernames <code>u1</code> through <code>u{{ individual_count }}</code></p>
+        <div class="showcase__section">
+          <h3>Learn More</h3>
+          <p class="showcase__note">Log in as <code>{{ admin_username }}</code> to access the interactive presentation with architecture details and live demos.</p>
+        </div>
       </aside>
-    </main>
+    </div>
   </body>
 </html>

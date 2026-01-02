@@ -75,7 +75,7 @@ class Settings:
             algorithm=_get_env("JWT_ALGORITHM", "HS256"),
             access_token_expire_minutes=int(_get_env("JWT_EXPIRE_MINUTES", "120")),
             admin_username=_get_env("ADMIN_USERNAME", "admin"),
-            admin_password=_get_env("ADMIN_PASSWORD", "adminpass"),
+            admin_password=_get_env("ADMIN_PASSWORD", "demo"),
             demo_user_password=_get_env("DEMO_USER_PASSWORD", "demo"),
         )
         return cls(

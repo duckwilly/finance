@@ -54,7 +54,7 @@ More options are in `QUICKSTART_OPTIONS.md`.
 ## Demo Accounts
 Credentials are configurable in `.env` (see `.env.example`).
 
-- Admin: `admin` / `adminpass`
+- Admin: `admin` / `demo`
 - Demo user password: `demo` (username varies, e.g. `u1`)
 
 ## Screenshots
