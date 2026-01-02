@@ -22,7 +22,7 @@ class ForwardedPrefixMiddleware:
             prefix = headers.get(b"x-forwarded-prefix", b"").decode("latin-1")
             if prefix:
                 scope = dict(scope)
-                scope["root_path"] = prefix + scope.get("root_path", "")
+                scope["root_path"] = prefix
         await self.app(scope, receive, send)
 
 
