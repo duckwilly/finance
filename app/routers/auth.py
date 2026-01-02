@@ -132,7 +132,6 @@ async def logout(
     security: SecurityProvider = Depends(get_security),
 ) -> Response:
     """Clear the access token and redirect to the login page."""
-
     response = RedirectResponse(with_root_path(request, "/login"), status_code=303)
     response.delete_cookie(security.cookie_name, path=cookie_path(request))
     return response
